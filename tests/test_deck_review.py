@@ -1,7 +1,10 @@
 """Tests for the rendered deck review in What changed (no browser needed)."""
 
 import importlib.util
-import json
+import os
+import re
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -42,22 +45,9 @@ def test_classify_without_images_treats_equal_markup_as_unchanged():
     assert rows == [("unchanged", 0, 0)] and removed == []
 
 
-def test_context_keeps_complete_unchanged_runs():
-    rows = [("unchanged", i, i) for i in range(10)]
-    rows[5] = ("changed", 5, 5)
-    assert deck_review.context(rows) == list(range(10))
-
-
 def test_slide_title_reads_the_heading_text():
     slide = {"body": '<h2 class="x">The <em>question</em>\n here</h2><p>body</p>'}
     assert deck_review.slide_title(slide) == "The question here"
-
-
-def test_view_embeds_data_without_closing_its_script():
-    items = [{"n": 1, "kind": "new", "title": "</script><b>", "clean": "a.png"}]
-    page = deck_review.view(items, [], 3)
-    data = page.split('class="dr-data">', 1)[1].split("</script>", 1)[0]
-    assert json.loads(data)["items"][0]["title"] == "</script><b>"
 
 
 class _FakeDecks:
@@ -151,68 +141,6 @@ def test_heavily_rewritten_slide_with_same_id_remains_paired():
     assert what_changed.match_slides(old, new) == {0: 0}
 
 
-def test_json_title_cannot_enter_script_double_escape_state():
-    title = "<!--<script></script><title>still data"
-    page = deck_review.view([{"title": title}], [], 1)
-    data = page.split('class="dr-data">', 1)[1].split("</script>", 1)[0]
-    assert "<" not in data
-    assert json.loads(data)["items"][0]["title"] == title
-
-
-class _Renderer:
-    def __init__(self, old, new):
-        self.slides = {"old": old, "new": new}
-        self.calls = []
-
-    def slide_ids(self, side, deck):
-        return [s["id"] for s in self.slides[side]]
-
-    def texts(self, side, deck):
-        return [s["body"] for s in self.slides[side]]
-
-    def interactions(self, side, deck):
-        return [[] for _ in self.slides[side]]
-
-    def shoot(self, side, deck, index, path=None, mark=None, number=False):
-        self.calls.append((side, index, mark is not None) + ((True,) if number else ()))
-        data = self.slides[side][index]["body"].encode()
-        if path:
-            Path(path).write_bytes(data)
-        return data
-
-
-def test_parser_browser_order_mismatch_fails_before_capture(tmp_path):
-    import pytest
-
-    old = _slides("One", "Two")
-    renderer = _Renderer(old, list(reversed(old)))
-    with pytest.raises(ValueError, match="slide order"):
-        deck_review.review(
-            "slides.html",
-            "slides.html",
-            str(tmp_path),
-            "imgs",
-            old,
-            old,
-            {0: 0, 1: 1},
-            renderer,
-        )
-    assert renderer.calls == []
-
-
-def test_review_reuses_comparison_captures_and_numbers_display_shots(tmp_path):
-    old, new = _slides("Before"), _slides("After")
-    renderer = _Renderer(old, new)
-    assert deck_review.review(
-        "slides.html", "slides.html", str(tmp_path), "imgs", old, new, {0: 0}, renderer
-    )
-    assert renderer.calls.count(("new", 0, False)) <= 1
-    # Before and after both show their deck's own number, while comparison shots omit it.
-    assert ("new", 0, False, True) in renderer.calls
-    assert ("new", 0, True, True) in renderer.calls
-    assert ("old", 0, False, True) in renderer.calls
-
-
 def test_notes_only_change_is_not_a_visible_edit():
     old, new = (
         _slides("Talk<aside>old notes</aside>"),
@@ -222,136 +150,6 @@ def test_notes_only_change_is_not_a_visible_edit():
         old, new, {0: 0}, lambda o, n: True, lambda o, n: True
     )
     assert rows == [("unchanged", 0, 0)]
-
-
-def test_failed_browser_launch_is_not_retried_and_cleans_partial_images(tmp_path):
-    from types import SimpleNamespace
-
-    def fail(*args):
-        calls.append(args)
-        raise RuntimeError("no browser")
-
-    calls = []
-    partial = tmp_path / "slides"
-    partial.mkdir()
-    (partial / "partial.png").touch()
-    decks = what_changed.DeckRenderer(
-        SimpleNamespace(Renderer=fail), "old", "new", str(tmp_path), "imgs"
-    )
-    for _ in range(2):
-        assert (
-            decks.review("slides.html", "slides.html", [], _slides("One"), {}) is False
-        )
-    assert len(calls) == 1
-    assert not partial.exists()
-
-
-def test_macos_sandbox_launch_failure_keeps_text_diff(tmp_path, monkeypatch, capsys):
-    from types import SimpleNamespace
-
-    def denied(*args):
-        raise RuntimeError("Mach port permission denied")
-
-    monkeypatch.setattr(
-        what_changed, "load_deck_review", lambda: SimpleNamespace(Renderer=denied)
-    )
-    old, new = tmp_path / "old", tmp_path / "new"
-    document = (
-        "<html><head><title>Talk</title></head><body>"
-        '<div class="reveal"><div class="slides">'
-        '<section id="a"><h2>{}</h2></section></div></div></body></html>'
-    )
-    for site, text in ((old, "Old finding"), (new, "New finding")):
-        site.mkdir()
-        (site / "slides.html").write_text(document.format(text))
-    output = new / "what-changed.html"
-    what_changed.main(
-        [
-            "--old",
-            str(old),
-            "--new",
-            str(new),
-            "--out",
-            str(output),
-            "--render-decks",
-            str(new / "images"),
-        ]
-    )
-    page = output.read_text()
-    assert "<ins" in page and "<del" in page
-    assert "Old" in page and "New" in page
-    assert 'class="deck-review"' not in page
-    err = capsys.readouterr().err
-    assert "the browser couldn't start here, possibly a sandbox" in err
-    assert "run outside it to see rendered slides" in err
-
-
-def test_output_images_are_relative_to_output_page_and_stale_files_removed(
-    tmp_path, monkeypatch
-):
-    from types import SimpleNamespace
-
-    old, new = tmp_path / "old", tmp_path / "new"
-    old.mkdir()
-    new.mkdir()
-    images = new / "assets/review"
-    images.mkdir(parents=True)
-    (images / "stale.png").touch()
-    captured = []
-
-    class Decks:
-        def __init__(self, *args):
-            captured.append(args)
-            self.used = False
-
-        def close(self):
-            pass
-
-    monkeypatch.setattr(what_changed, "load_deck_review", lambda: SimpleNamespace())
-    monkeypatch.setattr(what_changed, "DeckRenderer", Decks)
-    out = new / "what-changed.html"
-    what_changed.main(
-        [
-            "--old",
-            str(old),
-            "--new",
-            str(new),
-            "--out",
-            str(out),
-            "--render-decks",
-            str(images),
-        ]
-    )
-    assert captured[0][-1] == "assets/review"
-    assert not (images / "stale.png").exists()
-
-
-def test_failed_renderer_initialization_closes_all_started_resources(
-    tmp_path, monkeypatch
-):
-    from types import ModuleType, SimpleNamespace
-    from unittest.mock import Mock
-
-    import pytest
-
-    server = SimpleNamespace(
-        server_address=("127.0.0.1", 12345), shutdown=Mock(), server_close=Mock()
-    )
-    pw = SimpleNamespace(
-        chromium=SimpleNamespace(
-            launch=Mock(side_effect=RuntimeError("launch failed"))
-        ),
-        stop=Mock(),
-    )
-    api = ModuleType("playwright.sync_api")
-    api.sync_playwright = lambda: SimpleNamespace(start=lambda: pw)
-    monkeypatch.setitem(__import__("sys").modules, "playwright.sync_api", api)
-    monkeypatch.setattr(deck_review, "_serve", lambda root: server)
-    with pytest.raises(RuntimeError, match="launch failed"):
-        deck_review.Renderer(tmp_path, tmp_path)
-    pw.stop.assert_called_once()
-    assert server.shutdown.call_count == 2
-    assert server.server_close.call_count == 2
 
 
 def test_generated_directory_cannot_replace_a_site_root(tmp_path):
@@ -411,73 +209,6 @@ def test_image_cleanup_rejects_unsafe_locations_without_deleting(tmp_path, locat
         assert (images / "keep.txt").read_text() == "keep"
 
 
-def test_old_and_new_sites_have_independent_origin_roots(tmp_path, monkeypatch):
-    from types import ModuleType, SimpleNamespace
-    from unittest.mock import Mock
-    from urllib.request import urlopen
-
-    pw = SimpleNamespace(
-        chromium=SimpleNamespace(launch=lambda **kw: SimpleNamespace(close=Mock())),
-        stop=Mock(),
-    )
-    api = ModuleType("playwright.sync_api")
-    api.sync_playwright = lambda: SimpleNamespace(start=lambda: pw)
-    monkeypatch.setitem(__import__("sys").modules, "playwright.sync_api", api)
-    for side in ("old", "new"):
-        (tmp_path / side / "images").mkdir(parents=True)
-        (tmp_path / side / "images/chart.svg").write_text(side)
-    renderer = deck_review.Renderer(tmp_path / "old", tmp_path / "new")
-    try:
-        assert renderer._bases["old"] != renderer._bases["new"]
-        for side in ("old", "new"):
-            with urlopen(renderer._bases[side] + "/images/chart.svg") as response:
-                assert response.read().decode() == side
-    finally:
-        renderer.close()
-
-
-def test_site_server_does_not_follow_external_symlinks(tmp_path):
-    from urllib.error import HTTPError
-    from urllib.request import urlopen
-
-    site = tmp_path / "site"
-    site.mkdir()
-    secret = tmp_path / "outside.txt"
-    secret.write_text("must not be served")
-    (site / "leak.txt").symlink_to(secret)
-    (site / "directory").symlink_to(tmp_path, target_is_directory=True)
-    server = deck_review._serve(str(site))
-    try:
-        for path in ("leak.txt", "directory/outside.txt"):
-            with pytest.raises(HTTPError) as error:
-                urlopen(f"http://127.0.0.1:{server.server_address[1]}/{path}")
-            assert error.value.code == 403
-    finally:
-        server.shutdown()
-        server.server_close()
-
-
-def test_renderer_routes_only_local_site_origins():
-    from types import SimpleNamespace
-    from unittest.mock import Mock
-
-    renderer = object.__new__(deck_review.Renderer)
-    renderer._bases = {"old": "http://127.0.0.1:123", "new": "http://127.0.0.1:456"}
-    for url, allowed in [
-        ("http://127.0.0.1:123/image.png", True),
-        ("http://127.0.0.1:456/deck", True),
-        ("https://example.org/beacon", False),
-        ("http://127.0.0.1:789/private", False),
-        ("http://127.0.0.1:123@evil.example/asset", False),
-    ]:
-        route = SimpleNamespace(
-            request=SimpleNamespace(url=url), continue_=Mock(), abort=Mock()
-        )
-        renderer._route(route)
-        assert route.continue_.called == allowed
-        assert route.abort.called != allowed
-
-
 def test_reorder_only_omits_invisible_text_changes():
     old = '<div class="reveal"><div class="slides"><section id="a"><h2>A</h2><aside class="notes">old</aside></section><section id="b"><h2>B</h2></section></div></div>'
     new = '<div class="reveal"><div class="slides"><section id="b"><h2>B</h2></section><section id="a"><h2>A</h2><aside class="notes">new</aside></section></div></div>'
@@ -532,45 +263,6 @@ def test_section_line_change_with_equal_markup_is_a_text_change():
         lambda o, n: shown_old[o] == shown_new[n],
     )
     assert [kind for kind, _, _ in rows] == ["changed", "look"]
-
-
-def test_link_destination_change_with_equal_text_and_image_is_retained(tmp_path):
-    old = _slides('<h2>Resources</h2><a href="before.html">Read more</a>')
-    new = _slides('<h2>Resources</h2><a href="after.html">Read more</a>')
-
-    class LinkRenderer(_Renderer):
-        def texts(self, side, deck):
-            return ["Resources Read more"]
-
-        def interactions(self, side, deck):
-            return [
-                [
-                    {
-                        "element": "a",
-                        "label": "Read more",
-                        "attributes": {"href": side + ".html"},
-                    }
-                ]
-            ]
-
-        def shoot(self, side, deck, index, path=None, mark=None, number=False):
-            return b"same pixels"
-
-    rendered = deck_review.review(
-        "slides.html",
-        "slides.html",
-        str(tmp_path),
-        "imgs",
-        old,
-        new,
-        {0: 0},
-        LinkRenderer(old, new),
-    )
-    data = json.loads(rendered.split('class="dr-data">', 1)[1].split("</script>", 1)[0])
-    item = data["items"][0]
-    assert item["kind"] == "changed"
-    assert item["interactions"]["before"][0]["attributes"] == {"href": "old.html"}
-    assert item["interactions"]["after"][0]["attributes"] == {"href": "new.html"}
 
 
 def test_large_rewritten_deck_keeps_edits_paired_with_quadratic_work(monkeypatch):
@@ -640,90 +332,627 @@ def test_large_unrelated_decks_remain_additions_and_removals():
     assert what_changed.match_slides(old, new) == {}
 
 
-def test_release_deck_closes_only_its_cached_documents():
-    from unittest.mock import Mock
-
-    renderer = object.__new__(deck_review.Renderer)
-    before, after, other = Mock(), Mock(), Mock()
-    renderer._pages = {
-        ("old", "one.html"): before,
-        ("new", "one.html"): after,
-        ("new", "two.html"): other,
-    }
-    renderer.release_deck("one.html")
-    before.close.assert_called_once()
-    after.close.assert_called_once()
-    other.close.assert_not_called()
-    assert renderer._pages == {("new", "two.html"): other}
+INLINE_SCRIPT = re.compile(r"(?is)<script(?P<attrs>[^>]*)>(?P<body>.*?)</script>")
 
 
-def test_deck_image_folders_are_not_named_like_html_pages(tmp_path):
-    """The preview deploy hands every `*.html` path to `sed`; image folders must not match."""
-    from types import SimpleNamespace
+def _node_check(tmp_path, name, source):
+    if shutil.which("node") is None:
+        if os.environ.get("CI"):
+            pytest.fail(
+                "node is required in CI to parse the What changed pages' scripts"
+            )
+        pytest.skip("needs node")
+    path = tmp_path / f"{name}.js"
+    path.write_text(source)
+    result = subprocess.run(
+        ["node", "--check", str(path)], capture_output=True, text=True
+    )
+    assert result.returncode == 0, f"{name}: {result.stderr}"
 
-    seen = []
 
-    def capture(rel, link, img_dir, img_url, *args):
-        seen.append((img_dir, img_url))
-        return "<div></div>"
+@pytest.mark.parametrize("name", ["MODE_JS", "FOLD_JS", "PAPER_JS"])
+def test_what_changed_page_scripts_parse(tmp_path, name):
+    _node_check(tmp_path, name, getattr(what_changed, name))
 
-    decks = what_changed.DeckRenderer(
-        SimpleNamespace(
-            Renderer=lambda *a: SimpleNamespace(release_deck=print), review=capture
-        ),
-        "old",
-        "new",
-        str(tmp_path),
+
+def _deck(slides, head='<link rel="stylesheet" href="deck.css">'):
+    sections = "".join(slides)
+    return (
+        f'<html><head>{head}</head><body><div class="reveal">'
+        f'<div class="slides">{sections}</div></div></body></html>'
+    )
+
+
+SLIDE = '<section id="one"><h2>One</h2><img src="a.png"></section>'
+EDITED = '<section id="two"><h2>Two</h2><p>edited</p></section>'
+
+
+def test_live_marks_only_changed_words_outside_tags_and_scripts():
+    old = '<section id="a"><h2>Attention weights</h2><p>the context</p></section>'
+    new = (
+        '<section id="a"><h2>Attention weights</h2>'
+        "<script>var x = 1</script><p>the available context</p></section>"
+    )
+    deleted, inserted = deck_review.word_changes(old, new)
+    assert deleted == set()
+    assert [deck_review.slide_words(new)[i] for i in inserted] == ["available"]
+    marked = deck_review.mark_words(new, inserted, "ins")
+    assert '<ins class="dr-live">available</ins>' in marked
+    assert "<script>var x = 1</script>" in marked
+    assert deck_review.slide_words(marked) == deck_review.slide_words(new)
+
+
+def test_marked_deck_touches_only_the_marked_slide():
+    doc = (
+        "<html><head></head><body><div class='reveal'><div class='slides'>"
+        '<section id="a"><p>one two</p></section>'
+        '<section id="b"><p>three four</p></section>'
+        "</div></div></body></html>"
+    )
+    slides = what_changed.reveal_slides(doc)
+    assert [s["id"] for s in slides] == ["a", "b"]
+    out = deck_review.marked_deck(doc, slides, {1: {0}}, "del")
+    assert '<del class="dr-live">three</del> four' in out
+    assert '<section id="a"><p>one two</p></section>' in out
+    assert deck_review.LIVE_MARK_CSS + "</head>" in out
+
+
+def test_live_rows_classifies_words_and_look_without_a_browser():
+    old = [
+        {"raw": "<section><p>same</p></section>", "body": "same"},
+        {"raw": "<section><p>old words</p></section>", "body": "old words"},
+        {"raw": '<section><img src="a.png"><p>pic</p></section>', "body": "pic"},
+        {"raw": "<section><p>gone</p></section>", "body": "gone"},
+    ]
+    new = [
+        {"raw": "<section><p>same</p></section>", "body": "same"},
+        {"raw": "<section><p>new words</p></section>", "body": "new words"},
+        {"raw": '<section><img src="a.png"><p>pic</p></section>', "body": "pic"},
+        {"raw": "<section><p>added</p></section>", "body": "added"},
+    ]
+    pairs = {0: 0, 1: 1, 2: 2}
+    rows, removed = deck_review.live_rows(
+        old, new, pairs, lambda before, after: "img" not in after["raw"]
+    )
+    assert [kind for kind, _, _ in rows] == ["unchanged", "changed", "look", "new"]
+    assert removed == [3]
+
+
+def test_static_files_skip_identical_slides_without_a_browser(tmp_path):
+    old_doc = _deck([SLIDE, '<section id="two"><h2>Two</h2></section>'])
+    new_doc = _deck([SLIDE, EDITED])
+    files, old, new = _static_files(tmp_path, old_doc, new_doc)
+    assert files.same_static("d/deck.html", old[0], new[0])
+    assert not files.same_static("d/deck.html", old[1], new[1])
+
+
+def test_static_files_follow_the_decks_stylesheets(tmp_path):
+    doc = _deck([SLIDE])
+    css = {"d/deck.css": '@import "more.css";', "d/more.css": "h2{}"}
+    files, old, new = _static_files(
+        tmp_path, doc, doc, css, {"d/more.css": "h2{color:red}"}
+    )
+    assert "/d/more.css" in files.loaded("d/deck.html", new[0]["frame"])
+    assert not files.same_static("d/deck.html", old[0], new[0])
+
+
+def test_static_files_compare_slide_images_and_ignore_outbound_links(tmp_path):
+    slide = SLIDE.replace(
+        "</section>", '<a href="https://arxiv.org/abs/1706.03762">paper</a></section>'
+    )
+    doc = _deck([slide])
+    files, old, new = _static_files(tmp_path, doc, doc)
+    assert files.same_static("d/deck.html", old[0], new[0])
+    files, old, new = _static_files(tmp_path / "b", doc, doc, None, {"d/a.png": "B"})
+    assert not files.same_static("d/deck.html", old[0], new[0])
+
+
+def test_static_files_read_inline_data_images_whole(tmp_path):
+    data = '<img src="data:image/svg+xml,%3Csvg%20a=%221,2%22/%3E">'
+    doc = _deck([SLIDE.replace("</section>", data + "</section>")])
+    files, old, new = _static_files(tmp_path, doc, doc)
+    assert files.same_static("d/deck.html", old[0], new[0])
+
+
+def test_live_report_marks_both_decks_without_browser(tmp_path):
+    old_root, new_root = tmp_path / "old", tmp_path / "new"
+    old_root.mkdir()
+    new_root.mkdir()
+
+    def deck(word):
+        return (
+            '<html><head></head><body><div class="reveal"><div class="slides">'
+            '<section id="a"><h2>Hello ' + word + "</h2></section>"
+            '<section id="b"><h2>Same</h2></section></div></div></body></html>'
+        )
+
+    before, after = deck("old"), deck("new")
+    (old_root / "deck.html").write_text(before)
+    (new_root / "deck.html").write_text(after)
+    slides_old = what_changed.reveal_slides(before)
+    slides_new = what_changed.reveal_slides(after)
+    renderer = what_changed.DeckRenderer(
+        deck_review,
+        str(old_root),
+        str(new_root),
+        str(new_root / "what-changed-decks"),
         "what-changed-decks",
     )
-    decks.review("slides/attention/slides.html", "x", [], _slides("One"), {})
-    assert seen == [
-        (
-            str(tmp_path / "slides/attention/slides"),
-            "what-changed-decks/slides/attention/slides",
-        )
-    ]
-    assert what_changed.deck_image_dir("talk.html") == "talk"
-    assert not what_changed.deck_image_dir("odd").endswith(".html")
+    body = renderer.review(
+        "deck.html", "deck.html", slides_old, slides_new, {0: 0, 1: 1}
+    )
+    assert "<iframe " in body and "details" in body and "<template>" in body
+    # No build controls: every build is shown and navigation is off in each frame.
+    assert "data-step" not in body and "fragments=false" in body
+    assert "keyboard=false" in body and "touch=false" in body
+    for view in ("Changes marked", "Clean", "Before / after"):
+        assert view in body
+    decks = new_root / "what-changed-decks"
+    assert (
+        'dr-live">'
+        not in (decks / "before/deck.html").read_text().split("</style>")[-1]
+    )
+    assert (
+        'dr-live">' not in (decks / "after/deck.html").read_text().split("</style>")[-1]
+    )
+    # Changes marked: removed words struck and added words marked on the one slide.
+    marked = (decks / "after/deck.marked.html").read_text()
+    assert (
+        'Hello <del class="dr-live">old</del> <ins class="dr-live">new</ins>' in marked
+    )
+    assert "deck.marked.html?" in body
+    assert not list(new_root.rglob("*.png"))
+    assert not (new_root / "what-changed-decks/after/what-changed-decks").exists()
 
 
-@pytest.mark.parametrize("failed", [False, True])
-def test_each_deck_releases_documents_even_after_capture_failure(tmp_path, failed):
+def test_live_report_of_an_unchanged_deck_is_none(tmp_path):
+    doc = (
+        '<html><head></head><body><div class="reveal"><div class="slides">'
+        '<section id="a"><h2>Same</h2></section></div></div></body></html>'
+    )
+    for side in ("old", "new"):
+        (tmp_path / side).mkdir()
+        (tmp_path / side / "deck.html").write_text(doc)
+    slides = what_changed.reveal_slides(doc)
+    renderer = what_changed.DeckRenderer(
+        deck_review,
+        str(tmp_path / "old"),
+        str(tmp_path / "new"),
+        str(tmp_path / "new/what-changed-decks"),
+        "what-changed-decks",
+    )
+    assert renderer.review("deck.html", "deck.html", slides, slides, {0: 0}) is None
+
+
+def test_marked_slide_strikes_deletions_where_they_were():
+    struck = deck_review.struck_before("<p>a b c d</p>", "<p>a c d e</p>")
+    assert struck == {1: ["b"]}
+    assert deck_review.mark_words("<p>a c d e</p>", {3}, "ins", struck) == (
+        '<p>a <del class="dr-live">b</del> c d <ins class="dr-live">e</ins></p>'
+    )
+    tail = deck_review.struck_before("<p>a b</p>", "<p>a</p>")
+    assert deck_review.mark_words("<p>a</p>", set(), "ins", tail) == (
+        '<p>a<del class="dr-live">b</del> </p>'
+    )
+
+
+def test_live_view_script_parses(tmp_path):
+    _node_check(
+        tmp_path,
+        "live-view",
+        deck_review.LIVE_SCRIPT.removeprefix("<script>").removesuffix("</script>"),
+    )
+
+
+def test_output_images_are_relative_to_output_page_and_stale_files_removed(
+    tmp_path, monkeypatch
+):
     from types import SimpleNamespace
-    from unittest.mock import Mock
 
-    renderer = Mock()
-    capture = (
-        Mock(side_effect=RuntimeError("bad deck"))
-        if failed
-        else Mock(return_value=None)
+    old, new = tmp_path / "old", tmp_path / "new"
+    old.mkdir()
+    new.mkdir()
+    images = new / "assets/review"
+    images.mkdir(parents=True)
+    (images / "stale.png").touch()
+    captured = []
+
+    class Decks:
+        def __init__(self, *args):
+            captured.append(args)
+            self.used = False
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(what_changed, "load_deck_review", lambda: SimpleNamespace())
+    monkeypatch.setattr(what_changed, "DeckRenderer", Decks)
+    out = new / "what-changed.html"
+    what_changed.main(
+        [
+            "--old",
+            str(old),
+            "--new",
+            str(new),
+            "--out",
+            str(out),
+            "--render-decks",
+            str(images),
+        ]
     )
-    decks = what_changed.DeckRenderer(
-        SimpleNamespace(Renderer=lambda *args: renderer, review=capture),
-        "old",
-        "new",
-        str(tmp_path),
-        "imgs",
+    assert captured[0][-1] == "assets/review"
+    assert not (images / "stale.png").exists()
+
+
+SELF_CONTAINED_HEAD = (
+    '<style>.reveal{background:url("data:image/svg+xml,%3Csvg/%3E")}</style>'
+    '<script>const css = "h2{background:url(\\"x.png\\")}";</script>'
+)
+
+
+def test_self_contained_deck_folds_its_unchanged_slides(tmp_path):
+    """Text in scripts, quoted data URLs and absent paths load no differing file."""
+    styled = (
+        '<section id="one" style="background-image:url(&quot;data:image/png;'
+        'base64,AAAA&quot;)"><h2>One</h2></section>'
     )
-    assert decks.review("deck.html", "deck.html", [], _slides("Slide"), {}) is (
-        False if failed else None
+    old_doc = _deck(
+        [styled, '<section id="two"><h2>Two</h2></section>'], SELF_CONTAINED_HEAD
     )
-    renderer.release_deck.assert_called_once_with("deck.html")
-    renderer.close.assert_not_called()  # the browser remains reusable
+    new_doc = _deck([styled, EDITED], SELF_CONTAINED_HEAD)
+    files, old, new = _static_files(tmp_path, old_doc, new_doc)
+    assert files.same_static("d/deck.html", old[0], new[0])
+    body, *_ = deck_review.live_review(
+        "d/deck.html", old_doc, new_doc, old, new, {0: 0, 1: 1}, files, "b", "a"
+    )
+    assert "1 changed or new; 0 removed; 2 slides" in body
+    assert "Expand 1 unchanged slide (1)" in body
+    assert "changed in look" not in body
 
 
-def test_a_failed_child_frame_does_not_discard_the_slide():
-    from unittest.mock import Mock
+def test_live_frames_open_the_deck_full_page_not_embedded(tmp_path):
+    old_doc = _deck(['<section id="one"><h2>One</h2></section>'])
+    new_doc = _deck(['<section id="one"><h2>Uno</h2></section>'])
+    files, old, new = _static_files(tmp_path, old_doc, new_doc)
+    body, *_ = deck_review.live_review(
+        "d/deck.html", old_doc, new_doc, old, new, {0: 0}, files, "b", "a"
+    )
+    assert (
+        'data-src="a?view=slide&amp;scrollActivationWidth=0&amp;fragments=false' in body
+        and "embedded" not in body
+    )
 
-    failed_frame = Mock()
-    failed_frame.add_style_tag.side_effect = RuntimeError("frame detached")
-    good_frame = Mock()
-    page = Mock()
-    page.main_frame = object()
-    page.frames = [page.main_frame, failed_frame, good_frame]
-    page.screenshot.return_value = b"PNG"
-    renderer = object.__new__(deck_review.Renderer)
-    renderer.page = lambda *args: page
-    assert renderer.shoot("new", "deck.html", 0) == b"PNG"
-    good_frame.evaluate.assert_called_once_with(deck_review.READY_JS)
-    page.close.assert_not_called()
+
+def test_live_frames_open_at_their_own_slide(tmp_path):
+    """Narrow frames retain slide mode and navigate only by the slide ID hash."""
+    old_doc = _deck(
+        [
+            '<section id="one"><h2>One</h2></section>',
+            '<section id="two"><h2>Two</h2></section>',
+        ]
+    )
+    new_doc = _deck(['<section id="one"><h2>One</h2></section>', EDITED])
+    files, old, new = _static_files(tmp_path, old_doc, new_doc)
+    body, old_marked, new_marked, _ = deck_review.live_review(
+        "d/deck.html", old_doc, new_doc, old, new, {0: 0, 1: 1}, files, "b", "a"
+    )
+    assert 'data-dr-slide-id="two"' in body
+    assert "#/two" in body and "keyboard=false" in body
+    assert "dr-slide=" not in body
+    for doc in (old_marked, new_marked):
+        assert "function hook()" not in doc
+        assert "Reveal.slide(" not in doc
+
+
+def test_slides_shifted_by_an_inserted_slide_are_not_changed_in_look(tmp_path):
+    """A live frame's slide number is no change; only a new slide is shown."""
+    old_doc = _deck(
+        [
+            '<section id="one"><h2>One</h2></section>',
+            '<section id="two"><h2>Two</h2></section>',
+        ]
+    )
+    new_doc = _deck(
+        [
+            '<section id="new"><h2>New</h2></section>',
+            '<section id="one"><h2>One</h2></section>',
+            '<section id="two"><h2>Two</h2></section>',
+        ]
+    )
+    files, old, new = _static_files(tmp_path, old_doc, new_doc)
+    body, *_ = deck_review.live_review(
+        "d/deck.html", old_doc, new_doc, old, new, {1: 0, 2: 1}, files, "b", "a"
+    )
+    assert "1 changed or new; 0 removed; 3 slides" in body
+    assert "changed in look" not in body
+
+
+def _static_files(tmp_path, old_doc, new_doc, files=None, new_files=None):
+    for side, doc, extra in (("old", old_doc, files), ("new", new_doc, new_files)):
+        root = tmp_path / side
+        (root / "d").mkdir(parents=True)
+        (root / "d/deck.html").write_text(doc)
+        for name, data in {
+            "d/deck.css": "h2{}",
+            "d/a.png": "A",
+            **(files or {}),
+            **(extra or {}),
+        }.items():
+            (root / name).write_text(data)
+    return (
+        deck_review.StaticFiles(str(tmp_path / "old"), str(tmp_path / "new")),
+        what_changed.reveal_slides(old_doc),
+        what_changed.reveal_slides(new_doc),
+    )
+
+
+def test_live_review_has_no_screenshot_implementation():
+    assert not hasattr(deck_review, "Renderer")
+    assert not hasattr(deck_review, "_serve")
+    assert not hasattr(deck_review, "view")
+    source = Path(deck_review.__file__).read_text()
+    assert "playwright" not in source
+    assert "screenshot(" not in source
+
+
+def test_changed_section_background_is_changed_in_look(tmp_path):
+    old_doc = _deck(
+        [SLIDE.replace("<section ", '<section data-background-image="a.png" ')]
+    )
+    new_doc = _deck(
+        [SLIDE.replace("<section ", '<section data-background-image="b.png" ')]
+    )
+    renderer, old, new = _static_files(tmp_path, old_doc, new_doc, {"d/b.png": "B"})
+    # The normalised body ignores the <section> tag's attributes; the raw tag does not.
+    assert old[0]["body"] == new[0]["body"]
+    assert not renderer.same_static("d/deck.html", old[0], new[0])
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "image",  # a referenced file's bytes
+        "head",  # the deck outside the slides
+        "loaded",  # a file the deck loaded
+        "style",  # a style element inside another slide
+        "live",  # content whose pixels can change on their own
+    ],
+)
+def test_differing_static_input_is_changed_in_look(tmp_path, change):
+    slide = (
+        SLIDE.replace("<img", "<canvas></canvas><img") if change == "live" else SLIDE
+    )
+    old_doc = _deck([slide, '<section id="two"><h2>Two</h2></section>'])
+    new_slides = [slide, EDITED]
+    new_files = None
+    head = '<link rel="stylesheet" href="deck.css">'
+    if change == "image":
+        new_files = {"d/a.png": "changed"}
+    elif change == "head":
+        head += "<style>h2{color:red}</style>"
+    elif change == "loaded":
+        new_files = {"d/deck.css": "h2{color:red}"}
+    elif change == "style":
+        new_slides[1] = EDITED.replace(
+            "</section>", "<style>h2{color:red}</style></section>"
+        )
+    new_doc = _deck(new_slides, head)
+    renderer, old, new = _static_files(tmp_path, old_doc, new_doc, new_files=new_files)
+    assert not renderer.same_static("d/deck.html", old[0], new[0])
+
+
+@pytest.mark.parametrize(
+    "prefix", ["\r", "\v", "\f", "\x1c", "\x85", "\u2028", "\u2029"]
+)
+def test_slide_spans_use_htmlparser_newlines(prefix):
+    doc = _deck([SLIDE, EDITED], head=prefix + "\n<title>Deck</title>")
+    slides = what_changed.reveal_slides(doc)
+    for slide in slides:
+        start, end = slide["span"]
+        assert doc[start:end] == slide["raw"]
+    marked = deck_review.marked_deck(doc, slides, {1: {0}}, "ins")
+    assert '<section id="two"><h2><ins class="dr-live">Two</ins></h2>' in marked
+
+
+def test_slide_parser_accepts_incremental_chunks():
+    doc = _deck([SLIDE, EDITED], head="\n<title>Deck</title>\n")
+    parser = what_changed.SlideParser()
+    for start in range(0, len(doc), 7):
+        parser.feed(doc[start : start + 7])
+    parser.close()
+    assert parser.slides() == what_changed.reveal_slides(doc)
+
+
+@pytest.mark.parametrize(
+    "protected",
+    [
+        '<aside class="notes"><p>secret old notes</p></aside>',
+        "<svg><text>old vector text</text></svg>",
+        "<math><mi>old</mi></math>",
+        "<textarea>old input</textarea>",
+        "<pre><code>old code</code></pre>",
+        r"<p>\(old + x\)</p>",
+        r"<p>\[old + x\]</p>",
+        "<p>$old + x$</p>",
+        "<p>$$old + x$$</p>",
+    ],
+)
+def test_marks_preserve_non_prose_markup(protected):
+    old = "<section><p>old prose</p>" + protected + "</section>"
+    new = "<section><p>new prose</p>" + protected.replace("old", "new") + "</section>"
+    deleted, inserted = deck_review.word_changes(old, new)
+    marked = deck_review.mark_words(
+        new, inserted, "ins", deck_review.struck_before(old, new)
+    )
+    assert protected.replace("old", "new") in marked
+    assert '<ins class="dr-live">new</ins>' in marked
+    assert '<del class="dr-live">old</del>' in marked
+
+
+def test_live_notes_only_edit_is_unchanged(tmp_path):
+    old_doc = _deck(
+        [SLIDE.replace("</section>", '<aside class="notes">old</aside></section>')]
+    )
+    new_doc = old_doc.replace(">old<", ">new<")
+    files, old, new = _static_files(tmp_path, old_doc, new_doc)
+    rows, removed = deck_review.live_rows(
+        old, new, {0: 0}, lambda a, b: files.same_static("d/deck.html", a, b)
+    )
+    assert rows == [("unchanged", 0, 0)] and not removed
+
+
+@pytest.mark.parametrize("failure", ["decode", "copy", "parser"])
+def test_live_deck_failure_falls_back_per_deck(tmp_path, monkeypatch, capsys, failure):
+    before, after = tmp_path / "before", tmp_path / "after"
+    before.mkdir()
+    after.mkdir()
+    doc = _deck([SLIDE])
+    (before / "deck.html").write_text(doc)
+    (after / "deck.html").write_bytes(
+        b"\xff" if failure == "decode" else doc.replace("One", "New").encode()
+    )
+    renderer = what_changed.DeckRenderer(
+        deck_review, str(before), str(after), str(after / "generated"), "generated"
+    )
+    if failure == "copy":
+
+        def fail(*a, **k):
+            raise OSError("test copy failure")
+
+        monkeypatch.setattr(what_changed.shutil, "copytree", fail)
+    elif failure == "parser":
+
+        def fail(*a, **k):
+            raise ValueError("test parser failure")
+
+        monkeypatch.setattr(deck_review, "live_review", fail)
+    slides = what_changed.reveal_slides(doc)
+    assert (
+        renderer.review(
+            "deck.html",
+            "deck.html",
+            slides,
+            what_changed.reveal_slides(doc.replace("One", "New")),
+            {0: 0},
+        )
+        is False
+    )
+    assert "slides as text" in capsys.readouterr().err
+
+
+def test_live_deck_publication_skips_escaping_links(tmp_path):
+    before, after = tmp_path / "before", tmp_path / "after"
+    before.mkdir()
+    after.mkdir()
+    outside = tmp_path / "private"
+    outside.mkdir()
+    (outside / "private.txt").write_text("must stay private")
+    for root, word in [(before, "Old"), (after, "New")]:
+        (root / "deck.html").write_text(
+            _deck([f'<section id="s"><h2>{word}</h2></section>'])
+        )
+        (root / "escape").symlink_to(outside, target_is_directory=True)
+        (root / "escape.txt").symlink_to(outside / "private.txt")
+        (root / "local.css").write_text("h2{}")
+        (root / "inside.css").symlink_to("local.css")
+    renderer = what_changed.DeckRenderer(
+        deck_review, str(before), str(after), str(after / "generated"), "generated"
+    )
+    old = what_changed.reveal_slides((before / "deck.html").read_text())
+    new = what_changed.reveal_slides((after / "deck.html").read_text())
+    assert renderer.review("deck.html", "deck.html", old, new, {0: 0})
+    for side in ["before", "after"]:
+        out = after / "generated" / side
+        assert not (out / "escape").exists()
+        assert not (out / "escape.txt").exists()
+        assert (out / "inside.css").read_text() == "h2{}"
+        assert "must stay private" not in "".join(
+            p.read_text() for p in out.rglob("*") if p.is_file()
+        )
+
+
+def test_page_scan_excludes_html_symlink_outside_site(tmp_path):
+    site = tmp_path / "site"
+    site.mkdir()
+    private = tmp_path / "private.html"
+    private.write_text("<main>private content</main>")
+    (site / "leak.html").symlink_to(private)
+    assert what_changed.list_pages(str(site)) == {}
+    renderer = what_changed.DeckRenderer(
+        deck_review, str(site), str(site), str(site / "generated"), "generated"
+    )
+    assert renderer.review("leak.html", "leak.html", [], [], {}) is False
+
+
+@pytest.mark.parametrize(
+    "classes", ["notes-preview", "speaker-notes", "my-notes-extra"]
+)
+def test_visible_asides_do_not_count_as_speaker_notes(classes):
+    raw = f'<aside class="{classes}">visible prose</aside>'
+    assert deck_review.slide_words(raw) == ["visible", "prose"]
+
+
+def test_invalid_deck_encoding_keeps_other_page_diffs(tmp_path, capsys):
+    before, after = tmp_path / "before", tmp_path / "after"
+    for root, word in [(before, "Old"), (after, "New")]:
+        root.mkdir()
+        (root / "index.html").write_text(f"<main><p>{word} prose</p></main>")
+        doc = _deck(
+            [f'<section id="s"><h2>{word}</h2></section>'],
+            head="<!--" + " " * 5000 + "-->",
+        )
+        (root / "deck.html").write_bytes(
+            doc.replace(word, word + ("\ufffd" if root == after else ""))
+            .encode()
+            .replace(b"\xef\xbf\xbd", b"\xff")
+        )
+    assert "deck.html" in what_changed.list_pages(str(after))
+    out = after / "what-changed.html"
+    what_changed.main(
+        [
+            "--old",
+            str(before),
+            "--new",
+            str(after),
+            "--out",
+            str(out),
+            "--render-decks",
+            str(after / "generated"),
+        ]
+    )
+    result = out.read_text()
+    assert "slides as text" in capsys.readouterr().err
+    assert "slide-diff" in result and "New" in result and "prose" in result
+
+
+def test_marks_preserve_nested_svg_and_entity_words():
+    old = "<section><p>old &amp; plain</p><svg><svg><text>inner old</text></svg><text>outer old</text></svg></section>"
+    new = old.replace("old", "new")
+    deleted, inserted = deck_review.word_changes(old, new)
+    marked = deck_review.mark_words(
+        new, inserted, "ins", deck_review.struck_before(old, new)
+    )
+    assert (
+        "<svg><svg><text>inner new</text></svg><text>outer new</text></svg>" in marked
+    )
+    assert (
+        '<del class="dr-live">old</del> <ins class="dr-live">new</ins> &amp; plain'
+        in marked
+    )
+
+
+def test_nested_speaker_notes_do_not_change_visible_slide(tmp_path):
+    old_doc = _deck(
+        [
+            SLIDE.replace(
+                "</section>",
+                '<aside class="notes"><aside>nested old</aside>old tail</aside></section>',
+            )
+        ]
+    )
+    new_doc = old_doc.replace("old", "new")
+    files, old, new = _static_files(tmp_path, old_doc, new_doc)
+    rows, _ = deck_review.live_rows(
+        old, new, {0: 0}, lambda a, b: files.same_static("d/deck.html", a, b)
+    )
+    assert rows == [("unchanged", 0, 0)]

@@ -1957,7 +1957,16 @@ def test_scaffold_quarto_config_uses_the_managed_asta_theme() -> None:
         assert text.count("    css:") == 1  # a repeated key fails quarto render
     for name in ("light.scss", "dark.scss", "asta.css"):
         assert (assets / "_extensions/asta-theme" / name).is_file()
-        assert (root / "examples/workspace/_extensions/asta-theme" / name).is_file()
+    # Like a scaffolded workspace, the example fetches these during its build;
+    # a checkout must not supply a tracked extension or a development symlink.
+    tracked = subprocess.run(
+        ["git", "ls-files", "--", "examples/workspace/_extensions"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert not tracked.stdout.strip()
 
 
 @pytest.mark.parametrize(

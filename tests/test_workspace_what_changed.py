@@ -8,6 +8,7 @@ import signal
 import socket
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from http.client import HTTPConnection
@@ -16,6 +17,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 import pytest
+import yaml
 from click.testing import CliRunner
 
 from asta.commands import workspace as workspace_module
@@ -27,7 +29,8 @@ ASSETS = Path(__file__).parent.parent / "plugins/asta-tools/skills/workspace/ass
 # <main> Quarto emits, so the test needs neither make nor Quarto.
 FAKE_MAKE = """#!/usr/bin/env python3
 import pathlib, sys
-assert sys.argv[1:] == ["render"], sys.argv
+assert sys.argv[1:6] == ["-o", "workspace-assets", "-o", "workspace-viewers", "render"], sys.argv
+assert all(arg.startswith("ASTA_WORKSPACE_RENDER_") for arg in sys.argv[6:]), sys.argv
 paras = "".join(f"<p>{line}</p>" for line in open("index.qmd").read().splitlines())
 pathlib.Path("_site").mkdir(exist_ok=True)
 pathlib.Path("_site/index.html").write_text(
@@ -97,8 +100,11 @@ def test_highlights_edit_since_ref(project: Path) -> None:
         workspace, ["what-changed", "last-read", "--project", str(project)]
     )
     assert result.exit_code == 0, result.output
-    assert "Copying " in result.stderr and "Git-visible render inputs" in result.stderr
-    assert "Copying " not in result.stdout
+    assert (
+        "Overlaying " in result.stderr
+        and "changed/untracked render inputs" in result.stderr
+    )
+    assert "Overlaying " not in result.stdout
     page = (project / ".asta/cache/what-changed/what-changed.html").read_text()
     assert "Changes since last-read" in page
     assert "<ins" in page and "newly drafted paragraph" in page
@@ -163,107 +169,37 @@ def test_baseline_missing_ignored_input_reports_build_stderr(
     assert_single_worktree(project)
 
 
-@pytest.mark.parametrize("phase", ["success", "render", "script", "checkout"])
-def test_locked_baseline_remains_recoverable(
-    project: Path, monkeypatch: pytest.MonkeyPatch, phase: str
-) -> None:
+@pytest.mark.parametrize("side", ["baseline", "working"])
+@pytest.mark.parametrize("outcome", ["success", "render", "clone"])
+def test_private_clones_leave_source_git_untouched(project, monkeypatch, side, outcome):
     original = workspace_module._git
-    baseline = None
+    clones = []
+    registration = project / ".git/worktrees"
 
-    def lock_baseline(directory, *args):
-        nonlocal baseline
+    def observe(directory, *args):
+        assert args[:2] != ("worktree", "add")
         result = original(directory, *args)
-        if args[:2] == ("worktree", "add") and "--no-checkout" not in args:
-            assert result.returncode == 0
-            baseline = Path(args[3])
-            git(project, "worktree", "lock", str(baseline))
-            if phase == "checkout":
-                return subprocess.CompletedProcess(
-                    args, 1, stderr="Checkout failed after registration"
-                )
+        if args[0] == "clone":
+            clone = Path(args[-1])
+            clones.append(clone)
+            assert (clone / ".git").is_dir()
+            if clone.name == side and outcome == "clone":
+                return subprocess.CompletedProcess(args, 1, stderr="Clone failed")
         return result
 
-    monkeypatch.setattr(workspace_module, "_git", lock_baseline)
-    if phase == "render":
-        Path(shutil.which("make")).write_text(
-            "#!/usr/bin/env python3\nraise SystemExit(2)\n"
-        )
-    elif phase == "script":
-        (project / "scripts/what-changed.py").write_text("raise SystemExit(2)\n")
-    try:
-        result = CliRunner().invoke(
-            workspace, ["what-changed", "last-read", "--project", str(project)]
-        )
-        assert result.exit_code == (0 if phase == "success" else 1), result.output
-        assert baseline is not None
-        assert (
-            f"Warning: baseline worktree cleanup failed for {baseline}" in result.output
-        )
-        assert baseline.is_dir()
-        assert (baseline / "index.qmd").read_text() == "The baseline finding holds.\n"
-        git(baseline, "status", "--porcelain")
-        worktrees = subprocess.check_output(
-            ["git", "-C", str(project), "worktree", "list", "--porcelain"], text=True
-        )
-        assert f"worktree {baseline}\n" in worktrees and "locked\n" in worktrees
-        if phase == "success":
-            assert (project / ".asta/cache/what-changed/what-changed.html").is_file()
-        else:
-            assert "Wrote " not in result.output
-    finally:
-        if baseline is not None:
-            git(project, "worktree", "unlock", str(baseline))
-            git(project, "worktree", "remove", "--force", str(baseline))
-            if baseline.parent.exists():
-                baseline.parent.rmdir()
-    assert_single_worktree(project)
-
-
-@pytest.mark.parametrize("phase", ["success", "render", "setup"])
-def test_locked_working_copy_remains_recoverable(project: Path, monkeypatch, phase):
-    original = workspace_module._git
-    working = None
-
-    def lock_working(directory, *args):
-        nonlocal working
-        result = original(directory, *args)
-        if args[:2] == ("worktree", "add") and "--no-checkout" in args:
-            assert result.returncode == 0
-            working = Path(args[4])
-            git(project, "worktree", "lock", str(working))
-            if phase == "setup":
-                return subprocess.CompletedProcess(
-                    args, 1, stderr="Setup failed after registration"
-                )
-        return result
-
-    monkeypatch.setattr(workspace_module, "_git", lock_working)
-    if phase == "render":
-        Path(shutil.which("make")).write_text(
+    monkeypatch.setattr(workspace_module, "_git", observe)
+    if outcome == "render":
+        make = Path(shutil.which("make"))
+        make.write_text(
             "#!/usr/bin/env python3\nimport pathlib\n"
-            "if pathlib.Path.cwd().name == 'working': raise SystemExit(2)\n" + FAKE_MAKE
+            f"if pathlib.Path.cwd().name == {side!r}: raise SystemExit(2)\n" + FAKE_MAKE
         )
-    try:
-        result = CliRunner().invoke(
-            workspace, ["what-changed", "last-read", "--project", str(project)]
-        )
-        assert result.exit_code == (0 if phase == "success" else 1), result.output
-        assert working is not None
-        assert (
-            f"Warning: working worktree cleanup failed for {working}" in result.output
-        )
-        assert working.is_dir() and (working / ".git").is_file()
-        git(working, "status", "--porcelain")
-        worktrees = subprocess.check_output(
-            ["git", "-C", str(project), "worktree", "list", "--porcelain"], text=True
-        )
-        assert f"worktree {working}\n" in worktrees and "locked\n" in worktrees
-        assert not (working.parent / "baseline").exists()
-    finally:
-        if working is not None:
-            git(project, "worktree", "unlock", str(working))
-            git(project, "worktree", "remove", "--force", str(working))
-            working.parent.rmdir()
+    result = CliRunner().invoke(
+        workspace, ["what-changed", "last-read", "--project", str(project)]
+    )
+    assert result.exit_code == (0 if outcome == "success" else 1), result.output
+    assert clones and all(not clone.parent.exists() for clone in clones)
+    assert not registration.exists()
     assert_single_worktree(project)
 
 
@@ -292,12 +228,12 @@ def test_subdirectory_uses_git_prefix_with_repository_alias(project: Path, monke
     monkeypatch.setattr(workspace_module, "_git", alias_toplevel)
     original_render = workspace_module.render_site
 
-    def render(directory, label):
+    def render(directory, label, pages=None):
         if label == "the working tree":
             assert (
                 directory / ".asta/cache/workspace.mk"
             ).read_text() == "Cached build rules"
-        return original_render(directory, label)
+        return original_render(directory, label, pages)
 
     monkeypatch.setattr(workspace_module, "render_site", render)
     result = CliRunner().invoke(
@@ -750,6 +686,26 @@ def test_working_copy_preserves_spaces_in_repository_path(project: Path) -> None
     )
 
 
+def test_working_copy_overlays_only_changes(project: Path, tmp_path: Path, monkeypatch):
+    """HEAD supplies unchanged files; copying is limited to the working edit."""
+    import shutil
+
+    unchanged = (project / "scripts/what-changed.py").read_bytes()
+    (project / "index.qmd").write_text("Changed page")
+    copied = []
+    original = shutil.copy2
+
+    def record(source, target, **kwargs):
+        copied.append(Path(source).relative_to(project).as_posix())
+        return original(source, target, **kwargs)
+
+    monkeypatch.setattr(workspace_module.shutil, "copy2", record)
+    destination = workspace_module.working_copy(project, "", tmp_path / "overlay")
+    assert (destination / "scripts/what-changed.py").read_bytes() == unchanged
+    assert (destination / "index.qmd").read_text() == "Changed page"
+    assert copied == ["index.qmd"]
+
+
 @pytest.mark.parametrize("linked_worktree", [False, True])
 def test_working_copy_keeps_render_inputs_and_git_index(
     project: Path, tmp_path_factory, linked_worktree: bool
@@ -857,32 +813,20 @@ def test_working_copy_preserves_staged_changes(
             git(project, "worktree", "remove", "--force", str(project))
 
 
-def test_both_renders_find_the_main_checkout(project: Path) -> None:
-    # Renders that locate an ignored virtualenv via the main checkout, as
-    # `git rev-parse --git-common-dir` scripts do, must work in both copies.
-    (project / ".gitignore").write_text("_site/\n.asta/cache/\n.venv/\n")
-    git(project, "commit", "-qam", "ignore venv")
-    git(project, "tag", "-f", "last-read")
-    (project / ".venv").mkdir()
-    (project / ".venv/marker").write_text("main venv")
-    make = Path(shutil.which("make"))
-    make.write_text(
-        make.read_text() + "import subprocess\n"
-        "common = subprocess.check_output(\n"
-        "    ['git', 'rev-parse', '--path-format=absolute', '--git-common-dir'],\n"
-        "    text=True,\n"
-        ").strip()\n"
-        "assert (pathlib.Path(common).parent / '.venv/marker').is_file(), common\n"
-    )
-    (project / "index.qmd").write_text("A finding that uses the venv.\n")
+def test_both_renders_are_parallel_private_clones(project, monkeypatch):
+    original = workspace_module.render_site
+    barrier = threading.Barrier(2, timeout=10)
+
+    def render(directory, label, pages=None):
+        assert (directory / ".git").is_dir()
+        barrier.wait()
+        return original(directory, label, pages)
+
+    monkeypatch.setattr(workspace_module, "render_site", render)
     result = CliRunner().invoke(
         workspace, ["what-changed", "last-read", "--project", str(project)]
     )
     assert result.exit_code == 0, result.output
-    assert (
-        "uses the venv"
-        in (project / workspace_module.COMPARISON_DIR / "what-changed.html").read_text()
-    )
     assert_single_worktree(project)
 
 
@@ -928,7 +872,7 @@ def test_render_uses_staged_page_list(project: Path, intent_to_add: bool) -> Non
     )
 
 
-@pytest.mark.parametrize("phase", ["worktree", "ls-files", "update-index"])
+@pytest.mark.parametrize("phase", ["clone", "ls-files", "update-index"])
 def test_failed_working_copy_preserves_report_and_cleans_up(
     project: Path, monkeypatch, phase: str
 ) -> None:
@@ -940,12 +884,12 @@ def test_failed_working_copy_preserves_report_and_cleans_up(
 
     def fail_copy(directory, *args):
         nonlocal temporary
-        copying = "--no-checkout" in args
+        copying = args[0] == "clone" and Path(args[-1]).name == "working"
         if copying:
-            temporary = Path(args[-2]).parent
+            temporary = Path(args[-1]).parent
         if (
             args[0] == phase
-            and (copying or phase != "worktree")
+            and (copying or phase != "clone")
             and (phase != "ls-files" or "--stage" in args)
         ):
             return subprocess.CompletedProcess(args, 1, stderr="Copy setup failed")
@@ -1200,7 +1144,7 @@ def test_failed_render_does_not_repeat_streamed_log(project: Path) -> None:
     assert result.exit_code != 0
     assert "'make render' failed for last-read" in result.output
     for i in range(100):
-        assert result.stderr.count(f"build-diagnostic-{i:03d}") == 1
+        assert result.stderr.count(f"build-diagnostic-{i:03d}") == 2
 
 
 @pytest.mark.parametrize("method", ["GET", "HEAD"])
@@ -1319,12 +1263,21 @@ def test_termination_cleans_comparison_and_children(project: Path, phase: str) -
     owned = project / workspace_module.COMPARISON_DIR
     owned.mkdir(parents=True)
     (owned / "what-changed.html").write_text("Previous report")
+    # Both sides render at once, so each blocked child records its own pid.
     ready = project / "child-ready"
+    ready.mkdir()
     child_code = (
         "import os, pathlib, time\n"
-        f"pathlib.Path({str(ready)!r}).write_text(str(os.getpid()))\n"
+        f"ready = pathlib.Path({str(ready)!r})\n"
+        "partial = ready / f'{os.getpid()}.partial'\n"
+        "partial.write_text(str(os.getpid()))\n"
+        "os.replace(partial, ready / str(os.getpid()))\n"
         "time.sleep(60)\n"
     )
+
+    def children() -> list[int]:
+        return [int(path.name) for path in ready.iterdir() if path.name.isdigit()]
+
     if phase == "render":
         Path(shutil.which("make")).write_text("#!/usr/bin/env python3\n" + child_code)
     else:
@@ -1353,27 +1306,22 @@ def test_termination_cleans_comparison_and_children(project: Path, phase: str) -
         stderr=subprocess.PIPE,
         text=True,
     )
-    child = None
     try:
         deadline = time.monotonic() + 10
-        while (
-            not ready.exists()
-            and process.poll() is None
-            and time.monotonic() < deadline
-        ):
+        while not children() and process.poll() is None and time.monotonic() < deadline:
             time.sleep(0.02)
-        assert ready.exists(), "Comparison never reached the blocked child"
-        child = int(ready.read_text())
+        assert children(), "Comparison never reached the blocked child"
         process.send_signal(signal.SIGTERM)
         stdout, stderr = process.communicate(timeout=10)
         assert process.returncode == 128 + signal.SIGTERM, (stdout, stderr)
         assert (owned / "what-changed.html").read_text() == "Previous report"
         assert not list(owned.parent.glob(".what-changed-*"))
         assert_single_worktree(project)
-        with pytest.raises(ProcessLookupError):
-            os.kill(child, 0)
+        for child in children():
+            with pytest.raises(ProcessLookupError):
+                os.kill(child, 0)
     finally:
-        if child is not None:
+        for child in children():
             try:
                 os.kill(child, signal.SIGKILL)
             except ProcessLookupError:
@@ -1390,7 +1338,7 @@ def test_failed_checkout_removes_partial_registration(
 
     def failed_add(directory, *args):
         result = original(directory, *args)
-        if args[:2] == ("worktree", "add"):
+        if args[0] == "clone":
             assert result.returncode == 0
             return subprocess.CompletedProcess(
                 args, 1, stderr="Checkout failed after registration"
@@ -1483,3 +1431,487 @@ def test_site_with_deck_renders_slides_beside_the_page(project: Path, deck) -> N
     assert ("--render-decks=" in page) is deck
     assert (owned / "what-changed-decks/slide-1.png").is_file() is deck
     assert_single_worktree(project)
+
+
+THEMED = (
+    '<html><head><link href="site_libs/bootstrap/bootstrap.min.css" '
+    'rel="stylesheet" id="quarto-bootstrap"></head><body>{}</body></html>'
+)
+
+
+REDIRECT = (
+    "<html><head><title>Redirect to {0}</title>"
+    '<meta http-equiv="refresh" content="0;url={0}"></head></html>'
+)
+
+
+@pytest.mark.parametrize("home_redirects", [False, True])
+@pytest.mark.parametrize("preview", [None, "deck-only", "redirect", "unstyled", "site"])
+def test_partial_render_keeps_site_theme_without_a_site_page(
+    project: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    preview: str | None,
+    home_redirects: bool,
+) -> None:
+    """A slide-only edit must still read like the site (no browser-default page)."""
+    (project / "_metadata.yml").write_text("format: revealjs\n")
+    (project / "slides.qmd").write_text("Slide one.\n")
+    if home_redirects:
+        # The home page only redirects, so the theme must come from another page.
+        (project / "index.qmd").write_text(
+            '<meta http-equiv="refresh" content="0;url=about.html">\n'
+        )
+        (project / "about.qmd").write_text("About.\n")
+        git(project, "add", "index.qmd", "about.qmd")
+    git(project, "add", "slides.qmd", "_metadata.yml")
+    git(project, "commit", "-qm", "deck")
+    git(project, "tag", "-f", "last-read")
+    (project / "slides.qmd").write_text("Slide one, edited.\n")
+    if preview:
+        site = project / "_site"
+        (site / "site_libs/bootstrap").mkdir(parents=True)
+        (site / "site_libs/bootstrap/bootstrap.min.css").write_text("body{}")
+        (site / "slides.html").write_text('<div class="reveal">Slide one.</div>')
+        if preview == "site":
+            (site / "index.html").write_text(THEMED.format("Home"))
+        elif preview == "redirect":
+            # A preview of only the deck: Quarto's redirect home, no stylesheets.
+            (site / "index.html").write_text(REDIRECT.format("slides.html"))
+        elif preview == "unstyled":
+            # A page linking stylesheets this partial preview never built.
+            (site / "notes.html").write_text(
+                THEMED.format("Notes").replace("bootstrap.min", "missing")
+            )
+    rendered = []
+
+    def render(directory, label, pages=None):
+        rendered.append((label, pages))
+        site = directory / "_site"
+        site.mkdir()
+        for name in pages or []:
+            text = (directory / name).read_text()
+            if "http-equiv" in text:
+                (site / "index.html").write_text(REDIRECT.format("about.html"))
+            elif name in ("index.qmd", "about.qmd", workspace_module.THEME_PAGE):
+                (site / "site_libs/bootstrap").mkdir(parents=True, exist_ok=True)
+                (site / "site_libs/bootstrap/bootstrap.min.css").write_text("b{}")
+                html = Path(name).with_suffix(".html")
+                (site / html).write_text(
+                    THEMED.format("Home" if "dex" in name else text)
+                )
+            else:
+                (site / Path(name).with_suffix(".html")).write_text(f"<p>{text}</p>")
+        if not (site / "index.html").exists():
+            # Quarto writes a redirect home page for a site rendered without one.
+            (site / "index.html").write_text(
+                "<html><head><title>Redirect to slides.html</title>"
+                '<meta http-equiv="refresh" content="0;url=slides.html"></head></html>'
+            )
+        return site
+
+    monkeypatch.setattr(workspace_module, "render_site", render)
+    monkeypatch.setattr(
+        workspace_module, "_changed_comparison_pages", lambda *_: ["slides.qmd"]
+    )
+    result = CliRunner().invoke(
+        workspace, ["what-changed", "last-read", "--project", str(project)]
+    )
+    assert result.exit_code == 0, result.output
+    snapshot = project / workspace_module.COMPARISON_DIR
+    page = (snapshot / "what-changed.html").read_text()
+    assert 'href="site_libs/bootstrap/bootstrap.min.css"' in page
+    assert (snapshot / "site_libs/bootstrap/bootstrap.min.css").is_file()
+    assert "<ins" in page and "edited" in page
+    # The home page only supplies the theme; it is never reported as new.
+    assert "Home" not in page and ">index.html<" not in page
+    assert "About" not in page and ">about.html<" not in page
+    assert "Redirect" not in page and "removed</span>" not in page
+    assert "unstyled" not in result.stderr
+    # Only the tiny look page joins the deck, in the same build on both
+    # sides; no project page (home, redirect or other) is rendered for it.
+    expected = ["slides.qmd", workspace_module.THEME_PAGE]
+    assert dict(rendered)["the working tree"] == expected
+    assert dict(rendered)["last-read"] == expected
+
+
+def test_look_page_joins_a_project_render_list(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A project listing its pages in project.render still gets the look page."""
+    (project / "_metadata.yml").write_text("format: revealjs\n")
+    (project / "slides.qmd").write_text("Slide one.\n")
+    config = "# kept\nproject:\n  type: website\n  render:\n    - slides.qmd\n"
+    (project / "_quarto.yml").write_text(config)
+    git(project, "add", "slides.qmd", "_metadata.yml", "_quarto.yml")
+    git(project, "commit", "-qm", "deck")
+    git(project, "tag", "-f", "last-read")
+    (project / "slides.qmd").write_text("Slide one, edited.\n")
+    rendered = []
+
+    def inputs(directory):
+        # As `quarto inspect` lists them: only the render list.
+        listed = yaml.safe_load((directory / "_quarto.yml").read_text())
+        return {(directory / n).resolve() for n in listed["project"]["render"]}
+
+    def render(directory, label, pages=None):
+        listed = yaml.safe_load((directory / "_quarto.yml").read_text())
+        # Quarto refuses a page outside project.render with --output-dir.
+        assert set(pages) <= set(listed["project"]["render"])
+        rendered.append((label, pages))
+        site = directory / "_site"
+        site.mkdir()
+        for name in pages:
+            if name == workspace_module.THEME_PAGE:
+                (site / "site_libs/bootstrap").mkdir(parents=True)
+                (site / "site_libs/bootstrap/bootstrap.min.css").write_text("b{}")
+                (site / Path(name).with_suffix(".html")).write_text(
+                    THEMED.format("Look")
+                )
+            else:
+                text = (directory / name).read_text()
+                (site / Path(name).with_suffix(".html")).write_text(
+                    f'<div class="reveal">{text}</div>'
+                )
+        return site
+
+    monkeypatch.setattr(workspace_module, "render_site", render)
+    monkeypatch.setattr(workspace_module, "_comparison_inputs", inputs)
+    monkeypatch.setattr(
+        workspace_module, "_changed_comparison_pages", lambda *_: ["slides.qmd"]
+    )
+    result = CliRunner().invoke(
+        workspace, ["what-changed", "last-read", "--project", str(project)]
+    )
+    assert result.exit_code == 0, result.output
+    expected = ["slides.qmd", workspace_module.THEME_PAGE]
+    assert dict(rendered) == {"the working tree": expected, "last-read": expected}
+    snapshot = project / workspace_module.COMPARISON_DIR
+    page = (snapshot / "what-changed.html").read_text()
+    assert 'href="site_libs/bootstrap/bootstrap.min.css"' in page
+    assert "unstyled" not in result.stderr
+    assert (project / "_quarto.yml").read_text() == config
+
+
+def test_changed_home_page_supplies_the_theme_beside_a_deck(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When the home page itself changed, its rendered page themes the report."""
+    (project / "_metadata.yml").write_text("format: revealjs\n")
+    (project / "slides.qmd").write_text("Slide one.\n")
+    (project / "index.qmd").write_text("Home.\n")
+    git(project, "add", "slides.qmd", "index.qmd", "_metadata.yml")
+    git(project, "commit", "-qm", "deck and home")
+    git(project, "tag", "-f", "last-read")
+    (project / "slides.qmd").write_text("Slide one, edited.\n")
+    (project / "index.qmd").write_text("Home, edited.\n")
+    rendered = []
+
+    def render(directory, label, pages=None):
+        rendered.append((label, pages))
+        site = directory / "_site"
+        site.mkdir()
+        (site / "site_libs/bootstrap").mkdir(parents=True)
+        (site / "site_libs/bootstrap/bootstrap.min.css").write_text("b{}")
+        for name in pages or []:
+            text = (directory / name).read_text()
+            body = THEMED.format(text) if name == "index.qmd" else f"<p>{text}</p>"
+            (site / Path(name).with_suffix(".html")).write_text(body)
+        return site
+
+    monkeypatch.setattr(workspace_module, "render_site", render)
+    monkeypatch.setattr(
+        workspace_module,
+        "_changed_comparison_pages",
+        lambda *_: ["slides.qmd", "index.qmd"],
+    )
+    result = CliRunner().invoke(
+        workspace, ["what-changed", "last-read", "--project", str(project)]
+    )
+    assert result.exit_code == 0, result.output
+    snapshot = project / workspace_module.COMPARISON_DIR
+    page = (snapshot / "what-changed.html").read_text()
+    assert 'href="site_libs/bootstrap/bootstrap.min.css"' in page
+    assert (snapshot / "site_libs/bootstrap/bootstrap.min.css").is_file()
+    assert "<ins" in page and "Home" in page
+    # Under a root deck format the home page isn't surely ordinary, so the
+    # look page joins it; either supplies the theme.
+    assert dict(rendered)["the working tree"] == [
+        "slides.qmd",
+        "index.qmd",
+        workspace_module.THEME_PAGE,
+    ]
+
+
+def test_deck_only_edit_renders_the_theme_and_cleans_up(
+    project: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path_factory: pytest.TempPathFactory,
+) -> None:
+    """The temporary theme folder is removed with the comparison directory."""
+    temporary = tmp_path_factory.mktemp("comparisons")
+    monkeypatch.setattr(tempfile, "tempdir", str(temporary))
+    (project / "_metadata.yml").write_text("format: revealjs\n")
+    (project / "slides.qmd").write_text("Slide one.\n")
+    (project / "index.qmd").write_text("Home.\n")
+    git(project, "add", "slides.qmd", "index.qmd", "_metadata.yml")
+    git(project, "commit", "-qm", "deck")
+    git(project, "tag", "-f", "last-read")
+    rendered = []
+
+    def render(directory, label, pages=None):
+        rendered.append((label, pages))
+        site = directory / "_site"
+        site.mkdir()
+        for name in pages or []:
+            text = (directory / name).read_text()
+            if name in ("index.qmd", workspace_module.THEME_PAGE):
+                (site / "site_libs/bootstrap").mkdir(parents=True, exist_ok=True)
+                (site / "site_libs/bootstrap/bootstrap.min.css").write_text("b{}")
+                (site / "index.html").write_text(THEMED.format("Home"))
+            else:
+                (site / Path(name).with_suffix(".html")).write_text(f"<p>{text}</p>")
+        return site
+
+    monkeypatch.setattr(workspace_module, "render_site", render)
+    monkeypatch.setattr(
+        workspace_module, "_changed_comparison_pages", lambda *_: ["slides.qmd"]
+    )
+    snapshot = project / workspace_module.COMPARISON_DIR
+    for edit in ("first", "second"):
+        rendered.clear()
+        (project / "slides.qmd").write_text(f"Slide one, {edit}.\n")
+        result = CliRunner().invoke(
+            workspace, ["what-changed", "last-read", "--project", str(project)]
+        )
+        assert result.exit_code == 0, result.output
+        assert "cleanup failed" not in result.stderr
+        assert not list(temporary.glob("asta-what-changed-*"))
+        page = (snapshot / "what-changed.html").read_text()
+        assert 'href="site_libs/bootstrap/bootstrap.min.css"' in page
+        assert edit in page and "Home" not in page
+        # Nothing is kept: every run adds the one theme page to both builds.
+        assert dict(rendered)["the working tree"] == [
+            "slides.qmd",
+            workspace_module.THEME_PAGE,
+        ]
+        assert dict(rendered)["last-read"] == [
+            "slides.qmd",
+            workspace_module.THEME_PAGE,
+        ]
+        assert (snapshot / "site_libs/bootstrap/bootstrap.min.css").is_file()
+    assert not (project / ".asta/cache/what-changed-theme").exists()
+    assert_single_worktree(project)
+
+
+def test_timings_report_each_step(project: Path) -> None:
+    (project / "index.qmd").write_text("A timed paragraph.\n")
+    result = CliRunner().invoke(
+        workspace,
+        ["what-changed", "last-read", "--project", str(project), "--timings"],
+    )
+    assert result.exit_code == 0, result.output
+    log = result.output[result.output.index("What changed timings:") :]
+    for step in (
+        "check out baseline clone",
+        "find changed pages",
+        "copy working tree",
+        "render before and after (parallel)",
+        "stage site copy",
+        "compare pages and picture slides",
+        "publish snapshot",
+        "other",
+        "total",
+    ):
+        assert re.search(rf"^  {re.escape(step)} +.*\d+\.\d\d s$", log, re.M), step
+
+
+def test_no_timings_without_flag(project: Path) -> None:
+    (project / "index.qmd").write_text("An untimed paragraph.\n")
+    result = CliRunner().invoke(
+        workspace, ["what-changed", "last-read", "--project", str(project)]
+    )
+    assert result.exit_code == 0, result.output
+    assert "What changed timings:" not in result.output
+
+
+def _fake_paper_scripts(project):
+    scripts = project / "scripts"
+    scripts.mkdir(parents=True)
+    (scripts / "paper-discovery.py").write_text(
+        "import json\n"
+        'print(json.dumps({"papers": ["paper"], "removed": ["old"], "warnings": []}))\n'
+    )
+    (scripts / "paper-preview.sh").write_text(
+        'out="_site/paper-previews/$2"; mkdir -p "$out"; printf %s "$1" > "$out/base"\n'
+        'printf \'{"changed":true,"diff":true}\\n\' > "$out/preview.json"\n'
+    )
+
+
+def test_local_paper_diff_built_when_tex_is_available(tmp_path, monkeypatch):
+    workspace = workspace_module
+    project = tmp_path / "project"
+    _fake_paper_scripts(project)
+    site = project / "_site"
+    site.mkdir()
+    monkeypatch.setattr(workspace.shutil, "which", lambda name: f"/usr/bin/{name}")
+
+    workspace._paper_previews(project, "abc123", site)
+
+    previews = site / "paper-previews"
+    assert json.loads((previews / "paper/preview.json").read_text())["diff"] is True
+    assert (previews / "paper/base").read_text() == "abc123"
+    assert json.loads((previews / "old/preview.json").read_text()) == {
+        "changed": True,
+        "removed": True,
+    }
+
+
+def test_working_tree_snapshot_moves_head_to_uncommitted_edit(tmp_path):
+    workspace = workspace_module
+    project = tmp_path / "project"
+    project.mkdir()
+    git = ["git", "-C", str(project), "-c", "user.name=t", "-c", "user.email=t@t"]
+    subprocess.run([*git, "init", "-q"], check=True)
+    (project / "main.tex").write_text("old\n")
+    subprocess.run([*git, "add", "main.tex"], check=True)
+    subprocess.run([*git, "commit", "-qm", "base"], check=True)
+    base = subprocess.check_output([*git, "rev-parse", "HEAD"], text=True).strip()
+    (project / "main.tex").write_text("new\n")
+    (project / "intro.tex").write_text("added\n")
+
+    assert workspace._commit_working_tree(project)
+
+    changed = subprocess.check_output(
+        [*git, "diff", "--name-only", base, "HEAD"], text=True
+    ).split()
+    assert sorted(changed) == ["intro.tex", "main.tex"]
+    parent = subprocess.check_output([*git, "rev-parse", "HEAD^"], text=True)
+    assert parent.strip() == base
+
+
+def test_local_paper_diff_skipped_with_note_without_tex(tmp_path, monkeypatch, capsys):
+    workspace = workspace_module
+    project = tmp_path / "project"
+    _fake_paper_scripts(project)
+    site = project / "_site"
+    site.mkdir()
+    monkeypatch.setattr(workspace.shutil, "which", lambda name: None)
+
+    workspace._paper_previews(project, "abc123", site)
+
+    assert not (site / "paper-previews").exists()
+    assert "paper diffs are skipped" in capsys.readouterr().err
+
+
+def test_files_quarto_does_not_render_never_reach_the_render(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A README or notes file changed beside a page is dropped before rendering."""
+    (project / "page.qmd").write_text("Page.\n")
+    (project / "README.md").write_text("Readme.\n")
+    git(project, "add", "page.qmd", "README.md")
+    git(project, "commit", "-qm", "base")
+    git(project, "tag", "-f", "last-read")
+    (project / "page.qmd").write_text("Page, edited.\n")
+    (project / "README.md").write_text("Readme, edited.\n")
+    rendered = []
+
+    def render(directory, label, pages=None):
+        rendered.append((label, pages))
+        assert pages is not None and "README.md" not in pages
+        site = directory / "_site"
+        site.mkdir(exist_ok=True)
+        for name in pages:
+            html = site / Path(name).with_suffix(".html")
+            html.write_text(f"<p>{(directory / name).read_text()}</p>")
+        return site
+
+    def inputs(directory):
+        # As `quarto inspect` reports it: README.md is not a project input.
+        return {p.resolve() for p in directory.glob("*.qmd") if p.name != "README.md"}
+
+    monkeypatch.setattr(workspace_module, "render_site", render)
+    monkeypatch.setattr(workspace_module, "_comparison_inputs", inputs)
+    monkeypatch.setattr(
+        workspace_module,
+        "_changed_comparison_pages",
+        lambda *_: ["README.md", "page.qmd"],
+    )
+    result = CliRunner().invoke(
+        workspace, ["what-changed", "last-read", "--project", str(project)]
+    )
+    assert result.exit_code == 0, result.output
+    assert dict(rendered)["the working tree"] == ["page.qmd"]
+    assert "README.md" not in dict(rendered)["last-read"]
+    page = (project / workspace_module.COMPARISON_DIR / "what-changed.html").read_text()
+    assert "edited" in page and "Readme" not in page
+
+
+def test_quarto_rendered_keeps_pages_when_inspect_is_unavailable(tmp_path: Path):
+    for name in ("page.qmd", "README.md"):
+        (tmp_path / name).write_text("x\n")
+    names = ["page.qmd", "README.md", "deleted.qmd"]
+    rendered = workspace_module._quarto_rendered
+    assert rendered(tmp_path, names, {(tmp_path / "page.qmd").resolve()}) == [
+        "page.qmd"
+    ]
+    assert rendered(tmp_path, names, None) == ["page.qmd", "README.md"]
+
+
+def test_copy_ignored_render_inputs_fills_fresh_copies(
+    project: Path, tmp_path: Path
+) -> None:
+    """A scaffolded workspace's ignored make rules and extensions reach each copy."""
+    (project / ".gitignore").write_text(
+        "_extensions/asta-theme/\n_extensions/evidence/\n.asta/cache/\n.env*\n"
+    )
+    theme = project / "_extensions/asta-theme"
+    theme.mkdir(parents=True)
+    (theme / "light.scss").write_text("/* theme */")
+    (theme / ".env").write_text("SECRET=1")
+    (project / "_extensions/evidence").mkdir()
+    (project / "_extensions/evidence/snippet.lua").write_text("-- filter")
+    cache = project / ".asta/cache"
+    (cache / "what-changed").mkdir(parents=True)
+    (cache / "what-changed/what-changed.html").write_text("Old report")
+    (cache / "workspace.mk").write_text("Cached rules")
+    destination = tmp_path / "baseline"
+    (destination / "_extensions/evidence").mkdir(parents=True)
+    (destination / "_extensions/evidence/snippet.lua").write_text("-- tracked")
+    workspace_module.copy_ignored_render_inputs(project, destination)
+    assert (destination / ".asta/cache/workspace.mk").read_text() == "Cached rules"
+    assert (destination / "_extensions/asta-theme/light.scss").exists()
+    assert not (destination / "_extensions/asta-theme/.env").exists()
+    assert not (destination / ".asta/cache/what-changed").exists()
+    # A file the copy already has (tracked at its commit) is not overwritten.
+    assert (destination / "_extensions/evidence/snippet.lua").read_text() == (
+        "-- tracked"
+    )
+
+
+@pytest.mark.parametrize("source_kind", ["detached", "linked"])
+def test_working_copy_matches_source_head_in_every_checkout(tmp_path, source_kind):
+    source = tmp_path / "repository"
+    source.mkdir()
+    git(source, "init", "-b", "main")
+    (source / "index.qmd").write_text("Base")
+    git(source, "add", "index.qmd")
+    git(source, "commit", "-m", "Base")
+    git(source, "checkout", "-b", "feature")
+    (source / "index.qmd").write_text("Feature")
+    git(source, "add", "index.qmd")
+    git(source, "commit", "-m", "Feature")
+    if source_kind == "linked":
+        linked = tmp_path / "linked"
+        git(source, "worktree", "add", "--detach", str(linked), "HEAD")
+        source = linked
+    else:
+        git(source, "checkout", "--detach")
+    expected = workspace_module._git(source, "rev-parse", "HEAD").stdout.strip()
+    destination = tmp_path / "copy"
+    workspace_module.working_copy(source, "", destination)
+    assert (
+        workspace_module._git(destination, "rev-parse", "HEAD").stdout.strip()
+        == expected
+    )
+    assert (destination / "index.qmd").read_text() == "Feature"

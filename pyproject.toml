@@ -55,3 +55,5 @@ filterwarnings = [
 [tool.hatch.build.targets.wheel.force-include]
 "plugins/asta-tools/skills/workspace/assets/what-changed.py" = "asta/workspace_assets/what-changed.py"
 "plugins/asta-tools/skills/workspace/assets/deck-review.py" = "asta/workspace_assets/deck-review.py"
+"plugins/asta-tools/skills/workspace/assets/paper-discovery.py" = "asta/workspace_assets/paper-discovery.py"
+"plugins/asta-tools/skills/workspace/assets/paper-preview.sh" = "asta/workspace_assets/paper-preview.sh"

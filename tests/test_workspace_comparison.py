@@ -1,10 +1,7 @@
 """The CLI owns both built-site comparisons and optional browser provisioning."""
 
-import os
 import subprocess
 import sys
-import tempfile
-from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
@@ -57,49 +54,13 @@ def test_prose_never_provisions_browser(monkeypatch):
     assert command == [sys.executable]
 
 
-def test_deck_browser_is_pinned_and_cached(tmp_path, monkeypatch):
-    calls = []
+def test_decks_never_provision_a_browser(monkeypatch):
+    def unexpected(*args, **kwargs):
+        pytest.fail("live decks must not run uv or install Playwright")
 
-    def run(command, **kwargs):
-        calls.append((command, kwargs))
-        return subprocess.CompletedProcess(command, 0, stdout=str(tmp_path))
-
-    monkeypatch.setattr(subprocess, "run", run)
-    command, env = module._comparison_python(True)
-    assert "playwright==1.64.1" in command
-    assert calls[1][0][-4:] == ["-m", "playwright", "install", "chromium"]
-    assert env["PLAYWRIGHT_BROWSERS_PATH"] == str(tmp_path / "asta-chromium")
-
-
-def test_relative_uv_cache_is_resolved_once_and_browser_shared(tmp_path, monkeypatch):
-    calls = []
-
-    def run(command, **kwargs):
-        calls.append((command, kwargs))
-        return subprocess.CompletedProcess(command, 0, stdout="")
-
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("UV_CACHE_DIR", ".uv-cache")
-    monkeypatch.delenv("PLAYWRIGHT_BROWSERS_PATH", raising=False)
-    monkeypatch.setattr(subprocess, "run", run)
-    _, env = module._comparison_python(True)
-    assert env["UV_CACHE_DIR"] == str(tmp_path / ".uv-cache")
-    assert env["PLAYWRIGHT_BROWSERS_PATH"] == str(
-        Path(tempfile.gettempdir()) / "asta-chromium"
-    )
-    assert all(
-        kwargs["env"]["UV_CACHE_DIR"] == env["UV_CACHE_DIR"] for _, kwargs in calls
-    )
-
-
-def test_unavailable_browser_dependencies_fall_back(monkeypatch, capsys):
-    def fail(*args, **kwargs):
-        raise OSError("cache unavailable")
-
-    monkeypatch.setattr(subprocess, "run", fail)
+    monkeypatch.setattr(subprocess, "run", unexpected)
     command, _ = module._comparison_python(True)
     assert command == [sys.executable]
-    assert "run outside it to see rendered slides" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize(
@@ -115,9 +76,7 @@ def test_ambiguous_inputs_fail(arguments):
     assert result.exit_code != 0
 
 
-def test_partial_selection_checks_both_projects_and_guards_recursive_probes(
-    tmp_path, monkeypatch
-):
+def test_partial_selection_needs_no_external_probes(tmp_path, monkeypatch):
     before = tmp_path / "before"
     after = tmp_path / "after"
     for root in (before, after):
@@ -128,21 +87,85 @@ def test_partial_selection_checks_both_projects_and_guards_recursive_probes(
         stdout = "index.qmd\0" if args[0] == "diff" else ""
         return subprocess.CompletedProcess(args, 0, stdout=stdout)
 
-    seen = []
+    monkeypatch.setattr(module, "_git", git)
+    monkeypatch.setattr(module, "_ls_files", lambda *args: [])
+    assert module._changed_comparison_pages(after, before, "main") == ["index.qmd"]
+
+
+def test_after_inspect_normalizes_render_inputs(tmp_path, monkeypatch):
+    calls = []
 
     def run(command, **kwargs):
-        seen.append(command[0])
-        if command[0] == "quarto":
-            return subprocess.CompletedProcess(
-                command, 0, stdout='{"files":{"input":["index.qmd"]}}'
-            )
-        shim = Path(kwargs["env"]["PATH"].split(os.pathsep)[0]) / "quarto"
-        assert shim.read_text() == "#!/bin/sh\nexit 0\n"
+        calls.append(command)
         return subprocess.CompletedProcess(
-            command, 0, stdout=": asta-workspace-render-page-selection-v1;"
+            command, 0, stdout='{"files":{"input":["page.qmd"]}}'
         )
 
-    monkeypatch.setattr(module, "_git", git)
     monkeypatch.setattr(subprocess, "run", run)
-    assert module._changed_comparison_pages(after, before, "main") == ["index.qmd"]
-    assert seen == ["quarto", "make", "quarto", "make"]
+    assert module._comparison_inputs(tmp_path) == {(tmp_path / "page.qmd").resolve()}
+    assert calls == [["quarto", "inspect", str(tmp_path)]]
+
+
+def test_failed_after_inspect_does_not_hide_pages(tmp_path, monkeypatch):
+    def fail(*args, **kwargs):
+        raise OSError("no quarto")
+
+    monkeypatch.setattr(subprocess, "run", fail)
+    assert module._comparison_inputs(tmp_path) is None
+
+
+def test_unrelated_page_edit_skips_paper_build_and_tool_checks(tmp_path, monkeypatch):
+    paper = tmp_path / "paper"
+    paper.mkdir()
+    (paper / "main.tex").write_text(
+        r"\documentclass{article}\begin{document}Paper\end{document}"
+    )
+    site = tmp_path / "_site"
+    site.mkdir()
+
+    def git(project, *args):
+        return subprocess.CompletedProcess(
+            args, 0, stdout="page.qmd\0" if args[0] == "diff" else ""
+        )
+
+    def discovery(command, **kwargs):
+        assert command[1].endswith("paper-discovery.py")
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout='{"papers":["paper"],"removed":[],"main_files":{"paper":"main.tex"}}',
+        )
+
+    def unexpected(*args):
+        pytest.fail("unrelated edit must not check TeX or snapshot/build the paper")
+
+    monkeypatch.setattr(module, "_git", git)
+    monkeypatch.setattr(module, "_ls_files", lambda *args: [])
+    monkeypatch.setattr(subprocess, "run", discovery)
+    monkeypatch.setattr(module.shutil, "which", unexpected)
+    monkeypatch.setattr(module, "_commit_working_tree", unexpected)
+    module._paper_previews(tmp_path, "base", site)
+    assert not (site / "paper-previews").exists()
+
+
+def test_nested_untracked_page_is_not_dropped_by_repository_prefix(
+    tmp_path, monkeypatch
+):
+    before, after = tmp_path / "before", tmp_path / "after"
+    for root in (before, after):
+        root.mkdir()
+        (root / "page.qmd").write_text("page")
+    (after / "new.qmd").write_text("new")
+
+    def git(root, *args):
+        return subprocess.CompletedProcess(
+            args, 0, stdout="site/page.qmd\0" if args[0] == "diff" else "site/"
+        )
+
+    def files(root, *args):
+        assert args == ("--full-name", "--others", "--exclude-standard")
+        return ["site/new.qmd"]
+
+    monkeypatch.setattr(module, "_git", git)
+    monkeypatch.setattr(module, "_ls_files", files)
+    assert module._changed_comparison_pages(after, before, "base") is None

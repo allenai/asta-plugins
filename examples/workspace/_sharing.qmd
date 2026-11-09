@@ -1,0 +1,2 @@
+Every page in this workspace is rendered from the repository, so a link to the
+preview always shows the version under review.

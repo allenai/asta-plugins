@@ -213,7 +213,10 @@ def test_stable_browser_check_succeeds_without_rendering_unrelated_prs():
     assert "head.repo.full_name == github.repository" in gate["env"]["RUN"]
     assert "github.actor != 'dependabot[bot]'" in gate["env"]["RUN"]
     for step in check["steps"][2:]:
-        assert step["if"] == "steps.browser.outputs.run == 'true'"
+        assert step["if"] in (
+            "steps.browser.outputs.run == 'true'",
+            "steps.browser.outputs.run == 'true' && github.event.pull_request.head.ref == 'example-demo-pr'",
+        )
 
 
 @pytest.mark.parametrize("has_preview", [False, True])
@@ -374,15 +377,116 @@ def test_cleanup_fails_when_stale_comment_removal_cannot_be_verified(tmp_path, f
         assert not log.exists()
 
 
-def test_example_has_no_demo_copy_and_links_a_real_pr_preview():
+def test_example_publishes_one_patch_through_existing_artifact_hook():
     example = ROOT / "examples/workspace"
     for name in ("build-demo.py", "refresh-demo.py", "demo-edits.patch"):
         assert not (example / "scripts" / name).exists()
     assert "demo" not in (example / "Makefile").read_text()
-    assert "artifact-command" not in load("example-preview")["jobs"]["docs"]["with"]
+    jobs = load("example-preview")["jobs"]
+    command = jobs["docs"]["with"]["artifact-command"]
+    assert command == jobs["docs-arm"]["with"]["artifact-command"]
+    assert "uv tool install --force ." in command
+    assert "build-workspace-demo.py examples/workspace/_site/demo" in command
+    assert "latest-tex" in command
+    assert (ROOT / "examples/workspace-demo.patch").is_file()
     build = load("example-workspace")["jobs"]["build"]
     assert not any("upload-pages-artifact" in s.get("uses", "") for s in build["steps"])
     for readme in (ROOT / "README.md", example / "README.md"):
         text = readme.read_text()
-        assert "asta-plugins/demo/" not in text
         assert "https://allenai.github.io/asta-plugins/pr-preview/pr-" in text
+
+
+def test_example_uses_current_scaffold_and_managed_inputs():
+    example = ROOT / "examples/workspace"
+    assets = ROOT / "plugins/asta-tools/skills/workspace/assets"
+    assert (
+        (example / "Makefile")
+        .read_text()
+        .startswith((assets / "Makefile.managed").read_text())
+    )
+    assert not (example / "workspace.mk").exists()
+    for path in ("_extensions/asta-theme/light.scss", ".asta/cache/workspace.mk"):
+        result = subprocess.run(
+            ["git", "check-ignore", "--no-index", path],
+            cwd=example,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stderr
+    source = yaml.load(
+        (example / ".github/workflows/docs.yml").read_text(), Loader=yaml.BaseLoader
+    )
+    assert source["jobs"]["docs"]["uses"].startswith(
+        "allenai/asta-plugins/.github/workflows/workspace-quarto-site.yml@"
+    )
+    build = load("example-workspace")["jobs"]["build"]
+    step = next(
+        s for s in build["steps"] if s.get("name") == "Build and validate the example"
+    )
+    assert build["env"]["ASTA_WORKSPACE_RESOLVED_SHA"] == "${{ github.sha }}"
+    assert step["run"].index("uv tool install") < step["run"].index("make check")
+    assert 'state["source_ref"] == os.environ["GITHUB_SHA"]' in step["run"]
+    assert "for extension in asta-theme evidence asta-slides" in step["run"]
+    assert "diff -r" in step["run"]
+
+
+def test_published_demo_reuses_local_content_assertions():
+    steps = load("example-preview")["jobs"]["check-preview"]["steps"]
+    check = next(
+        s
+        for s in steps
+        if s.get("name") == "Check every demo content type in the published preview"
+    )
+    assert "example-demo-pr" in check["if"]
+    assert "local-what-changed-demo.py --site" in check["run"]
+    assert "preview-site/pr-preview/pr-$PR_NUMBER" in check["run"]
+    local = load("example-workspace")["jobs"]["build"]["steps"]
+    demo = next(
+        s
+        for s in local
+        if s.get("name")
+        == "Check local What changed shows every content type of the demo edit"
+    )
+    assert "rm -rf _site" in demo["run"]
+    assert "local-what-changed-demo.py" in demo["run"]
+
+
+def test_demo_publication_is_checked_separately_from_local_report():
+    steps = load("example-workspace")["jobs"]["build"]["steps"]
+    step = next(
+        s
+        for s in steps
+        if s.get("name") == "Check the demo artifact built for main publication"
+    )
+    assert "scripts/build-workspace-demo.py" in step["run"]
+    assert "--site" in step["run"]
+    assert "GITHUB_STEP_SUMMARY" in step["run"]
+
+
+def test_all_example_browser_checks_use_the_installed_browser_path():
+    build = load("example-workspace")["jobs"]["build"]
+    assert build["env"]["PLAYWRIGHT_BROWSERS_PATH"] == "/tmp/asta-test-chromium"
+    browser_steps = [s for s in build["steps"] if "playwright==" in s.get("run", "")]
+    install = next(
+        i for i, s in enumerate(browser_steps) if "playwright install" in s["run"]
+    )
+    assert install == 0
+    assert len(browser_steps) >= 3
+    assert all(
+        "export PLAYWRIGHT_BROWSERS_PATH=" not in s["run"] for s in browser_steps
+    )
+
+
+def test_preview_contract_builds_independent_sites_in_both_architectures():
+    build = load("example-workspace")["jobs"]["build"]
+    assert set(build["strategy"]["matrix"]["runner"]) == {
+        "ubuntu-latest",
+        "ubuntu-24.04-arm",
+    }
+    step = next(
+        s
+        for s in build["steps"]
+        if s.get("name") == "Check independently rendered PR preview path"
+    )
+    assert "workspace-preview-path.py" in step["run"]
+    assert "GITHUB_STEP_SUMMARY" in step["run"]

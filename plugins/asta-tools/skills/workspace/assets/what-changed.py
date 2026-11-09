@@ -269,6 +269,7 @@ DROP_CONTENT_TAGS = {
 GLOBAL_SAFE_ATTRS = {"class", "dir", "lang", "role", "title"}
 TAG_SAFE_ATTRS = {
     "a": {"href"},
+    "span": {"tabindex"},
     "blockquote": {"cite"},
     "col": {"span"},
     "colgroup": {"span"},
@@ -339,6 +340,8 @@ class _SafeFragmentParser(HTMLParser):
             name = name.lower()
             if name not in allowed and not name.startswith("aria-"):
                 continue
+            if name == "tabindex" and value not in ("0", "-1"):
+                continue  # focusable evidence claims only; no tab-order jumps
             if value is None:
                 clean.append(name)
                 continue
@@ -541,6 +544,17 @@ def is_inline_tag(tok):
     return tag_name(tok) in INLINE_TAGS
 
 
+EV_CLAIM_RE = re.compile(
+    r"""(?is)<span(?=\s|>)[^>]*?\sclass\s*=\s*(["'])(?:[^"']*\s)?ev(?:\s[^"']*)?\1"""
+)
+
+
+def is_ev_claim(tok):
+    """An evidence claim's own `<span class="ev">`: structural, never wrapped
+    in <ins>/<del>, so its popover stays the direct child the hover CSS needs."""
+    return bool(EV_CLAIM_RE.match(tok))
+
+
 def balanced_inline(tokens):
     """Indices of inline tags whose matching partner is inside this same run.
 
@@ -562,8 +576,9 @@ def balanced_inline(tokens):
             for si in range(len(stack) - 1, -1, -1):
                 if stack[si][0] == name:
                     _, open_idx = stack.pop(si)
-                    balanced.add(open_idx)
-                    balanced.add(idx)
+                    if not is_ev_claim(tokens[open_idx][1]):
+                        balanced.add(open_idx)
+                        balanced.add(idx)
                     break
         elif text.rstrip().rstrip(">").endswith("/") or name in ("br", "wbr", "img"):
             balanced.add(idx)  # void/self-closing: needs no partner
@@ -771,6 +786,10 @@ def list_pages(root, out_path=None, paper_dirs=(), reserved_local_output=False):
             if not f.endswith(".html"):
                 continue
             full = os.path.join(dirpath, f)
+            if os.path.commonpath(
+                (os.path.realpath(root), os.path.realpath(full))
+            ) != os.path.realpath(root):
+                continue
             if excluded and os.path.realpath(full) == excluded:
                 continue
             rel = os.path.relpath(full, root)
@@ -788,7 +807,7 @@ def list_pages(root, out_path=None, paper_dirs=(), reserved_local_output=False):
             ):
                 continue
             try:
-                with open(full, encoding="utf-8") as fh:
+                with open(full, encoding="utf-8", errors="replace") as fh:
                     if is_what_changed_artifact(fh.read(4096)):
                         continue
             except (OSError, UnicodeDecodeError):
@@ -919,16 +938,17 @@ DIFF_STYLE = """
     color: var(--wc-changed); background: transparent; padding: .35em .9em;
     border: 1px solid var(--wc-border); border-radius: 6px; }
 .wc-scope .wc-toolbar button:hover { border-color: var(--wc-changed); }
-.wc-scope details.wc-fold { margin: .85rem 0; border: 1px dashed var(--wc-border);
-    border-radius: 6px; }
+/* Same expander bar as a deck's folded slides (deck-review.py .wc-expander). */
+.wc-scope details.wc-fold { margin: .85rem 0; }
 .wc-scope details.wc-fold > summary { cursor: pointer; list-style: none;
-    display: flex; align-items: baseline; gap: .55em; padding: .5em .85em;
-    color: var(--wc-muted); font-size: .85rem; user-select: none; }
+    display: flex; align-items: baseline; gap: .55em; padding: 4px 12px;
+    color: inherit; font-size: .9rem; user-select: none;
+    background: rgba(84,174,255,.12); border: 1px solid rgba(84,174,255,.35);
+    border-radius: 6px; }
 .wc-scope details.wc-fold > summary::-webkit-details-marker { display: none; }
-.wc-scope details.wc-fold > summary::before { content: "\\25B8"; }
-.wc-scope details.wc-fold[open] > summary::before { content: "\\25BE"; }
-.wc-scope details.wc-fold > summary:hover { color: var(--wc-changed); }
-.wc-scope details.wc-fold[open] > summary { border-bottom: 1px dashed var(--wc-border); }
+.wc-scope details.wc-fold > summary::before { content: "\\2195"; }
+.wc-scope details.wc-fold > summary:hover { background: rgba(84,174,255,.25); }
+.wc-scope details.wc-fold[open] > summary { margin-bottom: 8px; }
 .wc-scope .wc-fold-body { padding: .25rem 1rem .35rem; }
 """
 
@@ -996,9 +1016,9 @@ FOLD_JS = r"""
   }
   function collapse(container, run) {
     var d = document.createElement("details");
-    d.className = "wc-fold";
+    d.className = "wc-fold wc-expander";
     var s = document.createElement("summary");
-    s.textContent = summaryText(run);
+    s.textContent = "Expand " + summaryText(run);
     var wrap = document.createElement("div");
     wrap.className = "wc-fold-body";
     container.insertBefore(d, run[0]);
@@ -1362,7 +1382,7 @@ def pick_template(new_pages):
         try:
             with open(new_pages[rel], encoding="utf-8") as f:
                 doc = f.read()
-        except OSError:
+        except (OSError, UnicodeDecodeError):
             continue
         if not extract_theme_css(doc, depth):
             continue
@@ -1487,12 +1507,31 @@ class SlideParser(HTMLParser):
         self.tags = []
         self.nodes = []
         self.root = None
+        self.doc = ""
+        self._lines = [0]
+
+    def feed(self, data):
+        # Offsets let a slide keep its raw markup and the deck its HTML outside the
+        # slides, which deck-review.py compares to skip unchanged slides' pixels.
+        # HTMLParser counts only LF as a newline, and feed() receives a chunk.
+        # Other Unicode line separators remain ordinary source characters.
+        self._lines.extend(
+            len(self.doc) + match.end() for match in re.finditer("\n", data)
+        )
+        self.doc += data
+        super().feed(data)
+
+    def _offset(self):
+        line, column = self.getpos()
+        return self._lines[line - 1] + column
 
     def handle_starttag(self, tag, attrs):
         classes = (dict(attrs).get("class") or "").split()
         in_reveal = any("reveal" in classes for _, classes in self.tags)
+        start = self._offset()
         if self.root is None and tag == "div" and "slides" in classes and in_reveal:
             self.root = {"tag": tag, "attrs": dict(attrs), "parts": [], "open": ""}
+            self.root["inner"] = start + len(self.get_starttag_text())
             self.nodes.append(self.root)
         elif self.nodes:
             node = {
@@ -1500,6 +1539,7 @@ class SlideParser(HTMLParser):
                 "attrs": dict(attrs),
                 "parts": [],
                 "open": self.get_starttag_text(),
+                "start": start,
             }
             self.nodes[-1]["parts"].append(node)
             if tag not in VOID_TAGS:
@@ -1512,8 +1552,14 @@ class SlideParser(HTMLParser):
             self.nodes[-1]["parts"].append(self.get_starttag_text())
 
     def handle_endtag(self, tag):
+        start = self._offset()
+        end = self.doc.find(">", start) + 1 or len(self.doc)
         for index in range(len(self.nodes) - 1, -1, -1):
             if self.nodes[index]["tag"] == tag:
+                for node in self.nodes[index:]:
+                    node.setdefault("end", end)
+                if self.nodes[index] is self.root:
+                    self.root["close"] = start
                 del self.nodes[index:]
                 break
         for index in range(len(self.tags) - 1, -1, -1):
@@ -1543,6 +1589,18 @@ class SlideParser(HTMLParser):
         if self.root is None:
             return None
         slides = []
+        inner = self.doc[self.root["inner"] : self.root.get("close", len(self.doc))]
+        # Deck-wide inputs: the HTML outside the slides plus any style, script or
+        # link inside them, since those can restyle every slide.
+        frame = (
+            self.doc[: self.root["inner"]],
+            self.doc[self.root.get("close", len(self.doc)) :],
+            re.findall(
+                r"<style\b.*?</style\s*>|<script\b.*?</script\s*>|<link\b[^>]*>",
+                inner,
+                re.S | re.I,
+            ),
+        )
         horizontal = [
             part
             for part in self.root["parts"]
@@ -1560,10 +1618,16 @@ class SlideParser(HTMLParser):
             for v, node in enumerate(parts if stack else [section]):
                 ident = node["attrs"].get("id", "")
                 body = normalize("".join(self.markup(part) for part in node["parts"]))
+                raw = self.doc[node["start"] : node.get("end", len(self.doc))]
                 slides.append(
                     {
                         "id": ident,
                         "body": body,
+                        # The stack's own tag too: its attributes apply to its slides.
+                        "raw": (section["open"] if stack else "") + raw,
+                        "position": (h, v if stack else None),
+                        "span": (node["start"], node.get("end", len(self.doc))),
+                        "frame": frame,
                         "anchor": quote(ident, safe="")
                         if ident
                         else f"{h}/{v}"
@@ -1688,7 +1752,7 @@ def _pair_similar(old, new, olds, news):
 
 
 def load_deck_review():
-    """deck-review.py beside this script, or None if it or Playwright is missing."""
+    """deck-review.py beside this script, or None if it cannot be loaded."""
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "deck-review.py")
     if not os.path.exists(path):
         return None
@@ -1698,76 +1762,98 @@ def load_deck_review():
         spec = importlib.util.spec_from_file_location("deck_review", path)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
-        import playwright.sync_api  # noqa: F401
     except Exception as exc:  # noqa: BLE001 - any failure falls back to the text diff
         print(f"what-changed: slides as text ({exc})", file=sys.stderr)
         return None
     return module
 
 
-def deck_image_dir(rel):
-    """Image folder for a deck page: `slides/x/slides.html` -> `slides/x/slides`.
-
-    A folder named `*.html` breaks tools that treat such paths as files
-    (e.g. the preview deploy's noindex `sed`)."""
-    return rel[: -len(".html")] if rel.endswith(".html") else rel + "-images"
-
-
-BROWSER_UNAVAILABLE = (
-    "slides shown as text: the browser couldn't start here, possibly a sandbox;"
-    " run outside it to see rendered slides"
-)
-
-
 class DeckRenderer:
-    """Lazily starts one browser for every deck on the page."""
+    """Publish marked live decks with their assets, without starting a browser."""
 
     def __init__(self, module, old_root, new_root, img_root, img_url):
         self.module, self.old_root, self.new_root = module, old_root, new_root
         self.img_root, self.img_url = img_root, img_url.rstrip("/")
-        self.renderer = None
+        self.files = module.StaticFiles(old_root, new_root)
         self.used = False
-        self.failed = False
+        self.copied = False
 
     def review(self, rel, link, old, new, pairs):
-        if (
-            self.failed or not new
-        ):  # failed launch or a removed deck keeps the text diff
-            return False
-        img_rel = deck_image_dir(rel)
-        if self.renderer is None:
-            try:
-                self.renderer = self.module.Renderer(self.old_root, self.new_root)
-            except Exception as exc:  # noqa: BLE001
-                self.failed = True
-                shutil.rmtree(os.path.join(self.img_root, img_rel), ignore_errors=True)
-                print(f"what-changed: {BROWSER_UNAVAILABLE} ({exc})", file=sys.stderr)
-                return False
         try:
-            sub = quote(img_rel, safe="/")
-            body = self.module.review(
-                rel,
-                link,
-                os.path.join(self.img_root, img_rel),
-                f"{self.img_url}/{sub}",
-                old,
-                new,
-                pairs,
-                self.renderer,
-            )
-        except Exception as exc:  # noqa: BLE001
-            shutil.rmtree(os.path.join(self.img_root, img_rel), ignore_errors=True)
-            print(f"what-changed: {rel} slides as text ({exc})", file=sys.stderr)
+            return self._review(rel, old, new, pairs)
+        except Exception as exc:  # noqa: BLE001 - a deck must not abort other pages
+            print(f"what-changed: slides as text ({rel}: {exc})", file=sys.stderr)
             return False
-        finally:
-            if self.renderer is not None:
-                self.renderer.release_deck(rel)
-        self.used = self.used or body is not None
+
+    def _review(self, rel, old, new, pairs):
+        def read(root):
+            path = os.path.join(root, rel)
+            if os.path.commonpath(
+                (os.path.realpath(root), os.path.realpath(path))
+            ) != os.path.realpath(root):
+                raise ValueError("deck resolves outside the site")
+            if not os.path.isfile(path):
+                return ""
+            with open(path, encoding="utf-8") as stream:
+                return stream.read()
+
+        url = quote(rel, safe="/")
+        body, before, after, marked = self.module.live_review(
+            rel,
+            read(self.old_root),
+            read(self.new_root),
+            old,
+            new,
+            pairs,
+            self.files,
+            f"{self.img_url}/before/{url}",
+            f"{self.img_url}/after/{url}",
+        )
+        if body is None:
+            return None
+        if not self.copied:
+            generated = os.path.basename(self.img_root)
+            for side, root in (("before", self.old_root), ("after", self.new_root)):
+
+                def ignore(directory, names):
+                    # Preserve relative in-site links without dereferencing them.
+                    # Never let runner-local files enter the Pages artifact.
+                    skipped = {generated} & set(names)
+                    for name in names:
+                        path = os.path.join(directory, name)
+                        if os.path.islink(path) and (
+                            os.path.isabs(os.readlink(path))
+                            or os.path.commonpath(
+                                (os.path.realpath(root), os.path.realpath(path))
+                            )
+                            != os.path.realpath(root)
+                        ):
+                            skipped.add(name)
+                    return skipped
+
+                shutil.copytree(
+                    root,
+                    os.path.join(self.img_root, side),
+                    symlinks=True,
+                    ignore=ignore,
+                    dirs_exist_ok=True,
+                )
+            self.copied = True
+        for side, name, doc in (
+            ("before", rel, before),
+            ("after", rel, after),
+            ("after", self.module.marked_path(rel), marked),
+        ):
+            if doc:
+                path = os.path.join(self.img_root, side, name)
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                with open(path, "w", encoding="utf-8") as stream:
+                    stream.write(doc)
+        self.used = True
         return body
 
     def close(self):
-        if self.renderer is not None:
-            self.renderer.close()
+        pass
 
 
 def slide_diff(old_doc, new_doc, rel, link, old=None, new=None, decks=None):
@@ -1892,12 +1978,16 @@ def build(
     slide_sections, slide_toc = [], []
     documents = {}
     for rel in sorted(set(old_pages) | set(new_pages)):
-        old_doc = (
-            open(old_pages[rel], encoding="utf-8").read() if rel in old_pages else None
-        )
-        new_doc = (
-            open(new_pages[rel], encoding="utf-8").read() if rel in new_pages else None
-        )
+
+        def read(pages):
+            if rel not in pages:
+                return None
+            # Invalid HTML encoding still has a usable text fallback. The live
+            # deck reader stays strict and reports why frames cannot be built.
+            with open(pages[rel], encoding="utf-8", errors="replace") as stream:
+                return stream.read()
+
+        old_doc, new_doc = read(old_pages), read(new_pages)
         documents[rel] = old_doc, new_doc
         old_slides, new_slides = reveal_slides(old_doc), reveal_slides(new_doc)
         # Format transitions need the ordinary page diff to retain both sides.
@@ -2082,7 +2172,9 @@ def build(
         html_attrs = body_attrs = mode_js = ""
 
     deck_assets = (
-        decks.module.STYLE + decks.module.SCRIPT if decks and decks.used else ""
+        decks.module.LIVE_STYLE + decks.module.LIVE_SCRIPT
+        if decks and decks.used
+        else ""
     )
     return (
         "<!doctype html>"
@@ -2122,8 +2214,8 @@ def main(argv=None):
     ap.add_argument(
         "--render-decks",
         metavar="DIR",
-        help="render changed slides as images into generated DIR (needs deck-review.py"
-        " and Playwright; else slides as text); existing DIR contents are replaced",
+        help="publish marked live decks into generated DIR (needs deck-review.py"
+        "; else slides as text); existing DIR contents are replaced",
     )
     ap.add_argument(
         "--reserved-local-output",

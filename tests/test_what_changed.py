@@ -641,7 +641,7 @@ def test_output_ships_client_side_folding_but_keeps_full_content(tmp_path):
     # The server never pre-collapses; the DOM ships flat and JS folds it, so a
     # no-JS reviewer still sees every block and the markup stays valid.
     assert "<details" not in result
-    assert "\\25B8" in result  # CSS chevron escape survives, not mangled to octal
+    assert "\\2195" in result  # CSS expander-icon escape survives, not mangled to octal
 
 
 def test_computed_page_is_linked_not_word_diffed_or_embedded(tmp_path):
@@ -1323,6 +1323,47 @@ def test_added_evidence_is_chipped_and_its_popover_stays_a_direct_child(tmp_path
     # Its quote is not word-diffed into hidden <ins>/<del> runs.
     quote = re.search(r'<span class="ev-pop".*?</em>', result, re.S).group(0)
     assert "<ins>" not in quote and "<del>" not in quote
+
+
+def test_a_whole_added_claim_keeps_its_popover_and_focus(tmp_path):
+    """A claim added in a replaced run must still open its quote on hover/focus.
+
+    The claim's own `<span class="ev">` used to be wrapped in `<ins>` while its
+    popover was restored outside it, so the browser closed the claim at
+    `</ins>` and the popover became a sibling; `tabindex` was also sanitized.
+    """
+    old, new = tmp_path / "old", tmp_path / "new"
+    old.mkdir()
+    new.mkdir()
+    pop = (
+        '<span class="ev-pop" role="note"><span class="ev-card">'
+        '<span class="ev-pop-text ev-quote">“<em>We introduce BERT.</em>”</span>'
+        "</span></span>"
+    )
+    page = "<html><head></head><body><main><p>Intro. {} end.</p></main></body></html>"
+    (old / "index.html").write_text(page.format("The"))
+    (new / "index.html").write_text(
+        page.format(
+            '<span class="ev" tabindex="0" role="note" aria-description="q">'
+            f"BERT later applied it{pop}</span>"
+        )
+    )
+
+    result = WHAT_CHANGED.build(old, new, "", "PR #12")
+
+    assert "evidence added" in result
+    assert _ev_popover_parents(result) == [("span", "ev")]
+    claim = re.search(r'<span class="ev"[^>]*>', result).group(0)
+    assert 'tabindex="0"' in claim
+    assert "<ins>BERT later applied it</ins>" in result
+
+
+def test_sanitizer_keeps_only_unobtrusive_tabindex():
+    out = WHAT_CHANGED.sanitize_fragment(
+        '<span class="ev" tabindex="0">a</span><span tabindex="5">b</span>'
+    )
+    assert '<span class="ev" tabindex="0">' in out
+    assert 'tabindex="5"' not in out
 
 
 def test_single_quoted_evidence_popover_is_extracted():
