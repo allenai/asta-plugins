@@ -1,5 +1,6 @@
 """Fetch workspace build rules from the version selected by a project."""
 
+# Temporary CI timing probe for a PR that touches What changed.
 import concurrent.futures
 import functools
 import hashlib
