@@ -2,8 +2,8 @@
 <link rel="stylesheet" href="site_libs/quarto-html/quarto-syntax-highlighting-517513f5a2bcdbfd1b1023e3fc9cca9c.css" class="quarto-color-scheme" id="quarto-text-highlighting-styles">
 <link rel="stylesheet" href="site_libs/quarto-html/quarto-syntax-highlighting-dark-388f8d67df6149ff0c4f0d88f9153ee2.css" class="quarto-color-scheme quarto-color-alternate" id="quarto-text-highlighting-styles">
 <link href="site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link rel="stylesheet" href="site_libs/bootstrap/bootstrap-47d41acb2b1189d1add09ec4f9155be7.min.css" append-hash="true" class="quarto-color-scheme" id="quarto-bootstrap" data-mode="light">
-<link rel="stylesheet" href="site_libs/bootstrap/bootstrap-dark-9cbc26a30c818f3959069d8e475a643f.min.css" append-hash="true" class="quarto-color-scheme quarto-color-alternate" id="quarto-bootstrap" data-mode="dark">
+<link rel="stylesheet" href="site_libs/bootstrap/bootstrap-8145d8355b979a01ddd9b03d64e761af.min.css" append-hash="true" class="quarto-color-scheme" id="quarto-bootstrap" data-mode="light">
+<link rel="stylesheet" href="site_libs/bootstrap/bootstrap-dark-d199ef7fd1bceb41208d1c0a49a0f084.min.css" append-hash="true" class="quarto-color-scheme quarto-color-alternate" id="quarto-bootstrap" data-mode="dark">
 <link rel="stylesheet" href="site_libs/quarto-contrib/quarto-project/asta-theme/asta.css">
 <link rel="stylesheet" href="styles.css">
 <style>
@@ -609,9 +609,30 @@ Vaswani, Ashish, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan 
 .wc-expander[open]>summary{margin-bottom:8px}
 </style><script>
 document.querySelectorAll('.deck-live').forEach(root => {
- // Load only the frames the current view shows.
+ // Load only shown frames, near the viewport and two at a time: each frame
+ // parses the whole deck, so an opened fold must not start dozens at once.
+ const shown = f => f.closest('figure').offsetParent !== null;
+ const queue = []; let active = 0;
+ const start = f => {
+  active++; let done = false;
+  const finish = () => { if (!done) { done = true; active--; pump(); } };
+  f.addEventListener('load', finish, {once: true}); setTimeout(finish, 8000);
+  f.src = f.dataset.src; f.removeAttribute('data-src');
+ };
+ const near = 'IntersectionObserver' in window && new IntersectionObserver(entries => entries.forEach(e => {
+  if (e.isIntersecting && e.target.dataset.src) { near.unobserve(e.target); queue.push(e.target); }
+ }) || pump(), {rootMargin: '300px 0px'});
+ const pump = () => {
+  queue.sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top);
+  while (active < 2 && queue.length) {
+   const f = queue.shift();
+   if (!f.dataset.src) continue;
+   if (shown(f)) start(f); else near.observe(f);
+  }
+ };
  const load = () => root.querySelectorAll('iframe[data-src]').forEach(f => {
-  if (f.closest('figure').offsetParent !== null) { f.src = f.dataset.src; f.removeAttribute('data-src'); }
+  if (!near) { if (shown(f)) { f.src = f.dataset.src; f.removeAttribute('data-src'); } return; }
+  near.observe(f);
  });
  root.querySelectorAll('.dr-seg button').forEach(b => b.addEventListener('click', () => {
   root.dataset.view = b.dataset.v;
