@@ -136,12 +136,13 @@ jobs:
           npm ci
           npx playwright install --with-deps chromium
       - if: steps.browser.outputs.run == 'true'
+        uses: quarto-dev/quarto-actions/setup@v2
+        with:
+          version: release
+      - if: steps.browser.outputs.run == 'true'
         name: Render slide customization fixtures
-        run: |
-          docker run --rm --cap-drop ALL --security-opt no-new-privileges \
-            --user "$(id -u):$(id -g)" -e HOME=/tmp \
-            -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" -w "$GITHUB_WORKSPACE" \
-            ghcr.io/allenai/asta:latest-tex python3 tests/browser/render-slides.py tests/browser/fixtures
+        # Match the site's Quarto setup; these HTML fixtures need no TeX image.
+        run: python3 tests/browser/render-slides.py tests/browser/fixtures
       - if: steps.browser.outputs.run == 'true'
         name: Check slide geometry and standalone behavior
         working-directory: tests/browser
