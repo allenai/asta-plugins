@@ -1133,7 +1133,13 @@ def test_missing_project_reports_directory_error(tmp_path: Path) -> None:
 def test_failed_render_does_not_repeat_streamed_log(project: Path) -> None:
     Path(shutil.which("make")).write_text(
         "#!/usr/bin/env python3\n"
-        "import sys\n"
+        "import pathlib, sys\n"
+        # Only the baseline fails. A second failing render can be cancelled
+        # before emitting anything, so its log count depends on scheduling.
+        "if pathlib.Path.cwd().name != 'baseline':\n"
+        "    pathlib.Path('_site').mkdir(exist_ok=True)\n"
+        "    pathlib.Path('_site/index.html').write_text('<main>unchanged</main>')\n"
+        "    sys.exit(0)\n"
         "for i in range(100):\n"
         "    print(f'build-diagnostic-{i:03d}', file=sys.stderr)\n"
         "sys.exit(2)\n"
@@ -1144,7 +1150,7 @@ def test_failed_render_does_not_repeat_streamed_log(project: Path) -> None:
     assert result.exit_code != 0
     assert "'make render' failed for last-read" in result.output
     for i in range(100):
-        assert result.stderr.count(f"build-diagnostic-{i:03d}") == 2
+        assert result.stderr.count(f"build-diagnostic-{i:03d}") == 1
 
 
 @pytest.mark.parametrize("method", ["GET", "HEAD"])

@@ -127,11 +127,15 @@ The version lives in three places:
 7. *(Future)* Create a GitHub release from the tag for human-readable notes.
    This is bookkeeping only — the Docker image is already published by step 5, so
    a release is not a prerequisite for anything.
-8. Refresh the demo PR (#281, branch `example-demo-pr`): merge `origin/main`
-   into it and make its diff against `main` equal `examples/workspace-demo.patch`,
-   so the preview the READMEs link to shows the released What changed. `main`
-   publishes the same patch's What changed itself; CI fails when the patch stops
-   applying to the example.
+8. Wait for the demo preview refresh on PR #281 (`example-demo-pr`). After a
+   final release is promoted, `docker.yml` rebuilds that branch from the same
+   highest published final release plus `examples/workspace-demo.patch`, then
+   explicitly dispatches Example site with `preview-pr=281`. This uses
+   `GITHUB_TOKEN` without an extra secret; a token-created push alone would not
+   start unattended PR checks. Keep the existing demo PR open as a draft and
+   never merge it. The patch is the only source of its sample edit; do not merge
+   main into the demo branch or maintain another copy by hand. A patch that no
+   longer applies fails the release's demo job with the patch path in the error.
 
 If `push-version-tag` reports a version mismatch, rerun `make set-version` to
 resync — don't hand-edit one file.
@@ -159,5 +163,18 @@ The public example also publishes `/demo/what-changed.html` on each main build.
 `scripts/build-workspace-demo.py` applies `examples/workspace-demo.patch` in a
 fresh shared clone and runs the checkout's CLI with the TeX toolchain. The
 example's existing after-render artifact command includes that report in the
-normal Pages artifact; it adds no publishing workflow or credential. Every PR
-checks patch applicability and the built demo's paper, slide, evidence and theme.
+normal Pages artifact; it adds no publishing workflow or credential. A PR that
+changes the rendered example builds the site and demo once, on x86, through the
+shared site workflow. The demo PR already contains the patch, so its ordinary
+preview is its demo and the patch is not applied again.
+
+One browser job checks the built preview's themes, evidence, slide geometry,
+deck review and demo What changed. Fork and Dependabot PRs cannot publish; their
+browser checks use the same build's artifact with read-only permissions. Main
+and ordinary on-demand rebuilds also validate arm independently, without publishing twice.
+Example workspace separately checks a cold scaffold and the local checkout path
+for a deck edit on x86; main and releases add arm. Its full edit comparison runs
+on main and releases, and on a PR only when What changed code, scaffold assets,
+the example, or the comparison test itself changes. Workspace/Overleaf unit
+tests use four pytest workers per Python version; other plugins keep their
+existing test command and execution model.
