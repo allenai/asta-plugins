@@ -935,6 +935,25 @@ def test_live_report_marks_both_decks_without_browser(tmp_path):
     assert not (new_root / "what-changed-decks/after/what-changed-decks").exists()
 
 
+def test_live_report_of_an_unchanged_deck_is_none(tmp_path):
+    doc = (
+        '<html><head></head><body><div class="reveal"><div class="slides">'
+        '<section id="a"><h2>Same</h2></section></div></div></body></html>'
+    )
+    for side in ("old", "new"):
+        (tmp_path / side).mkdir()
+        (tmp_path / side / "deck.html").write_text(doc)
+    slides = what_changed.reveal_slides(doc)
+    renderer = what_changed.DeckRenderer(
+        deck_review,
+        str(tmp_path / "old"),
+        str(tmp_path / "new"),
+        str(tmp_path / "new/what-changed-decks"),
+        "what-changed-decks",
+    )
+    assert renderer.review("deck.html", "deck.html", slides, slides, {0: 0}) is None
+
+
 def test_marked_slide_strikes_deletions_where_they_were():
     struck = deck_review.struck_before("<p>a b c d</p>", "<p>a c d e</p>")
     assert struck == {1: ["b"]}

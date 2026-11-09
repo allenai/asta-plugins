@@ -731,7 +731,7 @@ def live_review(deck, old_doc, new_doc, old, new, pairs, files, old_url, new_url
         old, new, pairs, lambda a, b: files.same_static(deck, a, b)
     )
     if not removed and all(kind == "unchanged" for kind, _, _ in rows):
-        return None, old_doc, new_doc
+        return None, old_doc, new_doc, None
     deleted, inserted, struck = {}, {}, {}
     for kind, n, o in rows:
         if o is not None:

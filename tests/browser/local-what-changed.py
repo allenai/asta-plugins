@@ -89,16 +89,26 @@ def check(project, artifacts):
     artifacts.mkdir(parents=True, exist_ok=True)
     deck = project / "slides/attention/slides.qmd"
     original = deck.read_text()
-    edited = original.replace(
-        "## Keep the talk beside its sources\n",
-        "## Keep the talk beside its sources and data\n",
-        1,
-    ).replace(
-        "# The workspace\n",
-        "# The workspace\n\n## A slide added locally\n\nReviewed before any PR.\n",
-        1,
+    edited = (
+        original.replace(
+            "## Keep the talk beside its sources\n",
+            "## Keep the talk beside its sources and data\n",
+            1,
+        )
+        .replace(
+            # Replace words, not only add them, so Changes marked has struck words too.
+            "Write the talk, review and paper in the same repository.\n",
+            "Write the talk, review and paper in one repository.\n",
+            1,
+        )
+        .replace(
+            "# The workspace\n",
+            "# The workspace\n\n## A slide added locally\n\nReviewed before any PR.\n",
+            1,
+        )
     )
     assert edited.count("locally") == 1 and "sources and data" in edited
+    assert "paper in one repository" in edited
     deck.write_text(edited)
     try:
         result = subprocess.run(
