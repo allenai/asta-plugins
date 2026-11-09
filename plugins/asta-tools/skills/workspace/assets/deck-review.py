@@ -84,27 +84,109 @@ def _local_paths(source, base):
     return paths
 
 
-# Notes are not displayed by Reveal and must not turn an invisible edit into a
-# slide change. Keep other markup byte-sensitive, including math and code.
-NOTES_RE = re.compile(
-    r"<aside\b(?=[^>]*\bclass\s*=\s*(?:\"(?:[^\"]*\s)?notes(?:\s[^\"]*)?\"|'(?:[^']*\s)?notes(?:\s[^']*)?'|notes(?=[\s>])))[^>]*>.*?</aside\s*>",
-    re.S | re.I,
-)
+class SlideText(HTMLParser):
+    """Source spans of visible prose, preserving nested graphics/code verbatim."""
+
+    PROTECTED = {"script", "style", "svg", "math", "textarea", "pre", "code"}
+    VOID = {
+        "area",
+        "base",
+        "br",
+        "col",
+        "embed",
+        "hr",
+        "img",
+        "input",
+        "link",
+        "meta",
+        "param",
+        "source",
+        "track",
+        "wbr",
+    }
+
+    def __init__(self, raw):
+        super().__init__(convert_charrefs=False)
+        self.raw, self.stack, self.spans, self.notes = raw, [], [], []
+        self.lines = [0] + [match.end() for match in re.finditer("\n", raw)]
+        self.feed(raw)
+        self.close()
+        for _, _, note in self.stack:
+            if note is not None:
+                self.notes.append((note, len(raw)))
+
+    def _offset(self):
+        line, column = self.getpos()
+        return self.lines[line - 1] + column
+
+    def handle_starttag(self, tag, attrs):
+        note = tag == "aside" and "notes" in (dict(attrs).get("class") or "").split()
+        protected = (
+            (bool(self.stack) and self.stack[-1][1]) or tag in self.PROTECTED or note
+        )
+        if tag not in self.VOID:
+            self.stack.append((tag, protected, self._offset() if note else None))
+
+    def handle_startendtag(self, tag, attrs):
+        pass
+
+    def handle_endtag(self, tag):
+        for index in range(len(self.stack) - 1, -1, -1):
+            if self.stack[index][0] == tag:
+                end = self.raw.find(">", self._offset()) + 1
+                for _, _, note in self.stack[index:]:
+                    if note is not None:
+                        self.notes.append((note, end))
+                del self.stack[index:]
+                break
+
+    def handle_data(self, data):
+        if self.stack and self.stack[-1][1]:
+            return
+        start = self._offset()
+        end = start + len(data)
+        if self.spans and self.spans[-1][1] == start:
+            self.spans[-1] = (self.spans[-1][0], end)
+        else:
+            self.spans.append((start, end))
+
+    def handle_entityref(self, name):
+        value = "&" + name
+        if self.raw.startswith(value + ";", self._offset()):
+            value += ";"
+        self.handle_data(value)
+
+    def handle_charref(self, name):
+        self.handle_entityref("#" + name)
+
+
+def without_notes(raw):
+    if "notes" not in raw:
+        return raw
+    # Merge overlapping nested-note ranges before removing them.
+    out, end = [], 0
+    for start, stop in sorted(SlideText(raw).notes):
+        if start >= end:
+            out.append(raw[end:start])
+        end = max(end, stop)
+    return "".join(out) + raw[end:]
 
 
 def _same_static(files, loaded, deck, before, after, positional=True):
     # Pixels include the slide number; a live frame's own number isn't a change.
+    old_raw = without_notes(before.get("raw") or "")
+    new_raw = without_notes(after.get("raw") or "")
     if (
         before.get("raw") is None
-        or NOTES_RE.sub("", before["raw"]) != NOTES_RE.sub("", after.get("raw", ""))
+        or old_raw != new_raw
         or (positional and before.get("position") != after.get("position"))
         or before.get("frame") != after.get("frame")
-        or LIVE_RE.search(NOTES_RE.sub("", after["raw"]))
+        or LIVE_RE.search(new_raw)
     ):
         return False
     # The deck documents themselves are compared as raw slides and frame.
     paths = set(loaded.get(deck, set())) - {"/" + deck}
-    refs = _local_paths(NOTES_RE.sub("", after["raw"]), "/" + posixpath.dirname(deck))
+    refs = _local_paths(new_raw, "/" + posixpath.dirname(deck))
     if refs is None:
         return False
     return all(files._same_file(path) for path in paths | refs)
@@ -175,12 +257,6 @@ class StaticFiles:
         return _same_static(self, loaded, deck, before, after, positional=False)
 
 
-_TEXT_RE = re.compile(
-    "("
-    + NOTES_RE.pattern
-    + r"|<(?P<block>script|style|svg|math|textarea|pre|code)\b.*?</(?P=block)\s*>|<!--.*?-->|<[^>]*>)|(?P<text>[^<]+)",
-    re.S | re.I,
-)
 MATH_RE = re.compile(
     r"(\\\(.*?\\\)|\\\[.*?\\\]|\$\$.*?\$\$|(?<!\\)\$(?!\s).*?(?<!\\)\$)",
     re.S,
@@ -194,14 +270,14 @@ def text_parts(raw):
     TeX delimiters and markup interpreted by another renderer stay intact.
     They still participate in the static comparison as appearance changes.
     """
-    for match in _TEXT_RE.finditer(raw):
-        text = match.group("text")
-        if text is None:
-            yield match.group(), False
-        else:
-            for i, part in enumerate(MATH_RE.split(text)):
-                if part:
-                    yield part, i % 2 == 0
+    end = 0
+    for start, stop in SlideText(raw).spans:
+        yield raw[end:start], False
+        for i, part in enumerate(MATH_RE.split(raw[start:stop])):
+            if part:
+                yield part, i % 2 == 0
+        end = stop
+    yield raw[end:], False
 
 
 def slide_words(raw):

@@ -923,3 +923,36 @@ def test_invalid_deck_encoding_keeps_other_page_diffs(tmp_path, capsys):
     result = out.read_text()
     assert "slides as text" in capsys.readouterr().err
     assert "slide-diff" in result and "New" in result and "prose" in result
+
+
+def test_marks_preserve_nested_svg_and_entity_words():
+    old = "<section><p>old &amp; plain</p><svg><svg><text>inner old</text></svg><text>outer old</text></svg></section>"
+    new = old.replace("old", "new")
+    deleted, inserted = deck_review.word_changes(old, new)
+    marked = deck_review.mark_words(
+        new, inserted, "ins", deck_review.struck_before(old, new)
+    )
+    assert (
+        "<svg><svg><text>inner new</text></svg><text>outer new</text></svg>" in marked
+    )
+    assert (
+        '<del class="dr-live">old</del> <ins class="dr-live">new</ins> &amp; plain'
+        in marked
+    )
+
+
+def test_nested_speaker_notes_do_not_change_visible_slide(tmp_path):
+    old_doc = _deck(
+        [
+            SLIDE.replace(
+                "</section>",
+                '<aside class="notes"><aside>nested old</aside>old tail</aside></section>',
+            )
+        ]
+    )
+    new_doc = old_doc.replace("old", "new")
+    files, old, new = _static_files(tmp_path, old_doc, new_doc)
+    rows, _ = deck_review.live_rows(
+        old, new, {0: 0}, lambda a, b: files.same_static("d/deck.html", a, b)
+    )
+    assert rows == [("unchanged", 0, 0)]
