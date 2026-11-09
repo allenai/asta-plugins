@@ -3,8 +3,11 @@
 _site/
 quarto-render.*
 
-# Managed extensions, fetched by the scaffold rules.
-_extensions/
+# Managed extensions, fetched by the scaffold rules (the scaffold's own lines,
+# so `asta workspace sync` leaves this file unchanged).
+_extensions/evidence
+_extensions/asta-theme/
+_extensions/asta-slides/
 
 # LaTeX build artifacts
 paper/build/

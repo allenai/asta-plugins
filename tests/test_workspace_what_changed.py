@@ -1240,14 +1240,21 @@ def test_termination_cleans_comparison_and_children(project: Path, phase: str) -
     owned = project / workspace_module.COMPARISON_DIR
     owned.mkdir(parents=True)
     (owned / "what-changed.html").write_text("Previous report")
+    # Both sides render at once, so each blocked child records its own pid.
     ready = project / "child-ready"
+    ready.mkdir()
     child_code = (
         "import os, pathlib, time\n"
-        f"partial = pathlib.Path({str(ready) + '.partial'!r})\n"
+        f"ready = pathlib.Path({str(ready)!r})\n"
+        "partial = ready / f'{os.getpid()}.partial'\n"
         "partial.write_text(str(os.getpid()))\n"
-        f"os.replace(partial, {str(ready)!r})\n"
+        "os.replace(partial, ready / str(os.getpid()))\n"
         "time.sleep(60)\n"
     )
+
+    def children() -> list[int]:
+        return [int(path.name) for path in ready.iterdir() if path.name.isdigit()]
+
     if phase == "render":
         Path(shutil.which("make")).write_text("#!/usr/bin/env python3\n" + child_code)
     else:
@@ -1276,27 +1283,22 @@ def test_termination_cleans_comparison_and_children(project: Path, phase: str) -
         stderr=subprocess.PIPE,
         text=True,
     )
-    child = None
     try:
         deadline = time.monotonic() + 10
-        while (
-            not ready.exists()
-            and process.poll() is None
-            and time.monotonic() < deadline
-        ):
+        while not children() and process.poll() is None and time.monotonic() < deadline:
             time.sleep(0.02)
-        assert ready.exists(), "Comparison never reached the blocked child"
-        child = int(ready.read_text())
+        assert children(), "Comparison never reached the blocked child"
         process.send_signal(signal.SIGTERM)
         stdout, stderr = process.communicate(timeout=10)
         assert process.returncode == 128 + signal.SIGTERM, (stdout, stderr)
         assert (owned / "what-changed.html").read_text() == "Previous report"
         assert not list(owned.parent.glob(".what-changed-*"))
         assert_single_worktree(project)
-        with pytest.raises(ProcessLookupError):
-            os.kill(child, 0)
+        for child in children():
+            with pytest.raises(ProcessLookupError):
+                os.kill(child, 0)
     finally:
-        if child is not None:
+        for child in children():
             try:
                 os.kill(child, signal.SIGKILL)
             except ProcessLookupError:
