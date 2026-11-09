@@ -176,10 +176,17 @@ def check(artifacts):
             cwd=clone,
             check=True,
         )
-        # Bootstrap only once; the CLI still makes fresh builds for every run.
-        subprocess.run(
-            ["asta", "workspace", "sync", "--refresh"], cwd=project, check=True
-        )
+        # Reuse the cold build's managed rules and extensions, verified against
+        # this commit: a clone has none, and `sync` alone fetches no extensions.
+        from asta.commands.workspace import copy_ignored_render_inputs
+
+        copy_ignored_render_inputs(ROOT / "examples/workspace", project)
+        for required in (
+            ".asta/cache/workspace.mk",
+            "_extensions/evidence/snippet.lua",
+            "_extensions/asta-theme/light.scss",
+        ):
+            assert (project / required).is_file(), f"bootstrap missed {required}"
         for case in (
             "prose",
             "slide",
