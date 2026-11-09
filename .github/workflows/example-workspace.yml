@@ -97,6 +97,8 @@ jobs:
           set -euo pipefail
           export PLAYWRIGHT_BROWSERS_PATH="$RUNNER_TEMP/asta-chromium"
           export PATH="$(uv tool dir --bin):$PATH"
+          # No preview or prebuilt site may mask missing render inputs.
+          rm -rf _site
           top=$(git rev-parse --show-toplevel)
           # The demo PR's sample edit, applied uncommitted as an agent's edit would be.
           git fetch -q --depth=50 origin +refs/heads/main:refs/remotes/origin/main +refs/heads/example-demo-pr:refs/remotes/origin/example-demo-pr

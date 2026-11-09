@@ -91,6 +91,15 @@ jobs:
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: node example-preview.mjs ../../preview-site artifacts
+      - if: steps.browser.outputs.run == 'true' && github.event.pull_request.head.ref == 'example-demo-pr'
+        uses: astral-sh/setup-uv@v6
+      - if: steps.browser.outputs.run == 'true' && github.event.pull_request.head.ref == 'example-demo-pr'
+        name: Check every demo content type in the published preview
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          uv run --no-project --with playwright==1.64.1 python -m playwright install chromium
+          uv run --no-project --with playwright==1.64.1 python tests/browser/local-what-changed-demo.py --site "preview-site/pr-preview/pr-$PR_NUMBER" tests/browser/artifacts
       - if: steps.browser.outputs.run == 'true'
         uses: actions/upload-artifact@v4
         with:

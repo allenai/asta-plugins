@@ -417,3 +417,24 @@ def test_example_uses_current_scaffold_and_managed_inputs():
     )
     assert build["env"]["ASTA_WORKSPACE_RESOLVED_SHA"] == "${{ github.sha }}"
     assert step["run"].index("uv tool install") < step["run"].index("make check")
+
+
+def test_published_demo_reuses_local_content_assertions():
+    steps = load("example-preview")["jobs"]["check-preview"]["steps"]
+    check = next(
+        s
+        for s in steps
+        if s.get("name") == "Check every demo content type in the published preview"
+    )
+    assert "example-demo-pr" in check["if"]
+    assert "local-what-changed-demo.py --site" in check["run"]
+    assert "preview-site/pr-preview/pr-$PR_NUMBER" in check["run"]
+    local = load("example-workspace")["jobs"]["build"]["steps"]
+    demo = next(
+        s
+        for s in local
+        if s.get("name")
+        == "Check local What changed shows every content type of the demo edit"
+    )
+    assert "rm -rf _site" in demo["run"]
+    assert "local-what-changed-demo.py" in demo["run"]

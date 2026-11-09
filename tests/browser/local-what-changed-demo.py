@@ -20,17 +20,9 @@ THEMED_JS = (
 )
 
 
-def main(project, artifacts):
+def check_site(site, artifacts):
+    """Shared acceptance contract for local reports and the published demo."""
     artifacts.mkdir(parents=True, exist_ok=True)
-    result = subprocess.run(
-        ["asta", "workspace", "what-changed", "--timings", "HEAD"],
-        cwd=project,
-        capture_output=True,
-        text=True,
-    )
-    print(result.stderr, file=sys.stderr)
-    assert result.returncode == 0, result.stdout
-    site = project / ".asta/cache/what-changed"
     html = (site / "what-changed.html").read_text()
     missing = []
     if not (site / "paper-previews/paper/what-changed.pdf").is_file() or (
@@ -69,5 +61,31 @@ def main(project, artifacts):
     assert not missing, "What changed is missing " + ", ".join(missing)
 
 
+def main():
+    import argparse
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("project", type=Path)
+    parser.add_argument("artifacts", type=Path)
+    parser.add_argument(
+        "--site", action="store_true", help="Check an already-built report"
+    )
+    args = parser.parse_args()
+    project = args.project.resolve()
+    if args.site:
+        site = project
+    else:
+        result = subprocess.run(
+            ["asta", "workspace", "what-changed", "--timings", "HEAD"],
+            cwd=project,
+            capture_output=True,
+            text=True,
+        )
+        print(result.stderr, file=sys.stderr)
+        assert result.returncode == 0, result.stdout
+        site = project / ".asta/cache/what-changed"
+    check_site(site, args.artifacts.resolve())
+
+
 if __name__ == "__main__":
-    main(Path(sys.argv[1]).resolve(), Path(sys.argv[2]).resolve())
+    main()
