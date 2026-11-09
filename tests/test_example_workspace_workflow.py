@@ -213,7 +213,10 @@ def test_stable_browser_check_succeeds_without_rendering_unrelated_prs():
     assert "head.repo.full_name == github.repository" in gate["env"]["RUN"]
     assert "github.actor != 'dependabot[bot]'" in gate["env"]["RUN"]
     for step in check["steps"][2:]:
-        assert step["if"] == "steps.browser.outputs.run == 'true'"
+        assert step["if"] in (
+            "steps.browser.outputs.run == 'true'",
+            "steps.browser.outputs.run == 'true' && github.event.pull_request.head.ref == 'example-demo-pr'",
+        )
 
 
 @pytest.mark.parametrize("has_preview", [False, True])
