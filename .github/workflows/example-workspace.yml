@@ -27,7 +27,7 @@ jobs:
     strategy:
       matrix:
         runner: [ubuntu-latest, ubuntu-24.04-arm]
-    timeout-minutes: 30
+    timeout-minutes: 60
     env:
       # Browser acceptance tests share the install path across separate steps.
       PLAYWRIGHT_BROWSERS_PATH: /tmp/asta-test-chromium
@@ -132,6 +132,33 @@ jobs:
             cat "$RUNNER_TEMP/preview-path.log"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+      - name: Compare selected edits with same-run full reports
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$(uv tool dir --bin):$PATH"
+          # Import the exact checkout's CLI for transparent render instrumentation.
+          export PYTHONPATH="$GITHUB_WORKSPACE/src"
+          uv run --no-project --with "$GITHUB_WORKSPACE" python ../../tests/browser/workspace-differential.py ../../tests/browser/artifacts/differential 2>&1 | tee "$RUNNER_TEMP/differential.log"
+      - name: Record differential timings
+        if: always()
+        shell: bash
+        run: |
+          if test -f "$RUNNER_TEMP/differential.log"; then
+            {
+              echo '### Differential edit matrix (timings are informational)'
+              echo '```text'
+              sed -n '/^### /p; /What changed timings:/,+12p' "$RUNNER_TEMP/differential.log"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: workspace-differential-${{ matrix.runner }}
+          path: tests/browser/artifacts/differential
+          if-no-files-found: ignore
+          retention-days: 30
       - uses: actions/upload-artifact@v4
         if: always()
         with:
