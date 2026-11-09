@@ -4,9 +4,10 @@ from html.parser import HTMLParser
 
 
 class ReportSignature(HTMLParser):
-    def __init__(self):
+    def __init__(self, *, deck=False):
         super().__init__()
         self.pages = set()
+        self.deck = deck
         self.marks = []
         self.current = None
         self.sections = []
@@ -17,7 +18,9 @@ class ReportSignature(HTMLParser):
         attrs = dict(attrs)
         if tag == "section":
             self.sections.append(self.current)
-            if "page-diff" in attrs.get("class", "").split():
+            if "page-diff" in attrs.get("class", "").split() or (
+                self.deck and attrs.get("id")
+            ):
                 self.current = attrs.get("id")
                 self.pages.add(self.current)
         if tag in ("ins", "del") and self.current is not None:
@@ -43,11 +46,8 @@ def report_signature(site):
     # parent report. Compare the same generated deck paths on both builds.
     decks = {}
     for path in sorted((site / "what-changed-decks").rglob("*.marked.html")):
-        words = ReportSignature()
-        # Mark deck slide sections as content sections for this extraction.
+        words = ReportSignature(deck=True)
         content = path.read_text()
-        # Decks have multiple sections: collect marks across the whole deck.
-        words.current = "deck"
         words.feed(content)
         decks[str(path.relative_to(site / "what-changed-decks"))] = words.marks
     return parser.pages, parser.marks, decks

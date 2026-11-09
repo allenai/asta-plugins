@@ -103,7 +103,13 @@ def test_report_signature_includes_page_and_live_slide_marks(tmp_path, monkeypat
     assert marks == [("prose", "ins", "new words"), ("prose", "del", "old")]
     assert decks == {
         "after/slides.marked.html": [
-            ("deck", "del", "removed"),
-            ("deck", "ins", "added"),
+            ("slide", "del", "removed"),
+            ("slide", "ins", "added"),
         ]
     }
+
+    original = report_signature(tmp_path)
+    deck.write_text(deck.read_text().replace('id="slide"', 'id="wrong-slide"'))
+    assert report_signature(tmp_path) != original
+    deck.write_text(deck.read_text().replace("added", "different"))
+    assert report_signature(tmp_path) != original
