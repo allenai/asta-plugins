@@ -92,12 +92,11 @@ def test_paper_dependency_filter(tmp_path):
     paper.mkdir()
     (paper / "main.tex").write_text(r"\input{section}\bibliography{../shared}")
     (paper / "section.tex").write_text(r"\includegraphics{../figure}")
-    assert not paper_affected(tmp_path, "paper", "main.tex", ["slides.qmd"])
-    assert not paper_affected(tmp_path, "paper", "main.tex", ["unrelated.bib"])
-    for name in ["shared.bib", "figure.png", "paper/section.tex", "Makefile"]:
+    (paper / "latexmkrc").write_text("# an older or edited rc\n$pdf_mode = 1;\n")
+    for name in ["slides.qmd", "Makefile", "evidence.yml", "figure.png"]:
+        assert not paper_affected(tmp_path, "paper", "main.tex", [name])
+    for name in ["shared.bib", "unrelated.bib", "paper/section.tex", "paper/latexmkrc"]:
         assert paper_affected(tmp_path, "paper", "main.tex", [name])
-    (paper / "section.tex").write_text(r"\input{\generated}")
-    assert paper_affected(tmp_path, "paper", "main.tex", ["slides.qmd"])
 
 
 def test_extension_source_edit_with_deck_edit_still_compares_all(trees):
@@ -223,5 +222,7 @@ def test_example_bibliography_edit_builds_paper(example):
     before, after = example
     main = _paper_main(after)
     assert paper_affected(after, "paper", main, ["paper/references.bib"])
+    assert paper_affected(after, "paper", main, ["references.bib"])
+    # Any latexmkrc, e.g. an older scaffold's, leaves a slide edit paper-free.
     (after / "paper" / "latexmkrc").write_text("$pdf_mode = 1;\n")
-    assert paper_affected(after, "paper", main, ["slides/attention/slides.qmd"])
+    assert not paper_affected(after, "paper", main, ["slides/attention/slides.qmd"])

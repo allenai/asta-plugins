@@ -1427,13 +1427,16 @@ def test_partial_render_keeps_site_theme_without_a_site_page(
     home_redirects: bool,
 ) -> None:
     """A slide-only edit must still read like the site (no browser-default page)."""
+    (project / "_metadata.yml").write_text("format: revealjs\n")
     (project / "slides.qmd").write_text("Slide one.\n")
     if home_redirects:
         # The home page only redirects, so the theme must come from another page.
-        (project / "index.qmd").write_text("REDIRECT to about.html\n")
+        (project / "index.qmd").write_text(
+            '<meta http-equiv="refresh" content="0;url=about.html">\n'
+        )
         (project / "about.qmd").write_text("About.\n")
         git(project, "add", "index.qmd", "about.qmd")
-    git(project, "add", "slides.qmd")
+    git(project, "add", "slides.qmd", "_metadata.yml")
     git(project, "commit", "-qm", "deck")
     git(project, "tag", "-f", "last-read")
     (project / "slides.qmd").write_text("Slide one, edited.\n")
@@ -1460,7 +1463,7 @@ def test_partial_render_keeps_site_theme_without_a_site_page(
         site.mkdir()
         for name in pages or []:
             text = (directory / name).read_text()
-            if text.startswith("REDIRECT"):
+            if "http-equiv" in text:
                 (site / "index.html").write_text(REDIRECT.format("about.html"))
             elif name in ("index.qmd", "about.qmd"):
                 (site / "site_libs/bootstrap").mkdir(parents=True, exist_ok=True)
@@ -1497,19 +1500,19 @@ def test_partial_render_keeps_site_theme_without_a_site_page(
     assert "About" not in page and ">about.html<" not in page
     assert "Redirect" not in page and "removed</span>" not in page
     assert "unstyled" not in result.stderr
-    # The theme pages render freshly with the baseline, so
-    # the working tree renders only the changed page.
-    assert dict(rendered)["the working tree"] == ["slides.qmd"]
-    candidates = ["index.qmd", "about.qmd"] if home_redirects else ["index.qmd"]
-    expected = ["slides.qmd", *candidates]
+    # Exactly one ordinary page joins the deck, in the same build on both
+    # sides; a redirect home page is skipped by its source.
+    expected = ["slides.qmd", "about.qmd" if home_redirects else "index.qmd"]
+    assert dict(rendered)["the working tree"] == expected
     assert dict(rendered)["last-read"] == expected
 
 
 @pytest.mark.parametrize(
     "render, expected",
     [
-        (None, ["index.qmd", "about.qmd", "notes.md"]),
-        (["index.qmd", "slides.qmd", "about.qmd"], ["index.qmd", "about.qmd"]),
+        (None, ["index.qmd"]),
+        (["index.qmd", "slides.qmd", "about.qmd"], ["index.qmd"]),
+        (["about.qmd", "notes.md"], ["about.qmd"]),
         (["*.qmd", "!about.qmd"], ["index.qmd"]),
         (["**/*.md"], ["notes.md"]),
     ],
@@ -1530,9 +1533,10 @@ def test_changed_home_page_supplies_the_theme_beside_a_deck(
     project: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """When the home page itself changed, its rendered page themes the report."""
+    (project / "_metadata.yml").write_text("format: revealjs\n")
     (project / "slides.qmd").write_text("Slide one.\n")
     (project / "index.qmd").write_text("Home.\n")
-    git(project, "add", "slides.qmd", "index.qmd")
+    git(project, "add", "slides.qmd", "index.qmd", "_metadata.yml")
     git(project, "commit", "-qm", "deck and home")
     git(project, "tag", "-f", "last-read")
     (project / "slides.qmd").write_text("Slide one, edited.\n")
@@ -1577,9 +1581,10 @@ def test_deck_only_edit_renders_the_theme_and_cleans_up(
     """The temporary theme folder is removed with the comparison directory."""
     temporary = tmp_path_factory.mktemp("comparisons")
     monkeypatch.setattr(tempfile, "tempdir", str(temporary))
+    (project / "_metadata.yml").write_text("format: revealjs\n")
     (project / "slides.qmd").write_text("Slide one.\n")
     (project / "index.qmd").write_text("Home.\n")
-    git(project, "add", "slides.qmd", "index.qmd")
+    git(project, "add", "slides.qmd", "index.qmd", "_metadata.yml")
     git(project, "commit", "-qm", "deck")
     git(project, "tag", "-f", "last-read")
     rendered = []
@@ -1615,9 +1620,9 @@ def test_deck_only_edit_renders_the_theme_and_cleans_up(
         page = (snapshot / "what-changed.html").read_text()
         assert 'href="site_libs/bootstrap/bootstrap.min.css"' in page
         assert edit in page and "Home" not in page
-        assert dict(rendered)["the working tree"] == ["slides.qmd"]
-        # Nothing is kept: every run renders the baseline and its theme pages.
-        assert "last-read" in dict(rendered)
+        # Nothing is kept: every run adds the one theme page to both builds.
+        assert dict(rendered)["the working tree"] == ["slides.qmd", "index.qmd"]
+        assert dict(rendered)["last-read"] == ["slides.qmd", "index.qmd"]
         assert (snapshot / "site_libs/bootstrap/bootstrap.min.css").is_file()
     assert not (project / ".asta/cache/what-changed-theme").exists()
     assert_single_worktree(project)

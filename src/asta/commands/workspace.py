@@ -1141,9 +1141,11 @@ DECK_IMAGES = "what-changed-decks"
 
 # Rendered beside a deck-only edit to supply the site's theme.
 THEME_PAGES = ("index.qmd", "index.md", "index.ipynb", "index.Rmd")
-# Further candidates when the home page is missing or only redirects.
+# Other root pages when the home page is missing or only redirects.
 THEME_SOURCE_SUFFIXES = (".qmd", ".md", ".ipynb", ".Rmd")
-THEME_CANDIDATES = 3
+_REDIRECT = re.compile(
+    r"http-equiv\s*=\s*[\"']?refresh|window\.location", re.IGNORECASE
+)
 _STYLESHEET = re.compile(r"<link\b[^>]*>", re.IGNORECASE)
 _HREF = re.compile(r"""\bhref\s*=\s*["']([^"']+)["']""", re.IGNORECASE)
 
@@ -1229,14 +1231,42 @@ def _theme_candidates(project: Path, pages: list[str]) -> list[str]:
             and name not in names
             and not name.startswith(("_", "."))
             and not name.upper().startswith(("README", "LICENSE", "CHANGELOG"))
-            and "revealjs" not in source.read_text(encoding="utf-8", errors="ignore")
         ):
             names.append(name)
-    return [
-        name
-        for name in names
-        if name not in pages and _in_render_list(name, render_list)
-    ][:THEME_CANDIDATES]
+    for name in names:
+        text = (project / name).read_text(encoding="utf-8", errors="ignore")
+        # One ordinary page, rendered in the same build as the changed pages;
+        # a deck or a redirect home page carries no site theme.
+        if (
+            name not in pages
+            and _in_render_list(name, render_list)
+            and "revealjs" not in text
+            and not _REDIRECT.search(text)
+        ):
+            return [name]
+    return []
+
+
+def _is_ordinary_source(project: Path, name: str) -> bool:
+    """Whether a selected source surely renders an ordinary page (not a deck).
+
+    Unsure (a deck format from a directory's _metadata.yml, a redirect) means
+    no, which only costs one extra page in the build.
+    """
+    texts = [project / name]
+    for parent in Path(name).parents:
+        texts += [
+            project / parent / "_metadata.yml",
+            project / parent / "_metadata.yaml",
+        ]
+    for path in texts:
+        try:
+            text = path.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        if "revealjs" in text or _REDIRECT.search(text):
+            return False
+    return True
 
 
 def _has_deck(site: Path) -> bool:
@@ -1921,8 +1951,21 @@ def compare_workspace(ref: str, project: Path, *, full: bool = False) -> None:
                         after_inputs = after_inputs.result()
                 before_pages = _quarto_rendered(baseline_project, pages, before_inputs)
                 after_pages = _quarto_rendered(copied_project, pages, after_inputs)
-                if before_pages or after_pages:
+                # A slide-only edit selects no ordinary page; add one to both
+                # builds so each side's site carries the site's look.
+                if (before_pages or after_pages) and not any(
+                    _is_ordinary_source(side, name)
+                    for side, names in (
+                        (baseline_project, before_pages),
+                        (copied_project, after_pages),
+                    )
+                    for name in names
+                ):
                     theme_pages = _quarto_rendered(
+                        copied_project,
+                        _theme_candidates(copied_project, pages),
+                        after_inputs,
+                    ) or _quarto_rendered(
                         baseline_project,
                         _theme_candidates(baseline_project, pages),
                         before_inputs,
@@ -1948,7 +1991,10 @@ def compare_workspace(ref: str, project: Path, *, full: bool = False) -> None:
                         list(dict.fromkeys([*before_pages, *theme_pages])),
                     )
                     after = pool.submit(
-                        render_side, copied_project, "the working tree", after_pages
+                        render_side,
+                        copied_project,
+                        "the working tree",
+                        list(dict.fromkeys([*after_pages, *theme_pages])),
                     )
                     old_site = before.result()
                     new_site = after.result()
@@ -1957,10 +2003,16 @@ def compare_workspace(ref: str, project: Path, *, full: bool = False) -> None:
                 theme.mkdir()
                 themed = False
                 for name in theme_pages:
-                    built = old_site / Path(name).with_suffix(".html")
-                    if built.is_file() and not built.is_symlink():
-                        themed = themed or _is_themed_page(built, old_site)
-                        shutil.move(built, theme / built.name)
+                    # Take the look from the working tree's build, else the
+                    # base's; drop the page from both so it isn't compared.
+                    for site in (new_site, old_site):
+                        built = site / Path(name).with_suffix(".html")
+                        if built.is_file() and not built.is_symlink():
+                            if not themed and _is_themed_page(built, site):
+                                themed = True
+                                shutil.move(built, theme / built.name)
+                            else:
+                                built.unlink()
                 if not themed:
                     click.echo(
                         "Warning: no rendered page carries the site's theme "

@@ -211,89 +211,16 @@ def select_pages(after: Path, before: Path, changed: list[str]) -> list[str] | N
     )
 
 
-def _stock_latexmkrc():
-    here = Path(__file__).resolve()
-    for path in (
-        here.parents[1] / "workspace_assets" / "paper" / "latexmkrc",
-        here.parents[3] / "plugins/asta-tools/skills/workspace/assets/paper/latexmkrc",
-    ):
-        if path.is_file():
-            return path.read_bytes()
-    return None
-
-
 def paper_affected(
     project: Path, directory: str, main: str, changed: list[str]
 ) -> bool:
-    """Prove a paper unaffected, or build it. Dynamic TeX stays conservative."""
+    """Build a paper only when a file in its folder or any `.bib` changed.
+
+    The project's latexmkrc is not consulted: an older scaffold rc differs from
+    the shipped one byte for byte yet only finds references.bib up the tree.
+    """
     root = (project / directory).resolve()
-    if any((project / name).resolve().is_relative_to(root) for name in changed):
-        return True
-    stock = _stock_latexmkrc()
-    for name in ("latexmkrc", ".latexmkrc"):
-        rc = root / name
-        # The scaffold's own rc only searches up for references.bib; any other
-        # rc can add inputs we can't see.
-        if rc.exists() and (stock is None or rc.read_bytes() != stock):
-            return True
-    dependencies = set()
-    if stock is not None and (root / "latexmkrc").exists():
-        directory_ = root
-        while True:
-            dependencies.add(directory_ / "references.bib")
-            if directory_ == project.resolve() or directory_.parent == directory_:
-                break
-            directory_ = directory_.parent
-    pending = [root / main]
-    seen = set()
-    pattern = re.compile(
-        r"\\(input|include|bibliography|addbibresource|includegraphics)\s*(?:\[[^\]]*\]\s*)?\{([^{}]+)\}"
+    return any(
+        (project / name).resolve().is_relative_to(root) or name.endswith(".bib")
+        for name in changed
     )
-    while pending:
-        source = pending.pop()
-        if source in seen:
-            continue
-        seen.add(source)
-        try:
-            text = source.read_text()
-        except (OSError, UnicodeError):
-            return True
-        if re.search(
-            r"\\(?:openin|read|directlua|lstinputlisting|verbatiminput|includepdf|graphicspath)\b",
-            text,
-        ):
-            return True
-        if re.search(r"\\(?:input|include)\s+[^\s{]", text):
-            return True
-        for command, argument in pattern.findall(text):
-            # Macro-generated dependencies cannot be resolved without TeX.
-            if any(character in argument for character in "\\#$"):
-                return True
-            for value in argument.split(","):
-                path = (source.parent / value.strip()).resolve()
-                dependencies.add(path)
-                # TeX engines often resolve nested inputs from the main-file
-                # directory; accept either interpretation, never miss one.
-                alternate = (root / value.strip()).resolve()
-                dependencies.add(alternate)
-                if not alternate.suffix:
-                    dependencies.add(alternate.with_suffix(".tex"))
-                    dependencies.add(alternate.with_suffix(".bib"))
-                if source.parent != root and command in {"input", "include"}:
-                    return True
-                if command in {"input", "include"}:
-                    path = path if path.suffix else path.with_suffix(".tex")
-                    dependencies.add(path)
-                    pending.append(path)
-                elif command in {"bibliography", "addbibresource"}:
-                    dependencies.add(path if path.suffix else path.with_suffix(".bib"))
-    for name in changed:
-        path = (project / name).resolve()
-        if path in dependencies or any(
-            path.with_suffix("") == dep for dep in dependencies
-        ):
-            return True
-        # Build tooling and unknown inputs may generate paper dependencies.
-        if path.suffix not in PAGES | ASSETS | {".bib", ".yml", ".yaml"}:
-            return True
-    return False
