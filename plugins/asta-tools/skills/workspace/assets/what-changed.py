@@ -919,16 +919,17 @@ DIFF_STYLE = """
     color: var(--wc-changed); background: transparent; padding: .35em .9em;
     border: 1px solid var(--wc-border); border-radius: 6px; }
 .wc-scope .wc-toolbar button:hover { border-color: var(--wc-changed); }
-.wc-scope details.wc-fold { margin: .85rem 0; border: 1px dashed var(--wc-border);
-    border-radius: 6px; }
+/* Same expander bar as a deck's folded slides (deck-review.py .wc-expander). */
+.wc-scope details.wc-fold { margin: .85rem 0; }
 .wc-scope details.wc-fold > summary { cursor: pointer; list-style: none;
-    display: flex; align-items: baseline; gap: .55em; padding: .5em .85em;
-    color: var(--wc-muted); font-size: .85rem; user-select: none; }
+    display: flex; align-items: baseline; gap: .55em; padding: 4px 12px;
+    color: inherit; font-size: .9rem; user-select: none;
+    background: rgba(84,174,255,.12); border: 1px solid rgba(84,174,255,.35);
+    border-radius: 6px; }
 .wc-scope details.wc-fold > summary::-webkit-details-marker { display: none; }
-.wc-scope details.wc-fold > summary::before { content: "\\25B8"; }
-.wc-scope details.wc-fold[open] > summary::before { content: "\\25BE"; }
-.wc-scope details.wc-fold > summary:hover { color: var(--wc-changed); }
-.wc-scope details.wc-fold[open] > summary { border-bottom: 1px dashed var(--wc-border); }
+.wc-scope details.wc-fold > summary::before { content: "\\2195"; }
+.wc-scope details.wc-fold > summary:hover { background: rgba(84,174,255,.25); }
+.wc-scope details.wc-fold[open] > summary { margin-bottom: 8px; }
 .wc-scope .wc-fold-body { padding: .25rem 1rem .35rem; }
 """
 
@@ -996,9 +997,9 @@ FOLD_JS = r"""
   }
   function collapse(container, run) {
     var d = document.createElement("details");
-    d.className = "wc-fold";
+    d.className = "wc-fold wc-expander";
     var s = document.createElement("summary");
-    s.textContent = summaryText(run);
+    s.textContent = "Expand " + summaryText(run);
     var wrap = document.createElement("div");
     wrap.className = "wc-fold-body";
     container.insertBefore(d, run[0]);

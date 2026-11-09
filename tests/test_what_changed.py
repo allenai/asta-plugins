@@ -641,7 +641,7 @@ def test_output_ships_client_side_folding_but_keeps_full_content(tmp_path):
     # The server never pre-collapses; the DOM ships flat and JS folds it, so a
     # no-JS reviewer still sees every block and the markup stays valid.
     assert "<details" not in result
-    assert "\\25B8" in result  # CSS chevron escape survives, not mangled to octal
+    assert "\\2195" in result  # CSS expander-icon escape survives, not mangled to octal
 
 
 def test_computed_page_is_linked_not_word_diffed_or_embedded(tmp_path):
