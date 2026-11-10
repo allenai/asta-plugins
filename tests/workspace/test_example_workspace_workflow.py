@@ -181,6 +181,45 @@ def test_example_has_one_publisher_and_unfiltered_close():
     assert site["jobs"]["docs-arm"]["with"]["publish"] == "false"
 
 
+def test_example_scope_runs_pr_code_with_read_only_permissions():
+    scope = load("example-preview")["jobs"]["scope"]
+    assert scope["permissions"] == {"contents": "read"}
+    checkout = next(
+        s for s in scope["steps"] if s.get("uses", "").startswith("actions/checkout@")
+    )
+    assert checkout["with"]["persist-credentials"] == "false"
+
+
+def test_closed_example_reaches_cleanup_without_a_pr_checkout(tmp_path):
+    site = load("example-preview")
+    scope = site["jobs"]["scope"]
+    checkout = next(
+        s for s in scope["steps"] if s.get("uses", "").startswith("actions/checkout@")
+    )
+    assert checkout["if"] == "github.event.action != 'closed'"
+    step = next(s for s in scope["steps"] if s.get("id") == "scope")
+    assert step["env"]["ACTION"] == "${{ github.event.action }}"
+    # There is no checkout here, as on a closed PR whose merge ref is absent.
+    output = tmp_path / "out"
+    result = subprocess.run(
+        ["bash", "-e", "-o", "pipefail", "-c", step["run"]],
+        cwd=tmp_path,
+        env=dict(os.environ, ACTION="closed", GITHUB_OUTPUT=str(output)),
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert output.read_text() == "workspace=false\n"
+    assert site["jobs"]["docs"]["needs"] == "scope"
+    assert "if" not in site["jobs"]["docs"]
+    cleanup = load("workspace-quarto-site")["jobs"]["cleanup-preview"]
+    assert "github.event.action == 'closed'" in cleanup["if"]
+    assert (
+        cleanup["steps"][0]["with"]["ref"]
+        == "${{ github.event.pull_request.base.sha }}"
+    )
+
+
 def test_open_pr_that_stops_changing_the_site_loses_its_preview(tmp_path):
     shared = load("workspace-quarto-site")
     cleanup = shared["jobs"]["cleanup-preview"]
@@ -635,6 +674,7 @@ def test_workspace_scope_step_rejects_errors_and_invalid_outputs(
             os.environ,
             PATH=f"{tmp_path}:{os.environ['PATH']}",
             GITHUB_OUTPUT=str(output),
+            ACTION="synchronize",
         ),
         capture_output=True,
         text=True,

@@ -27,17 +27,26 @@ permissions:
 jobs:
   scope:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       workspace: ${{ steps.scope.outputs.workspace }}
     steps:
       - uses: actions/checkout@v4
+        if: github.event.action != 'closed'
         with:
           fetch-depth: 0
+          persist-credentials: false
       - id: scope
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
+          ACTION: ${{ github.event.action }}
         run: |
-          workspace=$(make --silent workspace-scope)
+          # Closing only removes the preview; the PR's merge ref may be gone.
+          workspace=false
+          if [ "$ACTION" != closed ]; then
+            workspace=$(make --silent workspace-scope)
+          fi
           case "$workspace" in true|false) ;; *) echo "::error::Invalid workspace scope: $workspace"; exit 1;; esac
           echo "workspace=$workspace" >> "$GITHUB_OUTPUT"
   docs:
