@@ -3,7 +3,8 @@
 patents live in s2-public-api next to papers, under ``/graph/v1/patent``.
 defaults to the ``semantic_scholar`` base url and auth token.
 ``ASTA_PATENT_URL`` overrides ``apis.patent.base_url``.
-point it at a local s2-public-api (``http://localhost:8089``) or production (``https://api.semanticscholar.org``).
+point it at a local s2-public-api, e.g. ``http://localhost:8089``.
+the gateway token rides along as a bearer header, so only point it at hosts you trust.
 
 endpoints (firs2#150):
   - GET /graph/v1/patent/search
