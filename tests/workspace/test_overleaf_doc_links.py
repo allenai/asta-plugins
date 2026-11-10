@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 WORKFLOWS = ROOT / "plugins/asta-tools/skills/workspace/workflows"
 RECOVERY = WORKFLOWS / "overleaf-recovery.md"
 DOCS = [

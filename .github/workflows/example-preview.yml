@@ -1,12 +1,23 @@
 name: Example site
 
-# A plain workspace in a subfolder, using this checkout's shipped workflow.
+# A plain workspace in a subfolder, using this checkout's shipped workflow: the one
+# build of the example site and its demo What changed, checked once in a browser.
 on:
   push:
     branches: [main]
   pull_request:
     types: [opened, synchronize, reopened, closed]
+  workflow_call:
+    inputs:
+      release-check:
+        type: boolean
+        default: false
   workflow_dispatch:
+    inputs:
+      preview-pr:
+        description: Refresh an open PR preview from its head branch
+        type: string
+        default: ""
 
 permissions:
   contents: write
@@ -14,9 +25,37 @@ permissions:
   pages: read
 
 jobs:
+  scope:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      workspace: ${{ steps.scope.outputs.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+        if: github.event.action != 'closed'
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: scope
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
+          ACTION: ${{ github.event.action }}
+        run: |
+          # Closing only removes the preview; the PR's merge ref may be gone.
+          workspace=false
+          if [ "$ACTION" != closed ]; then
+            workspace=$(make --silent workspace-scope)
+          fi
+          case "$workspace" in true|false) ;; *) echo "::error::Invalid workspace scope: $workspace"; exit 1;; esac
+          echo "workspace=$workspace" >> "$GITHUB_OUTPUT"
   docs:
+    needs: scope
     uses: ./.github/workflows/workspace-quarto-site.yml
     with:
+      preview-pr: ${{ inputs.preview-pr || '' }}
+      publish: ${{ !inputs.release-check }}
       site-dir: examples/workspace
       paper-strict: true
       artifact-command: |
@@ -26,21 +65,16 @@ jobs:
           ghcr.io/allenai/asta:latest-tex bash -e -o pipefail -c '
             export PATH="$(uv tool dir --bin):$PATH"
             uv tool install --force .
-            python3 scripts/build-workspace-demo.py examples/workspace/_site/demo
+            make workspace-demo
           '
-      render-paths: |
-        examples/workspace/**
-        examples/workspace-demo.patch
-        scripts/build-workspace-demo.py
-        src/asta/commands/workspace.py
-        plugins/asta-tools/skills/workspace/assets/**
-        .github/workflows/workspace-quarto-site.yml
-        .github/workflows/example-preview.yml
+      render: ${{ needs.scope.outputs.workspace }}
 
+  # Arm runs only before release or on demand; a PR waits on x86 alone.
   docs-arm:
-    needs: docs
+    if: github.event_name == 'workflow_dispatch' || inputs.release-check
     uses: ./.github/workflows/workspace-quarto-site.yml
     with:
+      publish: false
       build-runner: ubuntu-24.04-arm
       site-dir: examples/workspace
       paper-strict: true
@@ -51,21 +85,52 @@ jobs:
           ghcr.io/allenai/asta:latest-tex bash -e -o pipefail -c '
             export PATH="$(uv tool dir --bin):$PATH"
             uv tool install --force .
-            python3 scripts/build-workspace-demo.py examples/workspace/_site/demo
+            make workspace-demo
           '
-      render-paths: |
-        examples/workspace/**
-        examples/workspace-demo.patch
-        scripts/build-workspace-demo.py
-        src/asta/commands/workspace.py
-        plugins/asta-tools/skills/workspace/assets/**
-        .github/workflows/**
+
+  check-arm:
+    name: Example arm browser
+    needs: docs-arm
+    if: always() && (github.event_name == 'workflow_dispatch' || inputs.release-check)
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Require successful arm build
+        env:
+          RESULT: ${{ needs.docs-arm.result }}
+        run: test "$RESULT" = success
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: site-ubuntu-24.04-arm
+          path: preview-site/pr-preview/pr-0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: tests/browser/package-lock.json
+      - uses: quarto-dev/quarto-actions/setup@v2
+        with:
+          version: release
+      - uses: astral-sh/setup-uv@v6
+      - name: Check arm artifact
+        run: make workspace-browser PR_NUMBER=0
+      - uses: actions/upload-artifact@v4
+        with:
+          name: example-arm-screenshots
+          path: tests/browser/artifacts
+          retention-days: 30
 
   check-preview:
     name: Example preview browser
-    needs: [docs, docs-arm]
-    if: always() && github.event_name == 'pull_request' && github.event.action != 'closed'
+    needs: docs
+    if: always() && github.event_name != 'push' && github.event.action != 'closed'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
     steps:
@@ -76,25 +141,39 @@ jobs:
       - name: Decide whether the preview browser runs
         id: browser
         env:
-          RUN: ${{ needs.docs.outputs.rendered == 'true' && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]' }}
+          RUN: ${{ needs.docs.outputs.rendered == 'true' }}
         run: echo "run=$RUN" >> "$GITHUB_OUTPUT"
       - if: steps.browser.outputs.run == 'true'
         uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - if: steps.browser.outputs.run == 'true'
+      - if: steps.browser.outputs.run == 'true' && needs.docs.outputs.published == 'true'
         name: Read the published preview from gh-pages
         env:
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.preview-pr || '0' }}
         run: |
           set -euo pipefail
           git fetch --depth=1 origin gh-pages
-          if [ -z "$(git ls-tree FETCH_HEAD "pr-preview/pr-$PR_NUMBER")" ]; then
-            echo "::error::No published preview found at pr-preview/pr-$PR_NUMBER"
-            exit 1
+          if [ "$PR_NUMBER" = 0 ]; then
+            # Main has no PR diff. Inspect its published site with the same theme,
+            # slide and demo checks; the PR-only URL check below remains separate.
+            mkdir -p preview-site/pr-preview/pr-0
+            git archive FETCH_HEAD | tar -x --anchored --exclude=pr-preview -C preview-site/pr-preview/pr-0
+          else
+            if [ -z "$(git ls-tree FETCH_HEAD "pr-preview/pr-$PR_NUMBER")" ]; then
+              echo "::error::No published preview found at pr-preview/pr-$PR_NUMBER"
+              exit 1
+            fi
+            mkdir preview-site
+            git archive FETCH_HEAD "pr-preview/pr-$PR_NUMBER" | tar -x -C preview-site
           fi
-          mkdir preview-site
-          git archive FETCH_HEAD "pr-preview/pr-$PR_NUMBER" | tar -x -C preview-site
+      # Forks and Dependabot cannot publish, but all browser properties still
+      # run read-only against the same build's artifact, without another build.
+      - if: steps.browser.outputs.run == 'true' && needs.docs.outputs.published != 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: site-ubuntu-latest
+          path: preview-site/pr-preview/pr-${{ github.event.pull_request.number || inputs.preview-pr || '0' }}
       - if: steps.browser.outputs.run == 'true'
         uses: actions/setup-node@v4
         with:
@@ -102,33 +181,16 @@ jobs:
           cache: npm
           cache-dependency-path: tests/browser/package-lock.json
       - if: steps.browser.outputs.run == 'true'
-        name: Install browser checks
-        working-directory: tests/browser
-        run: |
-          npm ci
-          npx playwright install --with-deps chromium
-      - if: steps.browser.outputs.run == 'true'
-        name: Check the preview and What changed in a browser
-        working-directory: tests/browser
-        env:
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: node example-preview.mjs ../../preview-site artifacts
+        uses: quarto-dev/quarto-actions/setup@v2
+        with:
+          version: release
       - if: steps.browser.outputs.run == 'true'
         uses: astral-sh/setup-uv@v6
       - if: steps.browser.outputs.run == 'true'
-        name: Check the published main-demo artifact
+        name: Check example preview
         env:
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: |
-          uv run --no-project --with playwright==1.64.1 python -m playwright install chromium
-          uv run --no-project --with playwright==1.64.1 python tests/browser/local-what-changed-demo.py --site "preview-site/pr-preview/pr-$PR_NUMBER/demo" tests/browser/artifacts
-      - if: steps.browser.outputs.run == 'true' && github.event.pull_request.head.ref == 'example-demo-pr'
-        name: Check every demo content type in the published preview
-        env:
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: |
-          uv run --no-project --with playwright==1.64.1 python -m playwright install chromium
-          uv run --no-project --with playwright==1.64.1 python tests/browser/local-what-changed-demo.py --site "preview-site/pr-preview/pr-$PR_NUMBER" tests/browser/artifacts
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.preview-pr || '0' }}
+        run: make workspace-browser
       - if: steps.browser.outputs.run == 'true'
         uses: actions/upload-artifact@v4
         with:

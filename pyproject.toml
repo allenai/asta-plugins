@@ -46,6 +46,7 @@ ignore = ["E501"]  # line length handled by formatter
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "--ignore=tests/workspace/tools"
 python_files = ["test_*.py"]
 asyncio_mode = "auto"
 filterwarnings = [

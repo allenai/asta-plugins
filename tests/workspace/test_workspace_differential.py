@@ -9,7 +9,7 @@ import pytest
 
 from asta.commands.workspace_selection import select_pages
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tests/browser"))
 spec = importlib.util.spec_from_file_location(
     "differential", ROOT / "tests/browser/workspace-differential.py"
@@ -71,3 +71,18 @@ def test_edit_matrix_expected_selection(tmp_path, case):
             "paper-bibliography",
             "paper",
         }
+
+
+@pytest.mark.parametrize("case", ["typo", "PROSE", " "])
+def test_unknown_case_fails_before_bootstrap(tmp_path, monkeypatch, case):
+    monkeypatch.setenv("ASTA_WORKSPACE_CASE", case)
+    with pytest.raises(ValueError, match="Unknown workspace case"):
+        matrix.check(tmp_path / "artifacts")
+    assert not (tmp_path / "artifacts").exists()
+
+
+def test_default_runs_every_case(monkeypatch):
+    monkeypatch.delenv("ASTA_WORKSPACE_CASE", raising=False)
+    assert len(matrix.selected_cases()) == 13
+    monkeypatch.setenv("ASTA_WORKSPACE_CASE", "quote")
+    assert matrix.selected_cases() == ("quote",)

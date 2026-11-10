@@ -9,10 +9,7 @@ from pathlib import Path
 import pytest
 
 ASSETS = (
-    Path(__file__).resolve().parents[1] / "plugins/asta-tools/skills/workspace/assets"
-)
-pytestmark = pytest.mark.skipif(
-    shutil.which("make") is None, reason="make not installed"
+    Path(__file__).resolve().parents[2] / "plugins/asta-tools/skills/workspace/assets"
 )
 
 

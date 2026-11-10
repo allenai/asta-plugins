@@ -3,7 +3,7 @@ from pathlib import Path
 
 import yaml
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github/workflows/workspace-quarto-site.yml"
 ASSETS = ROOT / "plugins/asta-tools/skills/workspace/assets"
 RULESETS = ASSETS / "rulesets"

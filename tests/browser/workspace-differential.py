@@ -5,18 +5,45 @@ no renderer, selector, paper builder or comparator is mocked.
 """
 
 import json
+import os
+import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 from pathlib import Path
 
-import yaml
-from click.testing import CliRunner
 from report_signature import report_signature
 
 ROOT = Path(__file__).resolve().parents[2]
 DECK = "slides/attention/slides.qmd"
 LOOK = "asta-what-changed-look.qmd"
+CASES = (
+    "prose",
+    "metadata",
+    "slide",
+    "quote",
+    "bibliography",
+    "config",
+    "image",
+    "new",
+    "deleted",
+    "renamed",
+    "paper-bibliography",
+    "paper",
+    "include",
+)
+
+
+def selected_cases():
+    case = os.environ.get("ASTA_WORKSPACE_CASE", "")
+    if case and case not in CASES:
+        raise ValueError(
+            f"Unknown workspace case: {case}; choose from {', '.join(CASES)}"
+        )
+    return (case,) if case else CASES
+
+
 # Only committed source pages: paper/slides index.qmd files are generated,
 # ignored build outputs and are absent in the fresh differential clone.
 ALL = {
@@ -27,7 +54,23 @@ ALL = {
 }
 
 
+def render_sources(directory, patterns):
+    """Enumerate existing render inputs, honoring Quarto's exclusions."""
+    included, excluded = set(), set()
+    for pattern in patterns:
+        negated = pattern.startswith("!")
+        target = excluded if negated else included
+        target.update(
+            path.relative_to(directory).as_posix()
+            for path in directory.glob(pattern[1:] if negated else pattern)
+            if path.is_file()
+        )
+    return sorted(included - excluded)
+
+
 def edit(project, case):
+    import yaml
+
     def replace(name, old, new):
         path = project / name
         text = path.read_text()
@@ -100,24 +143,61 @@ def edit(project, case):
 
 
 def worker(project, full, record):
+    import yaml
+    from click.testing import CliRunner
+
     from asta.commands import workspace as module
 
     renders, commands, copies = [], [], []
     original = module.render_site
+    render_lock = threading.Lock()
+    original_compare = module._run_comparison
+    preview_signatures = []
+
+    def compare(before, after, report, title, project, theme=None):
+        # Reuse these full renders through the PR-preview entry point. This
+        # preserves local/preview equality without building another site.
+        if full:
+            with tempfile.TemporaryDirectory(prefix="asta-preview-api-") as temp:
+                preview = Path(temp) / "site"
+                shutil.copytree(after, preview, symlinks=True)
+                module._run_comparison = original_compare
+                try:
+                    result = CliRunner().invoke(
+                        module.what_changed,
+                        [
+                            "--before-site",
+                            str(before),
+                            "--after-site",
+                            str(preview),
+                        ],
+                    )
+                finally:
+                    module._run_comparison = compare
+                assert result.exit_code == 0, result.output
+                preview_signatures.append(report_signature(preview))
+        return original_compare(before, after, report, title, project, theme)
 
     def render(directory, label, pages=None):
         actual = pages
         if actual is None:
-            inputs = module._comparison_inputs(directory)
-            assert inputs is not None, "Quarto must list full-render inputs"
-            actual = sorted(p.relative_to(directory).as_posix() for p in inputs)
+            # Full renders follow project.render. `quarto inspect` rejects
+            # this example's intentionally absent generated viewer inputs;
+            # enumerate existing configured sources without changing the render.
+            patterns = yaml.safe_load((directory / "_quarto.yml").read_text())[
+                "project"
+            ]["render"]
+            actual = render_sources(directory, patterns)
         renders.append(
             {
                 "side": "after" if label == "the working tree" else "before",
                 "pages": actual,
             }
         )
-        return original(directory, label, pages)
+        # Case jobs provide the fixture parallelism. Concurrent first renders
+        # can race while Quarto initializes its shared Sass-cache SQLite DB.
+        with render_lock:
+            return original(directory, label, pages)
 
     def audit(event, args):
         if event == "shutil.copyfile":
@@ -128,6 +208,7 @@ def worker(project, full, record):
             commands.append([str(arg) for arg in args[1]])
 
     module.render_site = render
+    module._run_comparison = compare
     sys.addaudithook(audit)
     result = CliRunner().invoke(
         module.what_changed,
@@ -141,9 +222,16 @@ def worker(project, full, record):
     )
     if result.exception:
         raise result.exception
+    if full:
+        assert len(preview_signatures) == 1
+        assert (
+            report_signature(project / ".asta/cache/what-changed")
+            == preview_signatures[0]
+        ), "local and preview entry points disagree"
 
 
 def check(artifacts):
+    cases = selected_cases()
     artifacts.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="asta-differential-") as temp:
         clone = Path(temp) / "repo"
@@ -190,21 +278,7 @@ def check(artifacts):
             "_extensions/asta-theme/light.scss",
         ):
             assert (project / required).is_file(), f"bootstrap missed {required}"
-        for case in (
-            "prose",
-            "metadata",
-            "slide",
-            "quote",
-            "bibliography",
-            "config",
-            "image",
-            "new",
-            "deleted",
-            "renamed",
-            "paper-bibliography",
-            "paper",
-            "include",
-        ):
+        for case in cases:
             subprocess.run(["git", "restore", "."], cwd=clone, check=True)
             for name in ("new-page.qmd", "renamed.qmd"):
                 (project / name).unlink(missing_ok=True)
@@ -297,7 +371,9 @@ def check(artifacts):
 
 
 if __name__ == "__main__":
-    if sys.argv[1] == "--worker":
+    if sys.argv[1] == "--list-cases":
+        print(json.dumps(CASES))
+    elif sys.argv[1] == "--worker":
         worker(Path(sys.argv[2]), bool(int(sys.argv[3])), Path(sys.argv[4]))
     else:
         check(Path(sys.argv[1]).resolve())

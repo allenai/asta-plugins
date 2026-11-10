@@ -19,7 +19,18 @@ on:
       rendered:
         description: Whether this event affects the rendered site
         value: ${{ jobs.scope.outputs.render }}
+      published:
+        description: Whether this run published the built site to gh-pages
+        value: ${{ jobs.deploy.result == 'success' }}
     inputs:
+      preview-pr:
+        description: Open same-repository PR to publish when explicitly dispatched on its head branch
+        type: string
+        default: ""
+      publish:
+        description: Publish the built site (disable for architecture validation)
+        type: boolean
+        default: true
       build-runner:
         description: Runner for the site build
         type: string
@@ -41,6 +52,10 @@ on:
         type: string
         default: "."
 
+      render:
+        description: Optional caller-owned PR scope (true or false); empty uses render-paths
+        type: string
+        default: ""
       render-paths:
         description: Newline-separated Python fnmatch patterns (both * and ** cross /) affecting rendered content; defaults to everything under site-dir
         type: string
@@ -54,19 +69,40 @@ jobs:
       pull-requests: read
     outputs:
       render: ${{ steps.paths.outputs.render }}
+      base-sha: ${{ steps.paths.outputs.base-sha }}
     steps:
       - id: paths
         env:
           GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.preview-pr }}
           EVENT: ${{ github.event_name }}
           ACTION: ${{ github.event.action }}
           SITE_DIR: ${{ inputs.site-dir }}
           RENDER_PATHS: ${{ inputs.render-paths }}
+          RENDER: ${{ inputs.render }}
+          DISPATCH_PR: ${{ inputs.preview-pr }}
         shell: python
         run: |
           import fnmatch, json, os, posixpath, subprocess
           from pathlib import Path
+          # An explicit dispatch can refresh an existing preview with GITHUB_TOKEN.
+          # Accept only its open same-repository PR's exact head, never an arbitrary
+          # PR directory or a fork's code under a write-enabled event.
+          dispatched = os.environ.get('DISPATCH_PR', '')
+          if dispatched:
+              if os.environ['EVENT'] != 'workflow_dispatch' or not dispatched.isdecimal():
+                  raise SystemExit('::error::preview-pr requires a workflow dispatch and a PR number.')
+              pr = json.loads(subprocess.check_output([
+                  'gh', 'api', f"repos/{os.environ['GITHUB_REPOSITORY']}/pulls/{dispatched}",
+              ], text=True))
+              head = pr['head']
+              if (pr['state'] != 'open' or head['repo'] is None
+                      or head['repo']['full_name'] != os.environ['GITHUB_REPOSITORY']
+                      or os.environ['GITHUB_REF'] != f"refs/heads/{head['ref']}"
+                      or head['sha'] != os.environ['GITHUB_SHA']):
+                  raise SystemExit('::error::preview-pr must identify this dispatch commit on an open same-repository PR.')
+              with Path(os.environ['GITHUB_OUTPUT']).open('a') as output:
+                  output.write(f"base-sha={pr['base']['sha']}\n")
           render = False
           if os.environ['ACTION'] != 'closed':
               site = posixpath.normpath(os.environ.get('SITE_DIR', '.'))
@@ -74,6 +110,10 @@ jobs:
                   raise SystemExit('::error::site-dir must stay inside the repository.')
               if os.environ['EVENT'] != 'pull_request':
                   render = True
+              elif os.environ.get('RENDER', ''):
+                  if os.environ['RENDER'] not in ('true', 'false'):
+                      raise SystemExit('::error::render must be true or false.')
+                  render = os.environ['RENDER'] == 'true'
               else:
                   pages = json.loads(subprocess.check_output([
                       'gh', 'api', '--paginate', '--slurp',
@@ -113,7 +153,7 @@ jobs:
     permissions:
       contents: read
     concurrency:
-      group: pages-${{ inputs.site-dir }}-${{ github.event.pull_request.number || github.ref }}
+      group: pages-${{ inputs.site-dir }}-${{ inputs.publish && 'publish' || inputs.build-runner }}-${{ github.event.pull_request.number || inputs.preview-pr || github.ref }}
       cancel-in-progress: true
     defaults:
       run:
@@ -202,7 +242,7 @@ jobs:
         id: paper
         continue-on-error: true
         env:
-          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_BASE: ${{ github.event.pull_request.base.sha || needs.scope.outputs.base-sha }}
           WORKFLOW_REF: ${{ job.workflow_ref }}
           ASTA_PAPER_STRICT: ${{ inputs.paper-strict && '1' || '' }}
         run: |
@@ -317,9 +357,9 @@ jobs:
       # Generate the diff with the build job's read-only token. A project may
       # customize this script, so it must not run in the write-enabled deploy job.
       - name: Generate What changed
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || inputs.preview-pr != ''
         env:
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.preview-pr }}
         run: |
           set -o pipefail
           tmpdir=$(mktemp -d)
@@ -362,7 +402,7 @@ jobs:
         env:
           ARTIFACT_COMMAND: ${{ inputs.artifact-command }}
           SITE_DIR: _site
-          REQUIRE_WHAT_CHANGED: ${{ github.event_name == 'pull_request' }}
+          REQUIRE_WHAT_CHANGED: ${{ github.event_name == 'pull_request' || inputs.preview-pr != '' }}
           ASTA_WORKSPACE_RESOLVED_SHA: ${{ job.workflow_sha }}
           ASTA_WORKSPACE_RESOLVED_REPOSITORY: ${{ job.workflow_repository }}
         run: bash -e -o pipefail -c "$ARTIFACT_COMMAND"
@@ -383,12 +423,14 @@ jobs:
   # Fork and Dependabot-triggered PR runs get a read-only token, so they skip
   # the preview; `preview-unavailable` says so. A `workflow_dispatch` on the
   # default branch publishes main like a push (on-demand rebuilds); on any other
-  # branch it only builds. Other events are unchanged.
+  # branch it only builds unless preview-pr validates an open PR at that head.
+  # Architecture-only callers set publish=false and never write gh-pages.
   deploy:
-    needs: build
+    needs: [scope, build]
     if: >-
-      (github.event_name == 'push' || github.event.action != 'closed')
+      inputs.publish && (github.event_name == 'push' || github.event.action != 'closed')
       && !(github.event_name == 'workflow_dispatch'
+      && inputs.preview-pr == ''
       && github.ref != format('refs/heads/{0}', github.event.repository.default_branch))
       && !(github.event_name == 'pull_request'
       && (github.event.pull_request.head.repo.full_name != github.repository
@@ -402,7 +444,7 @@ jobs:
       # domain, not <owner>.github.io/<repo>). Degrades gracefully if absent.
       pages: read
     concurrency:
-      group: pages-${{ inputs.site-dir }}-${{ github.event.pull_request.number || github.ref }}
+      group: pages-${{ inputs.site-dir }}-${{ inputs.publish && 'publish' || inputs.build-runner }}-${{ github.event.pull_request.number || inputs.preview-pr || github.ref }}
       cancel-in-progress: true
     steps:
       - uses: actions/checkout@v4
@@ -413,11 +455,11 @@ jobs:
 
       - name: Publish to gh-pages
         env:
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.preview-pr }}
           GH_TOKEN: ${{ github.token }}
-          PUBLISH_MAIN: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
+          PUBLISH_MAIN: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.preview-pr == '') }}
           CALLER_WORKFLOW_REF: ${{ github.workflow_ref }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || needs.scope.outputs.base-sha }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -485,7 +527,7 @@ jobs:
           # independent of whether the content changed. Best-effort — a comment
           # hiccup shouldn't fail an otherwise-successful publish, so the whole
           # block runs with errexit disabled and closes on a guaranteed success.
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
+          if [ -n "$PR_NUMBER" ]; then
             set +e
             # Resolve the site's real base URL from the Pages config. Private and
             # internal repos serve from an obfuscated <random>.pages.github.io
@@ -641,7 +683,7 @@ jobs:
       contents: write
       pull-requests: write
     concurrency:
-      group: pages-${{ inputs.site-dir }}-${{ github.event.pull_request.number || github.ref }}
+      group: pages-${{ inputs.site-dir }}-${{ inputs.publish && 'publish' || inputs.build-runner }}-${{ github.event.pull_request.number || inputs.preview-pr || github.ref }}
       cancel-in-progress: true
     steps:
       # A closed PR with conflicts may have no synthetic merge ref. Cleanup

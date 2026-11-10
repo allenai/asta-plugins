@@ -7,9 +7,15 @@ import subprocess
 
 import pytest
 
-from tests.test_overleaf_sync import github as github  # noqa: F401
-from tests.test_workspace_overleaf import URL, commit_all, git, overleaf_edit, run
-from tests.test_workspace_overleaf import setup as setup  # noqa: F401
+from tests.workspace.test_overleaf_sync import github as github  # noqa: F401
+from tests.workspace.test_workspace_overleaf import (
+    URL,
+    commit_all,
+    git,
+    overleaf_edit,
+    run,
+)
+from tests.workspace.test_workspace_overleaf import setup as setup  # noqa: F401
 
 ov = importlib.import_module("asta.commands.overleaf")
 schedule = importlib.import_module("asta.commands.overleaf_schedule")

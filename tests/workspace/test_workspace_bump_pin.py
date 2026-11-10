@@ -2,7 +2,6 @@
 
 import os
 import shlex
-import shutil
 import subprocess
 import sys
 import time
@@ -397,7 +396,6 @@ def test_unreadable_head_after_success_never_prints_an_empty_sha(project, monkey
     assert not _git(root, "status", "--porcelain")
 
 
-@pytest.mark.skipif(not shutil.which("make"), reason="requires GNU Make")
 @pytest.mark.parametrize("site_dir", [".", "research/site", "research/site notes"])
 @pytest.mark.parametrize("checkout_spaces", [False, True])
 def test_make_checks_bumped_rules_and_reloads_old_rules_after_revert(
@@ -416,7 +414,7 @@ def test_make_checks_bumped_rules_and_reloads_old_rules_after_revert(
             workflow.read_text() + f"    with:\n      site-dir: {site_dir}\n"
         )
         _git(repository, "add", workspace.WORKFLOW_FILE)
-    repo = Path(__file__).resolve().parents[1]
+    repo = Path(__file__).resolve().parents[2]
     assets = repo / "plugins/asta-tools/skills/workspace/assets"
     (root / "Makefile").write_bytes((assets / "Makefile.managed").read_bytes())
     (root / ".gitignore").write_text(".asta/cache/\n")

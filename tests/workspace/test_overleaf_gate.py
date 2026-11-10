@@ -7,10 +7,10 @@ import pytest
 from click.testing import CliRunner
 
 from asta.cli import cli
-from tests.test_overleaf_sync import github as github  # noqa: F401
-from tests.test_overleaf_sync import prepare
-from tests.test_workspace_overleaf import git
-from tests.test_workspace_overleaf import setup as setup  # noqa: F401
+from tests.workspace.test_overleaf_sync import github as github  # noqa: F401
+from tests.workspace.test_overleaf_sync import prepare
+from tests.workspace.test_workspace_overleaf import git
+from tests.workspace.test_workspace_overleaf import setup as setup  # noqa: F401
 
 gate = importlib.import_module("asta.commands.overleaf_gate")
 
