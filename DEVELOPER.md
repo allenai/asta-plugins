@@ -111,9 +111,10 @@ The version lives in three places:
    ```bash
    git add -A && git commit -m "chore: bump version to x.y.z" && git push
    ```
-5. Dispatch `gh workflow run workspace-release-checks.yml --ref "$(git rev-parse HEAD)"`
-   after the release commit merges, and wait for its workspace validation on both
-   architectures. `make push-version-tag` requires that successful run, verifies all three version files match and that
+5. After the release commit merges, dispatch
+   `gh workflow run workspace-release-checks.yml --ref main` and wait for it to
+   pass on both architectures. Confirm the run uses the release commit; if main
+   has advanced, select a branch or tag pointing to that commit instead. `make push-version-tag` requires that successful run, verifies all three version files match and that
    `HEAD` is on `origin/main`, then waits for the `Docker` workflow run on that
    commit to succeed (`scripts/wait-for-main-image.sh`, needs `gh`) before it
    creates and pushes the git tag. It exits without tagging if that run failed

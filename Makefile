@@ -111,7 +111,7 @@ push-version-tag:
 		exit 1; \
 	fi; \
 	test "$$(gh run list --workflow workspace-release-checks.yml --commit $$SHA --status success --json databaseId --jq length)" -gt 0 || { \
-		echo "Run gh workflow run workspace-release-checks.yml --ref $$SHA and wait for it to pass before tagging" >&2; exit 1; \
+		echo "Run workspace-release-checks.yml on a branch or tag pointing to $$SHA and wait for it to pass before tagging" >&2; exit 1; \
 	}; \
 	scripts/wait-for-main-image.sh $$SHA && \
 	git tag v$$VERSION && \
