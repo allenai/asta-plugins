@@ -17,7 +17,10 @@ env:
 
 jobs:
   code-quality:
-    runs-on: ${{ inputs.build-runner || 'ubuntu-latest' }}
+    # x86 for every build-runner: these checks read source, so the machine
+    # can't change their result, and the shellcheck action installs an x86_64
+    # binary that can't run on an arm runner.
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 

@@ -28,6 +28,12 @@ def test_tests_ok_needs_every_per_python_job():
     assert gate["steps"][-1]["env"]["RESULT"] == "${{ needs.test.result }}"
 
 
+def test_code_quality_runs_on_x86_for_every_build_runner():
+    # The shellcheck action installs an x86_64 binary, so code-quality on the
+    # release checks' arm build-runner fails before checking anything.
+    assert JOBS["code-quality"]["runs-on"] == "ubuntu-latest"
+
+
 @pytest.mark.parametrize("result", ["success", "failure", "cancelled", "skipped"])
 def test_tests_ok_passes_only_on_success(result):
     step = JOBS["tests-ok"]["steps"][-1]
