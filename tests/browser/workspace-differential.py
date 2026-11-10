@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 from pathlib import Path
 
 from report_signature import report_signature
@@ -135,6 +136,7 @@ def worker(project, full, record):
 
     renders, commands, copies = [], [], []
     original = module.render_site
+    render_lock = threading.Lock()
     original_compare = module._run_comparison
     preview_signatures = []
 
@@ -185,7 +187,10 @@ def worker(project, full, record):
                 "pages": actual,
             }
         )
-        return original(directory, label, pages)
+        # Case jobs provide the fixture parallelism. Concurrent first renders
+        # can race while Quarto initializes its shared Sass-cache SQLite DB.
+        with render_lock:
+            return original(directory, label, pages)
 
     def audit(event, args):
         if event == "shutil.copyfile":
