@@ -271,9 +271,10 @@ jobs:
           fi
           discovery=$(python3 /tmp/paper-discovery.py "$base") || fail_discovery 'Could not discover paper projects.'
           jq -e '(.papers | type == "array" and all(.[]; type == "string")) and (.removed | type == "array" and all(.[]; type == "string")) and (.warnings | type == "array" and all(.[]; type == "string"))' <<< "$discovery" >/dev/null || fail_discovery 'Paper discovery returned invalid data.'
-          mapfile -t papers < <(jq -r '.papers[]' <<< "$discovery")
-          mapfile -t removed < <(jq -r '.removed[]' <<< "$discovery")
-          mapfile -t warnings < <(jq -r '.warnings[]' <<< "$discovery")
+          papers=() removed=() warnings=()
+          while IFS= read -r line; do papers+=("$line"); done < <(jq -r '.papers[]' <<< "$discovery")
+          while IFS= read -r line; do removed+=("$line"); done < <(jq -r '.removed[]' <<< "$discovery")
+          while IFS= read -r line; do warnings+=("$line"); done < <(jq -r '.warnings[]' <<< "$discovery")
           status=0
           if [ ${#warnings[@]} -gt 0 ]; then
             printf '%s\n' "${warnings[@]}" > _site/paper-previews/build-failed.txt
@@ -373,7 +374,7 @@ jobs:
             # Pages may have been force-pushed since checkout fetched its branch.
             # Archive from the repo root: run in site-dir, archive keeps only that subtree.
             if ! git fetch -q origin +gh-pages:refs/remotes/origin/gh-pages \
-                || ! (cd "$(git rev-parse --show-toplevel)" && git archive refs/remotes/origin/gh-pages) | tar -x --anchored --exclude=pr-preview -C "$baseline"; then
+                || ! (cd "$(git rev-parse --show-toplevel)" && git archive refs/remotes/origin/gh-pages -- . ':(exclude)pr-preview') | tar -x -C "$baseline"; then
               echo "::warning::Could not read the deployed main site; skipping the diff page"
               exit 0
             fi
