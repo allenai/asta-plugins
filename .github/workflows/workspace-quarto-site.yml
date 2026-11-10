@@ -507,8 +507,9 @@ jobs:
             # a path-scoped robots.txt (only the host-root one is honored), so
             # inject into the document head once: embedded Reveal scripts also
             # contain <head> strings, which must remain byte-for-byte unchanged.
+            # Perl rather than GNU-only `sed -i '0,/re/'`, so tests run it on macOS too.
             find "$tmp/pr-preview/pr-$PR_NUMBER" -type f -name '*.html' -print0 \
-              | xargs -0 sed -i '0,/<head>/s#<head>#<head><meta name="robots" content="noindex, nofollow">#'
+              | xargs -0 perl -0777 -pi -e 's#<head>#<head><meta name="robots" content="noindex, nofollow">#'
           fi
 
           cd "$tmp"
