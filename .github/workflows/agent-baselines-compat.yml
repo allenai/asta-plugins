@@ -1,0 +1,75 @@
+name: Agent baselines compatibility
+
+on:
+  pull_request:
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - pyproject.toml
+      - uv.lock
+      - src/**
+      - plugins/**/skills/**
+      - plugins/asta-tools/hooks/sync-cli-version.sh
+      - .github/workflows/agent-baselines-compat.yml
+  schedule:
+    - cron: '17 9 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect-swe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the proposed Asta image
+        run: docker build --target asta -t asta-baselines-compat .
+      - uses: actions/checkout@v4
+        with:
+          repository: allenai/agent-baselines
+          path: agent-baselines
+          persist-credentials: false
+          ref: ${{ github.event_name == 'pull_request' && '2d426deac51ad74381319bcfd77066c6e222ba30' || 'main' }}
+      - uses: astral-sh/setup-uv@v4
+      - name: Test the current inspect_swe solver contract
+        if: github.event_name != 'pull_request'
+        working-directory: agent-baselines
+        env:
+          PYTHONPATH: ${{ github.workspace }}/agent-baselines
+        run: |
+          uv run --project solvers/inspect-swe --with pytest --frozen -- \
+            python -m pytest -q \
+            tests/solvers/test_inspect_swe_image_version.py \
+            tests/solvers/test_inspect_swe_solver.py
+      - name: Resolve skills from the proposed image with agent-baselines
+        run: |
+          version=$(sed -nE 's/^PLUGIN_VERSION=([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' plugins/asta-tools/hooks/sync-cli-version.sh)
+          test -n "$version"
+          docker run --rm -i \
+            -v "$PWD/agent-baselines:/agent-baselines:ro" \
+            -e PYTHONPATH=/agent-baselines \
+            -e ASTA_IMAGE="ghcr.io/allenai/asta:v${version}" \
+            asta-baselines-compat python3 -S - <<'PY'
+          from agent_baselines.skills.image_version import _check_plugin_image_version_match
+          from agent_baselines.skills.resolver import resolve_skills
+
+          root = "/opt/asta-plugins/plugins"
+          stacks = {
+              "assistant": ("asta-tools", "asta-assistant"),
+              "flows": ("asta-tools", "asta-flows"),
+              "assistant+dev": ("asta-tools", "asta-assistant", "asta-dev"),
+          }
+          expected = {
+              "assistant": {"workspace", "asta-cli", "run"},
+              "flows": {"workspace", "asta-cli", "asta-flows"},
+              "assistant+dev": {"workspace", "asta-cli", "run", "improve-skills"},
+          }
+          for label, groups in stacks.items():
+              resolved = resolve_skills([f"{root}/{group}/skills" for group in groups])
+              names = {path.name for path in resolved.skill_dirs}
+              assert expected[label] <= names, f"{label} missing {expected[label] - names}"
+              _check_plugin_image_version_match(resolved.skill_dirs)
+              print(f"agent-baselines resolved {len(resolved.skill_dirs)} {label} skills")
+          PY
