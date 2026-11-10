@@ -65,6 +65,19 @@ jobs:
           ASTA_TEST_CLAUDE_PLUGIN_DEPS: "1"
         run: make test-plugins
 
+  tests-ok:
+    # One check for main to require that keeps its name when the Python matrix changes.
+    needs: test
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - run: |
+          echo "test: $RESULT"
+          test "$RESULT" = success
+        env:
+          RESULT: ${{ needs.test.result }}
+
   docker:
     runs-on: ${{ inputs.build-runner || 'ubuntu-latest' }}
     steps:
