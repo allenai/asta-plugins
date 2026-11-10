@@ -42,7 +42,9 @@ jobs:
     runs-on: ${{ inputs.build-runner || 'ubuntu-latest' }}
     strategy:
       matrix:
-        python-version: ["3.11", "3.12", "3.13"]
+        python-version: ["3.11", "3.12", "3.13", "3.14", "3.15"]
+    env:
+      UV_PYTHON: ${{ matrix.python-version }}
 
     steps:
       - uses: actions/checkout@v4
@@ -62,6 +64,19 @@ jobs:
         env:
           ASTA_TEST_CLAUDE_PLUGIN_DEPS: "1"
         run: make test-plugins
+
+  tests-ok:
+    # One check for main to require that keeps its name when the Python matrix changes.
+    needs: test
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - run: |
+          echo "test: $RESULT"
+          test "$RESULT" = success
+        env:
+          RESULT: ${{ needs.test.result }}
 
   docker:
     runs-on: ${{ inputs.build-runner || 'ubuntu-latest' }}
