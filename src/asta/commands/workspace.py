@@ -1101,6 +1101,28 @@ def diff_script(project: Path) -> Path:
     raise click.ClickException(guidance)
 
 
+def prime_quarto_sass_cache(scratch: Path) -> None:
+    """Make Quarto create its Sass cache database before two renders share it.
+
+    Quarto keeps its compiled-theme cache in one SQLite database in the user's
+    cache directory. Two renders that start together while it does not exist
+    can both try to create it, and one stops with "database is locked". One
+    render of a one-line page in SCRATCH, before the others start, creates the
+    database where Quarto itself looks for it, on every platform and without
+    changing any environment variable or setting. Best effort: if this render
+    fails, the real renders run as before and report their own errors.
+    """
+    if shutil.which("quarto") is None:
+        return
+    scratch.mkdir()
+    (scratch / "sass-cache.md").write_text("# Sass cache\n", encoding="utf-8")
+    command = ["quarto", "render", "sass-cache.md", "--to", "html", "--quiet"]
+    with preview_process(
+        command, scratch, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+    ) as process:
+        process.wait()
+
+
 def render_site(directory: Path, label: str, pages: list[str] | None = None) -> Path:
     if not directory.is_dir():
         raise click.ClickException(
@@ -1967,6 +1989,9 @@ def compare_workspace(ref: str, project: Path, *, full: bool = False) -> None:
                     return site
                 return render_site(project_dir, label, selected)
 
+            if pages is None or before_pages or after_pages:
+                with _timed("prepare Quarto's Sass cache"):
+                    prime_quarto_sass_cache(tmp / "sass-cache")
             # Record the enclosing wall time, rather than adding overlapping
             # durations and reporting a negative remainder in --timings.
             with _timed("render before and after (parallel)"):

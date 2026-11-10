@@ -40,6 +40,21 @@ pathlib.Path("_site/index.html").write_text(
 )
 """
 
+# Stands in for `quarto`: records each render's directory, arguments and page.
+FAKE_QUARTO = """#!/usr/bin/env python3
+import os, sys
+if sys.argv[1] != "render":
+    sys.exit(1)
+with open(os.environ["ORDER_LOG"], "a") as log:
+    log.write(
+        "quarto\\t" + os.getcwd() + "\\t" + " ".join(sys.argv[1:]) + "\\t"
+        + str(os.path.isfile(sys.argv[2])) + "\\t"
+        + os.environ["XDG_CACHE_HOME"] + "\\n"
+    )
+"""
+
+PRIME_QUARTO_SASS_CACHE = workspace_module.prime_quarto_sass_cache
+
 
 def git(project: Path, *args: str) -> None:
     subprocess.run(
@@ -79,6 +94,8 @@ def project(
         "_comparison_python",
         lambda decks: ([sys.executable], os.environ.copy()),
     )
+    # Quarto's real cache is not touched by the tests that stub the renders.
+    monkeypatch.setattr(workspace_module, "prime_quarto_sass_cache", lambda _: None)
     bin_dir = tmp_path_factory.mktemp("bin")
     (bin_dir / "make").write_text(FAKE_MAKE)
     (bin_dir / "make").chmod(0o755)
@@ -757,6 +774,48 @@ def test_both_renders_are_parallel_private_clones(project, monkeypatch):
     )
     assert result.exit_code == 0, result.output
     assert_single_worktree(project)
+
+
+def test_sass_cache_is_created_once_before_the_two_renders(
+    project, monkeypatch, tmp_path_factory
+):
+    monkeypatch.setattr(
+        workspace_module, "prime_quarto_sass_cache", PRIME_QUARTO_SASS_CACHE
+    )
+    log = tmp_path_factory.mktemp("order-log") / "order.txt"
+    shared = tmp_path_factory.mktemp("user-cache")
+    monkeypatch.setenv("ORDER_LOG", str(log))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(shared))
+    quarto_dir = tmp_path_factory.mktemp("quarto-bin")
+    (quarto_dir / "quarto").write_text(FAKE_QUARTO)
+    (quarto_dir / "quarto").chmod(0o755)
+    monkeypatch.setenv("PATH", f"{quarto_dir}{os.pathsep}{os.environ['PATH']}")
+    make = Path(shutil.which("make"))
+    make.write_text(
+        make.read_text()
+        + "import os\n"
+        + "with open(os.environ['ORDER_LOG'], 'a') as log:\n"
+        + "    log.write('make\\t' + os.getcwd() + '\\t\\t\\t' "
+        + "+ os.environ['XDG_CACHE_HOME'] + '\\n')\n"
+    )
+    (project / "index.qmd").write_text("The baseline finding holds.\nAn edit.\n")
+    result = CliRunner().invoke(
+        workspace, ["what-changed", "last-read", "--project", str(project)]
+    )
+    assert result.exit_code == 0, result.output
+    steps = [line.split("\t") for line in log.read_text().splitlines()]
+    assert [step[0] for step in steps] == ["quarto", "make", "make"], steps
+    _, directory, arguments, page_existed, _ = steps[0]
+    assert arguments == "render sass-cache.md --to html --quiet"
+    assert page_existed == "True"
+    assert not Path(directory).resolve().is_relative_to(project.resolve())
+    assert not any(
+        Path(directory).resolve() in Path(step[1]).resolve().parents
+        or Path(step[1]).resolve() in Path(directory).resolve().parents
+        for step in steps[1:]
+    )
+    # No environment variable is changed for any of them.
+    assert {step[4] for step in steps} == {str(shared)}
 
 
 @pytest.mark.parametrize("intent_to_add", [False, True])

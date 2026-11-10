@@ -4,6 +4,7 @@
 
 - Use `asta workspace what-changed [ref]` locally and in PR previews, including built-site baselines and lazy, pinned browser provisioning for deck comparisons. Shared Make rules retain only the render contract.
 - Preserve evidence popovers and resolve inline citation links in comparison pages.
+- `asta workspace what-changed` creates Quarto's Sass cache database before its two concurrent renders start, so a cold start no longer fails with "database is locked".
 
 
 - A workspace site in a subfolder uses the repository root's `docs.yml` when
