@@ -77,7 +77,7 @@ jobs:
             uv tool install --force .
             make workspace-demo
           '
-        make workspace-browser PREVIEW_SITE=examples/workspace/_site PR_NUMBER=0
+        make -C "$GITHUB_WORKSPACE" workspace-browser PREVIEW_SITE="$GITHUB_WORKSPACE/examples/workspace/_site" PR_NUMBER=0
       render-paths: "**"
 
   check-preview:

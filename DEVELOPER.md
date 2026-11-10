@@ -192,8 +192,9 @@ whole offline suite; `WORKSPACE_SHARD` and `WORKSPACE_SHARDS` select CI's partit
 `make workspace-browser PR_NUMBER=296` checks the downloaded preview directory.
 
 Before a release, dispatch `workspace-release-checks.yml` at the release commit
-and wait for it to succeed. It runs workspace tests, comparisons and site builds
-on x86 and arm without publishing. `make push-version-tag` requires a successful
+and wait for it to succeed. It reuses the existing plugin and dev-container checks, and runs workspace
+tests, comparisons, DOM/browser checks and site builds on x86 and arm without
+publishing. Ordinary plugin-check commands and triggers stay unchanged. `make push-version-tag` requires a successful
 run for the exact commit. Arm validation otherwise runs only on manual dispatch.
 Pushes to main publish the example and its patch-derived demo; workspace check
 jobs are PR/release/manual jobs.

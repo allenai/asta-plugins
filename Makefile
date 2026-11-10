@@ -161,7 +161,7 @@ ci: format-check lint test check-skills
 
 # Workspace checks: ownership is tests/workspace; tools contains real render tests.
 # CI supplies one shard per GitHub job. Local default runs the complete target.
-WORKSPACE_PATHS := plugins/asta-tools/skills/workspace/ src/asta/commands/workspace src/asta/commands/overleaf examples/workspace tests/workspace/ tests/browser/ tests/dom/ .github/workflows/ scripts/ Makefile pyproject.toml uv.lock tests/conftest.py tests/_workspace_helpers.py src/asta/cli.py
+WORKSPACE_PATHS := README.md DEVELOPER.md Dockerfile docker/ image/skills-cli/ docs/overleaf src/asta/__init__.py plugins/asta-tools/skills/workspace/ src/asta/commands/workspace src/asta/commands/overleaf examples/workspace tests/workspace/ tests/browser/ tests/dom/ .github/workflows/ scripts/ Makefile pyproject.toml uv.lock tests/conftest.py tests/_workspace_helpers.py src/asta/cli.py
 export WORKSPACE_PATHS
 WORKSPACE_SHARD ?= 0
 WORKSPACE_SHARDS ?= 1

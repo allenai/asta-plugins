@@ -504,12 +504,19 @@ def test_dispatched_preview_requires_exact_open_same_repo_head(tmp_path, invalid
     "path,runs",
     [
         ("src/asta/commands/workspace.py", True),
+        ("examples/workspace/a\nline.qmd", True),
         ("src/asta/commands/workspace_selection.py", True),
         ("src/asta/commands/workspace_versions.py", True),
         ("src/asta/commands/workspace_comparison.py", True),
         ("plugins/asta-tools/skills/workspace/assets/what-changed.py", True),
         ("examples/workspace/index.qmd", True),
-        ("README.md", False),
+        ("README.md", True),
+        ("DEVELOPER.md", True),
+        ("docs/overleaf-sync.md", True),
+        ("Dockerfile", True),
+        ("image/skills-cli/package.json", True),
+        ("src/asta/__init__.py", True),
+        ("plugins/asta-tools/skills/find-literature/SKILL.md", False),
         (".github/workflows/example-workspace.yml", True),
         ("tests/browser/workspace-differential.py", True),
         ("tests/browser/report_signature.py", True),
@@ -671,3 +678,22 @@ def test_empty_workspace_shard_never_falls_back_to_all_tests(
     )
     assert (result.returncode == 0) == (expected == 0)
     assert "pytest" not in result.stdout
+
+
+def test_release_reuses_all_checks_on_both_architectures():
+    release = load("workspace-release-checks")["jobs"]
+    plugins = release["plugins"]
+    assert plugins["uses"] == "./.github/workflows/ci.yml"
+    assert plugins["strategy"]["matrix"]["runner"] == [
+        "ubuntu-latest",
+        "ubuntu-24.04-arm",
+    ]
+    assert (
+        release["devcontainer"]["uses"] == "./.github/workflows/devcontainer-smoke.yml"
+    )
+    assert load("example-workspace")["jobs"]["dom"]["strategy"]["matrix"]["runner"]
+    arm = load("example-preview")["jobs"]["docs-arm"]
+    assert (
+        'make -C "$GITHUB_WORKSPACE" workspace-browser'
+        in arm["with"]["artifact-command"]
+    )

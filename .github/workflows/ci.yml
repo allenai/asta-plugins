@@ -5,6 +5,10 @@ on:
     branches: [main]
   workflow_dispatch:
   workflow_call:
+    inputs:
+      build-runner:
+        type: string
+        default: ubuntu-latest
   pull_request:
     branches: [main]
 
@@ -13,7 +17,7 @@ env:
 
 jobs:
   code-quality:
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.build-runner || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -35,7 +39,7 @@ jobs:
         run: make check-skills
 
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.build-runner || 'ubuntu-latest' }}
     strategy:
       matrix:
         python-version: ["3.11", "3.12", "3.13"]
@@ -60,7 +64,7 @@ jobs:
         run: make test-plugins
 
   docker:
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.build-runner || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -78,7 +82,7 @@ jobs:
   plugin-install:
     # Verify `npx plugins add` installs the plugins into Claude Code and Codex.
     # No API auth required — only checks the installed files land correctly.
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.build-runner || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
 
