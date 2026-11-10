@@ -1,6 +1,7 @@
 """Scheduler behavior over real workspace and Overleaf Git repositories."""
 
 import ast
+import errno
 import importlib
 import json
 import os
@@ -1250,7 +1251,13 @@ def test_shared_check_handles_non_utf8_paths(tmp_path):
     paper.mkdir()
     _record(paper).write_text("{}")
     name = os.fsencode(paper) + b"/odd-\xff.tex"
-    with open(name, "wb") as stream:
+    try:
+        stream = open(name, "wb")
+    except OSError as error:
+        if error.errno != errno.EILSEQ:
+            raise
+        pytest.skip("this filesystem cannot hold a file name that is not UTF-8")
+    with stream:
         stream.write(b"=======\r\n")
     git(tmp_path, "add", "--", "paper", ".asta")
     script = (
