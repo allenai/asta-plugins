@@ -396,7 +396,7 @@ def test_example_publishes_one_patch_through_existing_artifact_hook():
     assert not any("upload-pages-artifact" in s.get("uses", "") for s in build["steps"])
     for readme in (ROOT / "README.md", example / "README.md"):
         text = readme.read_text()
-        assert "https://allenai.github.io/asta-plugins/pr-preview/pr-" in text
+        assert "https://allenai.github.io/asta-plugins/demo/" in text and "pull/281" not in text
 
 
 def test_example_uses_current_scaffold_and_managed_inputs():

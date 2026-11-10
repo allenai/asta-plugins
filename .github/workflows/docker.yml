@@ -245,55 +245,6 @@ jobs:
           }
           git push origin "$target:refs/heads/latest"
 
-  # The demo PR's branch is the release plus examples/workspace-demo.patch, the one
-  # copy of the sample edit, so the demo the READMEs link to is the edit CI checks.
-  demo-pr:
-    if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-rc.')
-    needs: latest
-    runs-on: ubuntu-latest
-    concurrency:
-      group: docker-release-demo-pr
-      cancel-in-progress: false
-    permissions:
-      contents: write
-      actions: write
-      pull-requests: read
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Rebuild example-demo-pr from the release and the demo patch
-        env:
-          NEWEST: ${{ needs.latest.outputs.version }}
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          git checkout --detach "refs/tags/$NEWEST^{commit}"
-          if ! git apply --index examples/workspace-demo.patch; then
-            echo "::error file=examples/workspace-demo.patch::The demo edit no longer applies to $NEWEST"
-            exit 1
-          fi
-          git -c user.name='github-actions[bot]' \
-            -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
-            commit -q -m "Demo: the sample edit (examples/workspace-demo.patch) on $NEWEST"
-          git push --force origin HEAD:refs/heads/example-demo-pr
-          # GitHub may briefly report the old PR head after the force-push. The
-          # preview dispatch requires an exact head match, so wait before firing.
-          expected=$(git rev-parse HEAD)
-          for attempt in $(seq 1 30); do
-            actual=$(gh api "repos/$GITHUB_REPOSITORY/pulls/281" --jq .head.sha)
-            if [ "$actual" = "$expected" ]; then break; fi
-            if [ "$attempt" -eq 30 ]; then
-              echo "::error::Demo PR head did not reach $expected; preview not dispatched"
-              exit 1
-            fi
-            sleep 2
-          done
-          # GITHUB_TOKEN pushes do not start unattended PR checks. Explicit
-          # workflow_dispatch does, with no long-lived bot token to provision.
-          gh workflow run example-preview.yml --repo "$GITHUB_REPOSITORY" \
-            --ref example-demo-pr -f preview-pr=281
-
   example-workspace:
     if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-rc.')
     needs: latest

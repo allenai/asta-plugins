@@ -127,17 +127,7 @@ The version lives in three places:
 7. *(Future)* Create a GitHub release from the tag for human-readable notes.
    This is bookkeeping only — the Docker image is already published by step 5, so
    a release is not a prerequisite for anything.
-8. Wait for the demo preview refresh on PR #281 (`example-demo-pr`). After a
-   final release is promoted, `docker.yml` rebuilds that branch from the same
-   highest published final release plus `examples/workspace-demo.patch`, then
-   explicitly dispatches Example site with `preview-pr=281`. This uses
-   `GITHUB_TOKEN` without an extra secret; a token-created push alone would not
-   start unattended PR checks. Keep the existing demo PR open as a draft and
-   never merge it. The patch is the only source of its sample edit; do not merge
-   main into the demo branch or maintain another copy by hand. A patch that no
-   longer applies fails the release's demo job with the patch path in the error.
-   The job waits for GitHub to report the pushed PR head before dispatching;
-   a timeout fails the job instead of refreshing an outdated preview.
+8. Check [the demo](https://allenai.github.io/asta-plugins/demo/what-changed.html). Main rebuilds it from `examples/workspace-demo.patch` on every push; no release step maintains a demo branch.
 
 The Example site browser job owns theme, evidence, slide geometry and deck-review
 coverage on main and PRs, including the release demo's dispatched preview. The
