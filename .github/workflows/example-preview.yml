@@ -27,6 +27,7 @@ permissions:
 jobs:
   scope:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: read
     outputs:
@@ -86,14 +87,50 @@ jobs:
             uv tool install --force .
             make workspace-demo
           '
-        make -C "$GITHUB_WORKSPACE" workspace-browser PREVIEW_SITE="$GITHUB_WORKSPACE/examples/workspace/_site" PR_NUMBER=0
-      render-paths: "**"
+
+  check-arm:
+    name: Example arm browser
+    needs: docs-arm
+    if: always() && (github.event_name == 'workflow_dispatch' || inputs.release-check)
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Require successful arm build
+        env:
+          RESULT: ${{ needs.docs-arm.result }}
+        run: test "$RESULT" = success
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: site-ubuntu-24.04-arm
+          path: preview-site/pr-preview/pr-0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: tests/browser/package-lock.json
+      - uses: quarto-dev/quarto-actions/setup@v2
+        with:
+          version: release
+      - uses: astral-sh/setup-uv@v6
+      - name: Check arm artifact
+        run: make workspace-browser PR_NUMBER=0
+      - uses: actions/upload-artifact@v4
+        with:
+          name: example-arm-screenshots
+          path: tests/browser/artifacts
+          retention-days: 30
 
   check-preview:
     name: Example preview browser
     needs: docs
     if: always() && github.event_name != 'push' && github.event.action != 'closed'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
     steps:

@@ -26,7 +26,6 @@ git check-ignore .asta/cache/workspace.mk _extensions/asta-theme/light.scss
 git diff --exit-code  # prints any tracked file a build or sync modified
 
 # The image ships a released asta; run the one just built from this checkout.
-export PATH="$(uv tool dir --bin):$PATH"
 test "$(command -v asta)" = "$(uv tool dir --bin)/asta"
 # An empty preview exercises the local path without rendering a second site.
 mkdir -p _site

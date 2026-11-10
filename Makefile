@@ -100,17 +100,20 @@ set-version:
 
 # Create and push git tag using version from code
 push-version-tag:
-	@if ! uv run python scripts/manage-version.py check; then \
-		exit 1; \
-	fi; \
+	@set -eu; \
+	uv run python scripts/manage-version.py check; \
 	VERSION=$$(uv run python scripts/manage-version.py show); \
 	SHA=$$(git rev-parse HEAD); \
-	git fetch -q origin main && \
+	git fetch -q origin main; \
 	if ! git merge-base --is-ancestor $$SHA origin/main; then \
 		echo "HEAD ($$SHA) is not on origin/main; check out the merged release commit" >&2; \
 		exit 1; \
 	fi; \
-	test "$$(gh run list --workflow workspace-release-checks.yml --commit $$SHA --status success --json databaseId --jq length)" -gt 0 || { \
+	RUNS=$$(gh run list --workflow workspace-release-checks.yml --commit "$$SHA" --status success --json databaseId --jq length) || { \
+		echo "Could not query release checks; resolve the gh error above before tagging" >&2; exit 1; \
+	}; \
+	case "$$RUNS" in ''|*[!0-9]*) echo "Invalid release-check count: $$RUNS" >&2; exit 1;; esac; \
+	test "$$RUNS" -gt 0 || { \
 		echo "Run workspace-release-checks.yml on a branch or tag pointing to $$SHA and wait for it to pass before tagging" >&2; exit 1; \
 	}; \
 	scripts/wait-for-main-image.sh $$SHA && \
@@ -166,8 +169,12 @@ export WORKSPACE_PATHS
 WORKSPACE_SHARD ?= 0
 WORKSPACE_SHARDS ?= 1
 WORKSPACE_CASE ?=
+PR_NUMBER ?= 0
 PREVIEW_SITE ?= preview-site/pr-preview/pr-$(PR_NUMBER)
-.PHONY: test-plugins test-workspace test-workspace-tools workspace-dom workspace-browser workspace-local workspace-compare workspace-demo workspace-scope workspace-cases check-workspace-tools
+.PHONY: test-plugins test-workspace test-workspace-tools workspace-dom workspace-browser workspace-local workspace-compare workspace-demo workspace-scope workspace-cases workspace-status check-workspace-tools
+
+workspace-status:
+	@python3 scripts/check-workspace-status.py
 
 test-plugins:
 	uv run --extra test pytest -v --ignore=tests/workspace

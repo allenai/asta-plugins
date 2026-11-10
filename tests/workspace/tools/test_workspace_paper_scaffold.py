@@ -130,3 +130,5 @@ def test_overleaf_named_main_requires_its_own_bibliography(
         assert "references.bib" in result.stdout + result.stderr
         bbl = paper / "build/conference.bbl"
         assert not bbl.exists() or "Bibliography test" not in bbl.read_text()
+        log = (paper / "build/conference.log").read_text()
+        assert "sample" in log and "undefined" in log

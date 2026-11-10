@@ -6,6 +6,22 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def test_comparison_instrumentation_honors_render_exclusions(tmp_path, monkeypatch):
+    monkeypatch.syspath_prepend(str(ROOT / "tests/browser"))
+    spec = importlib.util.spec_from_file_location(
+        "browser_differential", ROOT / "tests/browser/workspace-differential.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    for name in ("index.qmd", "draft.qmd", "slides/a.qmd", "slides/private.qmd"):
+        path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("")
+    assert module.render_sources(
+        tmp_path, ["**/*.qmd", "!draft.qmd", "!slides/private.qmd"]
+    ) == ["index.qmd", "slides/a.qmd"]
+
+
 def test_report_signature_includes_page_and_live_slide_marks(tmp_path, monkeypatch):
     monkeypatch.syspath_prepend(str(ROOT / "tests/browser"))
     from report_signature import report_signature

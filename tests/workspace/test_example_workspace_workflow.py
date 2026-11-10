@@ -481,10 +481,6 @@ def test_edit_comparison_runs_independently_on_workspace_prs():
         jobs["comparison"]["strategy"]["matrix"]["case"]
         == "${{ fromJSON(needs.scope.outputs.cases) }}"
     )
-    cases = subprocess.check_output(
-        ["make", "--silent", "workspace-cases"], cwd=ROOT, text=True
-    )
-    assert len(json.loads(cases)) == 13
     assert "tools" not in jobs["comparison"]["needs"]
 
 
@@ -745,11 +741,27 @@ def test_release_reuses_all_checks_on_both_architectures():
     assert (
         release["devcontainer"]["uses"] == "./.github/workflows/devcontainer-smoke.yml"
     )
+    assert "workflow_call" in load("devcontainer-smoke")["on"]
+    assert release["checks"]["permissions"] == {
+        "contents": "read",
+        "packages": "read",
+    }
     assert load("example-workspace")["jobs"]["dom"]["strategy"]["matrix"]["runner"]
-    arm = load("example-preview")["jobs"]["docs-arm"]
-    assert (
-        'make -C "$GITHUB_WORKSPACE" workspace-browser'
-        in arm["with"]["artifact-command"]
+    site = load("example-preview")["jobs"]
+    assert "workspace-browser" not in site["docs-arm"]["with"]["artifact-command"]
+    browser = site["check-arm"]
+    assert browser["needs"] == "docs-arm"
+    download = next(
+        s
+        for s in browser["steps"]
+        if s.get("uses", "").startswith("actions/download-artifact@")
+    )
+    assert download["with"] == {
+        "name": "site-ubuntu-24.04-arm",
+        "path": "preview-site/pr-preview/pr-0",
+    }
+    assert any(
+        s.get("run") == "make workspace-browser PR_NUMBER=0" for s in browser["steps"]
     )
 
 
@@ -794,7 +806,15 @@ def test_workspace_partition_includes_nested_tests_and_excludes_tools(
     ]
 
 
-def test_case_matrix_needs_only_python_and_matches_the_actual_cases():
+def test_case_matrix_needs_only_python_and_matches_the_actual_cases(monkeypatch):
+    import importlib.util
+
+    monkeypatch.syspath_prepend(str(ROOT / "tests/browser"))
+    spec = importlib.util.spec_from_file_location(
+        "differential_cases", ROOT / "tests/browser/workspace-differential.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
     result = subprocess.run(
         [
             sys.executable,
@@ -807,8 +827,114 @@ def test_case_matrix_needs_only_python_and_matches_the_actual_cases():
     )
     assert result.returncode == 0, result.stderr
     cases = json.loads(result.stdout)
-    assert len(cases) == 13 and len(set(cases)) == 13
+    assert cases == list(module.CASES)
+    assert cases and len(set(cases)) == len(cases)
     job = load("example-workspace")["jobs"]["scope"]
     step = next(s for s in job["steps"] if s.get("id") == "cases")
     assert "cases=$(make --silent workspace-cases)" in step["run"]
     assert job["outputs"]["cases"] == "${{ steps.cases.outputs.matrix }}"
+
+
+@pytest.mark.parametrize("workspace", ["true", "false"])
+@pytest.mark.parametrize("event", ["pull_request", "workflow_dispatch"])
+@pytest.mark.parametrize("bad_result", [None, "failure", "cancelled", "skipped"])
+def test_workspace_status_fails_unexpected_results(workspace, event, bad_result):
+    expected = (
+        "skipped" if workspace == "false" and event == "pull_request" else "success"
+    )
+    needs = {
+        "scope": {"result": "success", "outputs": {"workspace": workspace}},
+        **{
+            name: {"result": expected}
+            for name in ("python", "tools", "comparison", "dom")
+        },
+    }
+    if bad_result:
+        needs["comparison"]["result"] = bad_result
+    result = subprocess.run(
+        ["make", "--silent", "workspace-status"],
+        cwd=ROOT,
+        env=dict(os.environ, WORKSPACE_NEEDS=json.dumps(needs), WORKSPACE_EVENT=event),
+        capture_output=True,
+        text=True,
+    )
+    assert (result.returncode == 0) == (bad_result is None or bad_result == expected)
+    if result.returncode:
+        assert "comparison" in result.stderr
+
+
+@pytest.mark.parametrize("scope_result", ["failure", "cancelled", "skipped", "success"])
+@pytest.mark.parametrize("workspace", ["true", "", "oops"])
+def test_workspace_status_requires_successful_valid_scope(scope_result, workspace):
+    needs = {
+        "scope": {"result": scope_result, "outputs": {"workspace": workspace}},
+        "python": {"result": "success"},
+    }
+    result = subprocess.run(
+        ["make", "--silent", "workspace-status"],
+        cwd=ROOT,
+        env=dict(
+            os.environ,
+            WORKSPACE_NEEDS=json.dumps(needs),
+            WORKSPACE_EVENT="pull_request",
+        ),
+        capture_output=True,
+        text=True,
+    )
+    assert (result.returncode == 0) == (
+        scope_result == "success" and workspace == "true"
+    )
+
+
+def test_workspace_stable_gate_covers_every_workspace_job():
+    jobs = load("example-workspace")["jobs"]
+    gate = jobs["workspace-ok"]
+    assert gate["if"] == "always()"
+    assert set(gate["needs"]) == set(jobs) - {"workspace-ok"}
+    step = gate["steps"][-1]
+    assert step["run"] == "make workspace-status"
+    assert step["env"]["WORKSPACE_NEEDS"] == "${{ toJSON(needs) }}"
+    for job in jobs.values():
+        assert int(job["timeout-minutes"]) <= 15
+        for step in job["steps"]:
+            if step.get("uses", "").startswith("actions/checkout@"):
+                assert step["with"]["persist-credentials"] == "false"
+
+
+@pytest.mark.parametrize("count,gh_exit", [("0", 0), ("1", 0), ("", 1), ("oops", 0)])
+def test_release_gate_distinguishes_query_failure_from_missing_run(
+    tmp_path, count, gh_exit
+):
+    fake = tmp_path / "bin"
+    fake.mkdir()
+    commands = {
+        "uv": 'if [ "$4" = show ]; then echo 0.125.0; fi\n',
+        "git": 'case "$1" in rev-parse) echo release-sha;; tag|push) echo "$*" >> tag-actions;; esac\n',
+        "gh": f"printf '%s\\n' '{count}'\nexit {gh_exit}\n",
+    }
+    for name, script in commands.items():
+        path = fake / name
+        path.write_text("#!/bin/sh\n" + script)
+        path.chmod(0o755)
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    wait = scripts / "wait-for-main-image.sh"
+    wait.write_text("#!/bin/sh\nexit 0\n")
+    wait.chmod(0o755)
+    result = subprocess.run(
+        ["make", "--silent", "-f", str(ROOT / "Makefile"), "push-version-tag"],
+        cwd=tmp_path,
+        env=dict(os.environ, PATH=f"{fake}:{os.environ['PATH']}"),
+        capture_output=True,
+        text=True,
+    )
+    passed = count == "1" and gh_exit == 0
+    assert (result.returncode == 0) == passed, result.stderr
+    assert (tmp_path / "tag-actions").exists() == passed
+    if gh_exit:
+        assert "Could not query release checks" in result.stderr
+        assert "wait for it to pass" not in result.stderr
+    elif count == "0":
+        assert "wait for it to pass before tagging" in result.stderr
+    elif not passed:
+        assert "Invalid release-check count" in result.stderr

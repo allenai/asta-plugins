@@ -23,6 +23,9 @@ jobs:
       packages: read
     uses: ./.github/workflows/devcontainer-smoke.yml
   checks:
+    permissions:
+      contents: read
+      packages: read
     uses: ./.github/workflows/example-workspace.yml
     with:
       ref-name: ''

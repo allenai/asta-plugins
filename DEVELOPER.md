@@ -169,6 +169,10 @@ One browser job checks that build's preview (or its identical artifact for fork
 and Dependabot PRs) with read-only permissions. The artifact hook validates the existing paper output without rebuilding it.
 Separate GitHub jobs check cold asset bootstrap and the local deck-edit path and all 13 selected/full comparison cases. Neither waits
 on the published site.
+Cold bootstrap checks the managed assets, generated viewers and check gate without
+rendering another site. The shared build runs the example's full `make check` and
+validates its rendered paper. Arm browser validation downloads that build's
+artifact into a separate job, so a browser failure is distinct from a build failure.
 
 ### Workspace checks
 
@@ -186,6 +190,7 @@ belong in `tests/workspace/tools/`. A required missing tool fails its target.
 | `workspace-dom` | What changed folding | Workspace PR | Node |
 | `workspace-browser` | Themes, evidence, slides, deck review and published demo | Workspace PR, after its single site build | Quarto, Node, Python and Chromium |
 | `workspace-demo` | Build the patch's demo and What changed | Site build; main publication | Released TeX image |
+| `workspace-status` | Aggregate results, allowing only intended skips | Every PR; release/manual | Python and GitHub job metadata |
 
 Local targets run the same commands as CI. `make test-workspace` defaults to the
 whole offline suite; `WORKSPACE_SHARD` and `WORKSPACE_SHARDS` select CI's partition.
@@ -193,6 +198,15 @@ whole offline suite; `WORKSPACE_SHARD` and `WORKSPACE_SHARDS` select CI's partit
 `make workspace-cases` supplies CI's job matrix from that same case list, so a new
 case needs no YAML edit.
 `make workspace-browser PR_NUMBER=296` checks the downloaded preview directory.
+For a local artifact, pass `PREVIEW_SITE=/path/to/site`; `PR_NUMBER` defaults to
+`0`, disabling only the PR URL check.
+
+`workspace-ok` is the stable aggregate result for the offline, tools, comparison
+and DOM jobs. It fails on failed, cancelled or unexpectedly skipped jobs, and
+passes when an unrelated PR deliberately skips them all. A maintainer should
+require `workspace-ok` and `Example preview browser` in the repository's merge
+rules, rather than individual matrix names. Workflow changes do not configure
+those repository settings.
 
 Before a release, dispatch `workspace-release-checks.yml` at the release commit
 and wait for it to succeed. It reuses the existing plugin and dev-container checks, and runs workspace

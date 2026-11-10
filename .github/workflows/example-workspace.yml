@@ -15,6 +15,7 @@ concurrency:
 jobs:
   scope:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       workspace: ${{ steps.scope.outputs.workspace }}
       cases: ${{ steps.cases.outputs.matrix }}
@@ -22,6 +23,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false
       - id: scope
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
@@ -37,6 +39,7 @@ jobs:
     needs: scope
     if: github.event_name != 'pull_request' || needs.scope.outputs.workspace == 'true'
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -47,12 +50,15 @@ jobs:
       UV_PYTHON: ${{ matrix.python }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: astral-sh/setup-uv@v6
       - run: make test-workspace WORKSPACE_SHARD=${{ matrix.shard }} WORKSPACE_SHARDS=8
   tools:
     needs: scope
     if: github.event_name != 'pull_request' || needs.scope.outputs.workspace == 'true'
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -67,6 +73,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false
       - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - run: make check-workspace-tools
       - uses: actions/upload-artifact@v4
@@ -78,6 +85,7 @@ jobs:
     needs: scope
     if: github.event_name != 'pull_request' || needs.scope.outputs.workspace == 'true'
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -92,6 +100,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false
       - run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           uv tool install --force .
@@ -106,13 +115,31 @@ jobs:
     needs: scope
     if: github.event_name != 'pull_request' || needs.scope.outputs.workspace == 'true'
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 5
     strategy:
       fail-fast: false
       matrix:
         runner: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["ubuntu-latest", "ubuntu-24.04-arm"]') }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
       - run: make workspace-dom
+
+  workspace-ok:
+    # One stable result to require, including on PRs outside workspace ownership.
+    needs: [scope, python, tools, comparison, dom]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - run: make workspace-status
+        env:
+          WORKSPACE_NEEDS: ${{ toJSON(needs) }}
+          WORKSPACE_EVENT: ${{ github.event_name }}

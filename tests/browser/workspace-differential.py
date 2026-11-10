@@ -54,6 +54,20 @@ ALL = {
 }
 
 
+def render_sources(directory, patterns):
+    """Enumerate existing render inputs, honoring Quarto's exclusions."""
+    included, excluded = set(), set()
+    for pattern in patterns:
+        negated = pattern.startswith("!")
+        target = excluded if negated else included
+        target.update(
+            path.relative_to(directory).as_posix()
+            for path in directory.glob(pattern[1:] if negated else pattern)
+            if path.is_file()
+        )
+    return sorted(included - excluded)
+
+
 def edit(project, case):
     import yaml
 
@@ -173,14 +187,7 @@ def worker(project, full, record):
             patterns = yaml.safe_load((directory / "_quarto.yml").read_text())[
                 "project"
             ]["render"]
-            actual = sorted(
-                {
-                    p.relative_to(directory).as_posix()
-                    for pattern in patterns
-                    for p in directory.glob(pattern)
-                    if p.is_file()
-                }
-            )
+            actual = render_sources(directory, patterns)
         renders.append(
             {
                 "side": "after" if label == "the working tree" else "before",
