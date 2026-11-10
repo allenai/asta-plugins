@@ -190,6 +190,8 @@ belong in `tests/workspace/tools/`. A required missing tool fails its target.
 Local targets run the same commands as CI. `make test-workspace` defaults to the
 whole offline suite; `WORKSPACE_SHARD` and `WORKSPACE_SHARDS` select CI's partition.
 `make workspace-compare` runs all 13 cases; `WORKSPACE_CASE=quote` selects one.
+`make workspace-cases` supplies CI's job matrix from that same case list, so a new
+case needs no YAML edit.
 `make workspace-browser PR_NUMBER=296` checks the downloaded preview directory.
 
 Before a release, dispatch `workspace-release-checks.yml` at the release commit

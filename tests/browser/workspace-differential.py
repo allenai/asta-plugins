@@ -12,8 +12,6 @@ import sys
 import tempfile
 from pathlib import Path
 
-import yaml
-from click.testing import CliRunner
 from report_signature import report_signature
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -56,6 +54,8 @@ ALL = {
 
 
 def edit(project, case):
+    import yaml
+
     def replace(name, old, new):
         path = project / name
         text = path.read_text()
@@ -128,6 +128,9 @@ def edit(project, case):
 
 
 def worker(project, full, record):
+    import yaml
+    from click.testing import CliRunner
+
     from asta.commands import workspace as module
 
     renders, commands, copies = [], [], []
@@ -356,7 +359,9 @@ def check(artifacts):
 
 
 if __name__ == "__main__":
-    if sys.argv[1] == "--worker":
+    if sys.argv[1] == "--list-cases":
+        print(json.dumps(CASES))
+    elif sys.argv[1] == "--worker":
         worker(Path(sys.argv[2]), bool(int(sys.argv[3])), Path(sys.argv[4]))
     else:
         check(Path(sys.argv[1]).resolve())

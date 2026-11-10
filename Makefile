@@ -167,7 +167,7 @@ WORKSPACE_SHARD ?= 0
 WORKSPACE_SHARDS ?= 1
 WORKSPACE_CASE ?=
 PREVIEW_SITE ?= preview-site/pr-preview/pr-$(PR_NUMBER)
-.PHONY: test-plugins test-workspace test-workspace-tools workspace-dom workspace-browser workspace-local workspace-compare workspace-demo workspace-scope check-workspace-tools
+.PHONY: test-plugins test-workspace test-workspace-tools workspace-dom workspace-browser workspace-local workspace-compare workspace-demo workspace-scope workspace-cases check-workspace-tools
 
 test-plugins:
 	uv run --extra test pytest -v --ignore=tests/workspace
@@ -181,6 +181,9 @@ check-workspace-tools: test-workspace-tools workspace-local
 test-workspace-tools:
 	@for tool in quarto make perl latexmk pdftotext; do command -v $$tool >/dev/null || { echo "Missing required tool: $$tool" >&2; exit 1; }; done
 	uv run --extra test pytest -o addopts= -v tests/workspace/tools
+
+workspace-cases:
+	@python3 tests/browser/workspace-differential.py --list-cases
 
 workspace-scope:
 	@python3 scripts/workspace-scope.py "$(BASE_SHA)"

@@ -17,6 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       workspace: ${{ steps.scope.outputs.workspace }}
+      cases: ${{ steps.cases.outputs.matrix }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -28,6 +29,10 @@ jobs:
           workspace=$(make --silent workspace-scope)
           case "$workspace" in true|false) ;; *) echo "::error::Invalid workspace scope: $workspace"; exit 1;; esac
           echo "workspace=$workspace" >> "$GITHUB_OUTPUT"
+      - id: cases
+        run: |
+          cases=$(make --silent workspace-cases)
+          echo "matrix=$cases" >> "$GITHUB_OUTPUT"
   python:
     needs: scope
     if: github.event_name != 'pull_request' || needs.scope.outputs.workspace == 'true'
@@ -76,7 +81,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        case: [prose, metadata, slide, quote, bibliography, config, image, new, deleted, renamed, paper-bibliography, paper, include]
+        case: ${{ fromJSON(needs.scope.outputs.cases) }}
         runner: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["ubuntu-latest", "ubuntu-24.04-arm"]') }}
     container:
       image: ghcr.io/allenai/asta:${{ inputs.ref-name && format('{0}-tex', inputs.ref-name) || 'latest-tex' }}

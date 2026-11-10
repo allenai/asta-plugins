@@ -438,7 +438,14 @@ def test_pr_uses_x86_and_release_or_manual_adds_arm():
 def test_edit_comparison_runs_independently_on_workspace_prs():
     jobs = load("example-workspace")["jobs"]
     assert jobs["comparison"]["needs"] == "scope"
-    assert len(jobs["comparison"]["strategy"]["matrix"]["case"]) == 13
+    assert (
+        jobs["comparison"]["strategy"]["matrix"]["case"]
+        == "${{ fromJSON(needs.scope.outputs.cases) }}"
+    )
+    cases = subprocess.check_output(
+        ["make", "--silent", "workspace-cases"], cwd=ROOT, text=True
+    )
+    assert len(json.loads(cases)) == 13
     assert "tools" not in jobs["comparison"]["needs"]
 
 
@@ -615,7 +622,9 @@ def test_workspace_test_matrix_selects_its_interpreter():
 def test_workspace_scope_step_rejects_errors_and_invalid_outputs(
     tmp_path, workflow, value, exit_code
 ):
-    step = load(workflow)["jobs"]["scope"]["steps"][-1]
+    step = next(
+        s for s in load(workflow)["jobs"]["scope"]["steps"] if s.get("id") == "scope"
+    )
     fake = tmp_path / "make"
     fake.write_text(f"#!/bin/sh\nprintf '%s\\n' '{value}'\nexit {exit_code}\n")
     fake.chmod(0o755)
@@ -743,3 +752,23 @@ def test_workspace_partition_includes_nested_tests_and_excludes_tools(
         "tests/workspace/nested/test_b.py",
         "tests/workspace/test_a.py",
     ]
+
+
+def test_case_matrix_needs_only_python_and_matches_the_actual_cases():
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-S",
+            str(ROOT / "tests/browser/workspace-differential.py"),
+            "--list-cases",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    cases = json.loads(result.stdout)
+    assert len(cases) == 13 and len(set(cases)) == 13
+    job = load("example-workspace")["jobs"]["scope"]
+    step = next(s for s in job["steps"] if s.get("id") == "cases")
+    assert "cases=$(make --silent workspace-cases)" in step["run"]
+    assert job["outputs"]["cases"] == "${{ steps.cases.outputs.matrix }}"
