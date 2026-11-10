@@ -3,7 +3,7 @@
 import importlib.util
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_report_signature_includes_page_and_live_slide_marks(tmp_path, monkeypatch):

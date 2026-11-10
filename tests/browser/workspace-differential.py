@@ -5,6 +5,7 @@ no renderer, selector, paper builder or comparator is mocked.
 """
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -205,6 +206,8 @@ def check(artifacts):
             "paper",
             "include",
         ):
+            if os.environ.get("ASTA_WORKSPACE_CASE", case) != case:
+                continue
             subprocess.run(["git", "restore", "."], cwd=clone, check=True)
             for name in ("new-page.qmd", "renamed.qmd"):
                 (project / name).unlink(missing_ok=True)

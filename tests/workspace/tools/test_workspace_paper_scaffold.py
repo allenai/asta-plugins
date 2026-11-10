@@ -9,11 +9,10 @@ from pathlib import Path
 import pytest
 
 ASSETS = (
-    Path(__file__).resolve().parents[1] / "plugins/asta-tools/skills/workspace/assets"
+    Path(__file__).resolve().parents[3] / "plugins/asta-tools/skills/workspace/assets"
 )
 
 
-@pytest.mark.skipif(not shutil.which("quarto"), reason="requires Quarto")
 @pytest.mark.parametrize("paper_dir", ["paper", "papers/a"])
 def test_first_viewer_render_keeps_scaffold_clean(tmp_path, paper_dir):
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
@@ -61,7 +60,6 @@ def test_first_viewer_render_keeps_scaffold_clean(tmp_path, paper_dir):
     ).strip()
 
 
-@pytest.mark.skipif(not shutil.which("make"), reason="requires make")
 @pytest.mark.parametrize(
     "main_name", ["main.tex", "conference draft.tex", "-pv.tex", ".draft.tex"]
 )
@@ -124,7 +122,6 @@ def test_paper_targets_select_directory_and_preserve_engine(
         assert f'"./{main_name}"' in result.stdout.decode()
 
 
-@pytest.mark.skipif(not shutil.which("make"), reason="requires make")
 def test_paper_target_reports_missing_source(tmp_path):
     result = subprocess.run(
         ["make", "-f", str(ASSETS / "workspace.mk"), "paper"],
@@ -137,7 +134,6 @@ def test_paper_target_reports_missing_source(tmp_path):
     assert "latexmk" not in result.stderr
 
 
-@pytest.mark.skipif(not shutil.which("make"), reason="requires make")
 @pytest.mark.parametrize("target", ["paper", "paper-clean"])
 @pytest.mark.parametrize("failure", ["missing-directory", "no-main", "ambiguous"])
 def test_failed_main_selection_never_invokes_latexmk(tmp_path, target, failure):
@@ -164,7 +160,6 @@ def test_failed_main_selection_never_invokes_latexmk(tmp_path, target, failure):
     assert not list(tmp_path.rglob("latexmk-was-invoked"))
 
 
-@pytest.mark.skipif(not shutil.which("perl"), reason="requires Perl")
 @pytest.mark.parametrize("paper_dir", ["paper", "papers/a", "papers/custom name"])
 def test_bibliography_rc_supports_string_evaluation(tmp_path, paper_dir):
     paper = tmp_path / paper_dir
@@ -188,7 +183,6 @@ def test_bibliography_rc_supports_string_evaluation(tmp_path, paper_dir):
     assert result == f"{tmp_path}:existing:"
 
 
-@pytest.mark.skipif(not shutil.which("perl"), reason="requires Perl")
 @pytest.mark.parametrize(
     "paper_dir", ["paper", "papers/imported", "papers/custom name"]
 )
@@ -220,7 +214,6 @@ def test_overleaf_bibliography_rc_stays_inside_paper(tmp_path, paper_dir, git_ma
     assert result == f"{paper}:existing:"
 
 
-@pytest.mark.skipif(not shutil.which("perl"), reason="requires Perl")
 @pytest.mark.parametrize("git_marker", ["directory", "file"])
 def test_bibliography_rc_ignores_pairing_outside_checkout(tmp_path, git_marker):
     workspace = tmp_path / "workspace"
@@ -279,10 +272,6 @@ def test_paper_ignore_entries_keep_sources(tmp_path, paper_dir):
         assert result.returncode == 1, path
 
 
-@pytest.mark.skipif(
-    not all(shutil.which(tool) for tool in ("make", "latexmk", "pdftotext")),
-    reason="requires the TeX image",
-)
 @pytest.mark.parametrize("paper_dir", ["paper", "papers/a", "papers/custom name"])
 def test_starter_resolves_shared_bibliography(tmp_path, paper_dir):
     paper = tmp_path / paper_dir
@@ -313,10 +302,6 @@ def test_starter_resolves_shared_bibliography(tmp_path, paper_dir):
     assert "Shared bibliography test" in text and "[?]" not in text
 
 
-@pytest.mark.skipif(
-    not all(shutil.which(tool) for tool in ("make", "latexmk", "pdftotext")),
-    reason="requires the TeX image",
-)
 @pytest.mark.parametrize("local_bibliography", [False, True])
 def test_overleaf_named_main_requires_its_own_bibliography(
     tmp_path, local_bibliography

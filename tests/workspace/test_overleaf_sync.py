@@ -13,8 +13,14 @@ import pytest
 from click.testing import CliRunner
 
 from asta.cli import cli
-from tests.test_workspace_overleaf import URL, commit_all, git, overleaf_edit, run
-from tests.test_workspace_overleaf import setup as setup  # noqa: F401
+from tests.workspace.test_workspace_overleaf import (
+    URL,
+    commit_all,
+    git,
+    overleaf_edit,
+    run,
+)
+from tests.workspace.test_workspace_overleaf import setup as setup  # noqa: F401
 
 sync = importlib.import_module("asta.commands.overleaf_sync")
 
@@ -593,7 +599,7 @@ def test_published_noop_does_not_bypass_live_lock(published, github):
 
 
 def test_fast_path_does_not_trust_an_unreviewed_source(published, github):
-    from tests.test_workspace_overleaf import forge_record, origin_record
+    from tests.workspace.test_workspace_overleaf import forge_record, origin_record
 
     _, project = published
     origin = project.parent / "workspace.git"
@@ -817,7 +823,7 @@ def test_shared_check_refuses_paper_markers_before_render(tmp_path, marker):
     (paper / "main.tex").write_text(marker + "\n")
     git(tmp_path, "add", ".asta/overleaf/paper.json", "paper/main.tex")
     script = (
-        Path(__file__).parents[1]
+        Path(__file__).parents[2]
         / "plugins/asta-tools/skills/workspace/assets/quarto-check.sh"
     )
     result = subprocess.run(
@@ -1192,7 +1198,7 @@ def test_marker_checks_agree_for_crlf_markdown_and_assets(
     git(tmp_path, "commit", "-m", "fixture")
     assert bool(sync.conflict_files(tmp_path, "paper/")) == blocked
     script = (
-        Path(__file__).parents[1]
+        Path(__file__).parents[2]
         / "plugins/asta-tools/skills/workspace/assets/quarto-check.sh"
     )
     result = subprocess.run(
@@ -1203,7 +1209,7 @@ def test_marker_checks_agree_for_crlf_markdown_and_assets(
 
 def test_shared_check_outside_git_has_no_traceback(tmp_path):
     script = (
-        Path(__file__).parents[1]
+        Path(__file__).parents[2]
         / "plugins/asta-tools/skills/workspace/assets/quarto-check.sh"
     )
     result = subprocess.run(
@@ -1248,7 +1254,7 @@ def test_shared_check_handles_non_utf8_paths(tmp_path):
         stream.write(b"=======\r\n")
     git(tmp_path, "add", "--", "paper", ".asta")
     script = (
-        Path(__file__).parents[1]
+        Path(__file__).parents[2]
         / "plugins/asta-tools/skills/workspace/assets/quarto-check.sh"
     )
     result = subprocess.run(["sh", str(script)], cwd=tmp_path, capture_output=True)
@@ -1259,7 +1265,7 @@ def test_shared_check_handles_non_utf8_paths(tmp_path):
 
 BRANCH = "refs/heads/asta/overleaf-sync/1234567"
 SCRIPT = (
-    Path(__file__).parents[1]
+    Path(__file__).parents[2]
     / "plugins/asta-tools/skills/workspace/assets/quarto-check.sh"
 )
 
@@ -1840,7 +1846,7 @@ def test_build_config_paths_are_nul_delimited(tmp_path):
 @pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
 @pytest.mark.parametrize("reason", ["damaged", "unreviewed", "missing-overleaf"])
 def test_record_fallback_is_retained_and_reported_once(setup, github, reason):
-    from tests.test_workspace_overleaf import (
+    from tests.workspace.test_workspace_overleaf import (
         RECORD_REF,
         forge_record,
         origin_record,
@@ -1891,7 +1897,7 @@ def test_record_fallback_is_retained_and_reported_once(setup, github, reason):
 
 @pytest.mark.parametrize("setup", ["sha1", "sha256"], indirect=True)
 def test_record_fallback_notice_survives_conflict_status(setup, github):
-    from tests.test_workspace_overleaf import RECORD_REF
+    from tests.workspace.test_workspace_overleaf import RECORD_REF
 
     seed, project = prepare(setup)
     (project / "paper/main.tex").write_text("default branch replacement\n")
@@ -1942,7 +1948,7 @@ def test_closed_record_notice_on_later_page_is_not_reposted(monkeypatch, tmp_pat
 
 
 def test_record_notice_issue_closes_once_record_counts_again(setup, github):
-    from tests.test_workspace_overleaf import RECORD_REF
+    from tests.workspace.test_workspace_overleaf import RECORD_REF
 
     seed, project = prepare(setup)
     origin = project.parent / "workspace.git"
@@ -2411,7 +2417,7 @@ def test_live_lock_preflight_preserves_fetch_head_and_local_refs(setup, github):
 
 
 def test_preflight_does_not_ignore_unreadable_record(setup, github, monkeypatch):
-    from tests.test_workspace_overleaf import RECORD_REF
+    from tests.workspace.test_workspace_overleaf import RECORD_REF
 
     _, project = prepare(setup)
     origin = project.parent / "workspace.git"
@@ -2479,7 +2485,7 @@ def test_malformed_stamp_refuses_cleanly_before_shared_writes(
 def test_unreadable_record_format_refuses_before_shared_writes(
     setup, github, monkeypatch, stamp, message
 ):
-    from tests.test_workspace_overleaf import RECORD_REF, forge_record
+    from tests.workspace.test_workspace_overleaf import RECORD_REF, forge_record
 
     _, project = prepare(setup)
     config = sync.ov.load_config(project / "paper")

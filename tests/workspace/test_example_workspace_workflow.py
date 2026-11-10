@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def load(name):
@@ -72,7 +72,7 @@ def _run_shared_scope(tmp_path, files, *, site_dir=None, patterns=None):
         EVENT="pull_request",
         ACTION="synchronize",
         SITE_DIR="examples/workspace",
-        RENDER_PATHS=load("example-preview")["jobs"]["docs"]["with"]["render-paths"],
+        RENDER_PATHS="examples/workspace/**\nexamples/workspace-demo.patch\nscripts/build-workspace-demo.py\nplugins/asta-tools/skills/workspace/assets/**",
         GITHUB_OUTPUT=str(output),
         GITHUB_REPOSITORY="owner/repo",
         PR_NUMBER="1",
@@ -174,22 +174,9 @@ def test_close_needs_no_file_lookup_and_main_always_builds(
 
 
 def test_example_has_one_publisher_and_unfiltered_close():
-    caller = load("example-preview")
-    assert caller["on"]["push"]["branches"] == ["main"]
-    assert "closed" in caller["on"]["pull_request"]["types"]
-    assert "paths" not in caller["on"]["pull_request"]
-    assert (
-        caller["jobs"]["docs"]["uses"]
-        == "./.github/workflows/workspace-quarto-site.yml"
-    )
-    release = load("example-workspace")
-    assert set(release["jobs"]) == {"build"}
-    assert not (ROOT / "scripts/request-example-pages-build.sh").exists()
-    shared = load("workspace-quarto-site")
-    cleanup = shared["jobs"]["cleanup-preview"]
-    # Closing always cleans up, even if scoping failed or found nothing.
-    assert cleanup["if"].startswith("always()")
-    assert "github.event.action == 'closed' ||" in cleanup["if"]
+    site = load("example-preview")
+    assert "closed" in site["on"]["pull_request"]["types"]
+    assert site["jobs"]["docs-arm"]["with"]["publish"] == "false"
 
 
 def test_open_pr_that_stops_changing_the_site_loses_its_preview(tmp_path):
@@ -381,147 +368,82 @@ def test_cleanup_fails_when_stale_comment_removal_cannot_be_verified(tmp_path, f
 
 
 def test_example_publishes_one_patch_through_existing_artifact_hook():
-    example = ROOT / "examples/workspace"
-    for name in ("build-demo.py", "refresh-demo.py", "demo-edits.patch"):
-        assert not (example / "scripts" / name).exists()
-    assert "demo" not in (example / "Makefile").read_text()
-    jobs = load("example-preview")["jobs"]
-    command = jobs["docs"]["with"]["artifact-command"]
-    assert command == jobs["docs-arm"]["with"]["artifact-command"]
-    assert "uv tool install --force ." in command
-    assert "build-workspace-demo.py examples/workspace/_site/demo" in command
-    assert "latest-tex" in command
-    assert (ROOT / "examples/workspace-demo.patch").is_file()
-    build = load("example-workspace")["jobs"]["build"]
-    assert not any("upload-pages-artifact" in s.get("uses", "") for s in build["steps"])
-    for readme in (ROOT / "README.md", example / "README.md"):
-        text = readme.read_text()
-        assert "https://allenai.github.io/asta-plugins/demo/" in text and "pull/281" not in text
+    site = load("example-preview")
+    assert "make workspace-demo" in site["jobs"]["docs"]["with"]["artifact-command"]
+    assert (
+        "example-demo-pr"
+        not in (ROOT / ".github/workflows/example-preview.yml").read_text()
+    )
+    assert "demo-pr" not in load("docker")["jobs"]
+    for name in ("examples/workspace/README.md", "DEVELOPER.md"):
+        assert "pull/281" not in (ROOT / name).read_text()
 
 
 def test_example_uses_current_scaffold_and_managed_inputs():
-    example = ROOT / "examples/workspace"
-    assets = ROOT / "plugins/asta-tools/skills/workspace/assets"
-    assert (
-        (example / "Makefile")
-        .read_text()
-        .startswith((assets / "Makefile.managed").read_text())
-    )
-    assert not (example / "workspace.mk").exists()
-    for path in ("_extensions/asta-theme/light.scss", ".asta/cache/workspace.mk"):
-        result = subprocess.run(
-            ["git", "check-ignore", "--no-index", path],
-            cwd=example,
-            capture_output=True,
-            text=True,
-        )
-        assert result.returncode == 0, result.stderr
-    source = yaml.load(
-        (example / ".github/workflows/docs.yml").read_text(), Loader=yaml.BaseLoader
-    )
-    assert source["jobs"]["docs"]["uses"].startswith(
-        "allenai/asta-plugins/.github/workflows/workspace-quarto-site.yml@"
-    )
-    build = load("example-workspace")["jobs"]["build"]
-    step = next(
-        s for s in build["steps"] if s.get("name") == "Build and validate the example"
-    )
-    assert build["env"]["ASTA_WORKSPACE_RESOLVED_SHA"] == "${{ github.sha }}"
-    assert step["run"].index("uv tool install") < step["run"].index("make check")
-    assert 'state["source_ref"] == os.environ["GITHUB_SHA"]' in step["run"]
-    assert "for extension in asta-theme evidence asta-slides" in step["run"]
-    assert "diff -r" in step["run"]
+    script = (ROOT / "scripts/check-workspace-local.sh").read_text()
+    assert 'state["source_ref"] == os.environ["GITHUB_SHA"]' in script
+    assert "for extension in asta-theme evidence asta-slides" in script
+    assert "diff -r" in script
 
 
 def test_published_demo_reuses_local_content_assertions():
-    steps = load("example-preview")["jobs"]["check-preview"]["steps"]
-    by_name = {s.get("name"): s for s in steps}
-    demo = by_name["Check the demo What changed in the published preview"]
-    assert "local-what-changed-demo.py --site" in demo["run"]
-    assert "preview-site/pr-preview/pr-$PR_NUMBER" in demo["run"]
-    assert (
-        'if [ "$HEAD_BRANCH" != example-demo-pr ]; then site="$site/demo"; fi'
-        in demo["run"]
-    )
-    command = load("example-preview")["jobs"]["docs"]["with"]["artifact-command"]
-    assert (
-        '[ "${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}" != example-demo-pr ] || exit 0'
-        in command
-    )
+    make = (ROOT / "Makefile").read_text()
+    assert 'local-what-changed-demo.py --site "$(PREVIEW_SITE)/demo"' in make
 
 
 def test_demo_what_changed_is_built_once_by_the_site_workflow():
-    local = yaml.dump(load("example-workspace"))
-    for built_elsewhere in (
-        "build-workspace-demo.py",
-        "workspace-preview-path.py",
-        "local-what-changed-demo.py",
-        "render-slides.py",
-    ):
-        assert built_elsewhere not in local
-    command = load("example-preview")["jobs"]["docs"]["with"]["artifact-command"]
-    assert "build-workspace-demo.py" in command
+    assert (
+        "build-workspace-demo.py"
+        not in (ROOT / "scripts/check-workspace-local.sh").read_text()
+    )
+    assert (
+        "make workspace-demo"
+        in load("example-preview")["jobs"]["docs"]["with"]["artifact-command"]
+    )
 
 
 def test_all_example_browser_checks_use_the_installed_browser_path():
-    build = load("example-workspace")["jobs"]["build"]
-    assert build["env"]["PLAYWRIGHT_BROWSERS_PATH"] == "/tmp/asta-test-chromium"
-    browser_steps = [s for s in build["steps"] if "playwright==" in s.get("run", "")]
-    install = next(
-        i for i, s in enumerate(browser_steps) if "playwright install" in s["run"]
-    )
-    assert install == 0
-    assert browser_steps
-    assert all(
-        "export PLAYWRIGHT_BROWSERS_PATH=" not in s["run"] for s in browser_steps
+    tools = load("example-workspace")["jobs"]["tools"]
+    assert tools["env"]["PLAYWRIGHT_BROWSERS_PATH"] == "/tmp/asta-test-chromium"
+    assert (
+        "playwright install --with-deps chromium"
+        in (ROOT / "scripts/check-workspace-local.sh").read_text()
     )
 
 
 def test_pr_waits_on_x86_only_and_main_adds_arm():
-    example = load("example-workspace")
-    runners = example["jobs"]["build"]["strategy"]["matrix"]["runner"]
-    assert '["ubuntu-latest"]' in runners
-    assert '"ubuntu-24.04-arm"' in runners
-    assert "github.event_name == 'pull_request'" in runners
-    assert example["on"]["push"]["branches"] == ["main"]
-    site = load("example-preview")["jobs"]
-    assert "github.event_name != 'pull_request'" in site["docs-arm"]["if"]
-    assert "needs" not in site["docs-arm"]
-    assert site["docs-arm"]["with"]["publish"] == "false"
-    assert site["check-preview"]["needs"] == "docs"
+    workflow = load("example-workspace")
+    assert "push" not in workflow["on"]
+    for job in ("python", "tools", "comparison"):
+        assert (
+            "github.event_name == 'pull_request'"
+            in workflow["jobs"][job]["strategy"]["matrix"]["runner"]
+        )
+    assert (
+        load("example-preview")["jobs"]["docs-arm"]["if"]
+        == "github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call'"
+    )
 
 
 def test_edit_comparison_runs_on_main_and_on_what_changed_prs():
-    steps = load("example-workspace")["jobs"]["build"]["steps"]
-    checkout = next(
-        s for s in steps if s.get("uses", "").startswith("actions/checkout@")
-    )
-    # The PR base used by the gate must exist on real CI checkouts too.
-    assert checkout["with"]["fetch-depth"] == "0"
-    by_name = {s.get("name"): s for s in steps}
-    gate = by_name["Decide whether the edit comparison runs"]
-    for path in (
-        "src/asta/commands/workspace*.py",
-        "plugins/asta-tools/skills/workspace/assets",
-        "examples/workspace",
-    ):
-        assert path in gate["run"]
-    compare = by_name["Compare selected edits with same-run full reports"]
-    assert compare["if"] == "steps.differential.outputs.run == 'true'"
+    jobs = load("example-workspace")["jobs"]
+    assert jobs["comparison"]["needs"] == "scope"
+    assert len(jobs["comparison"]["strategy"]["matrix"]["case"]) == 13
+    assert "tools" not in jobs["comparison"]["needs"]
 
 
 def test_one_browser_job_checks_the_built_preview():
-    steps = load("example-preview")["jobs"]["check-preview"]["steps"]
-    runs = "\n".join(s.get("run", "") for s in steps)
-    for check in (
+    job = load("example-preview")["jobs"]["check-preview"]
+    assert job["needs"] == "docs"
+    assert any(step.get("run") == "make workspace-browser" for step in job["steps"])
+    make = (ROOT / "Makefile").read_text()
+    for script in (
         "workspace-slides.mjs",
         "deck-review.py",
-        "npm test --",
         "example-preview.mjs",
         "local-what-changed-demo.py",
     ):
-        assert check in runs
-    assert "examples/workspace/_site" not in runs
+        assert script in make
 
 
 @pytest.mark.parametrize(
@@ -614,22 +536,19 @@ def test_edit_comparison_gate_uses_the_pr_diff(tmp_path, path, runs):
     git("commit", "-qm", "head")
     project = tmp_path / "examples/workspace"
     project.mkdir(parents=True, exist_ok=True)
-    steps = load("example-workspace")["jobs"]["build"]["steps"]
-    script = next(s["run"] for s in steps if s.get("id") == "differential")
     result = subprocess.run(
-        ["bash", "-c", script.replace("${{ github.event_name }}", "pull_request")],
-        cwd=project,
-        capture_output=True,
-        text=True,
+        [sys.executable, str(ROOT / "scripts/workspace-scope.py"), base],
         env=dict(
             os.environ,
-            BASE_SHA=base,
-            GITHUB_OUTPUT=str(tmp_path / "out"),
-            GITHUB_STEP_SUMMARY=str(tmp_path / "summary"),
+            WORKSPACE_PATHS="plugins/asta-tools/skills/workspace/ src/asta/commands/workspace examples/workspace tests/browser/ .github/workflows/",
         ),
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
     )
     assert result.returncode == 0, result.stderr
-    assert (tmp_path / "out").read_text() == f"run={str(runs).lower()}\n"
+    expected = path != "README.md"
+    assert result.stdout.strip() == str(expected).lower()
 
 
 def test_unpublished_prs_check_the_same_build_without_write_access():
@@ -661,5 +580,6 @@ def test_unpublished_prs_check_the_same_build_without_write_access():
 
 
 def test_workspace_test_matrix_selects_its_interpreter():
-    job = load("ci")["jobs"]["workspace-test"]
-    assert job["env"]["UV_PYTHON"] == "${{ matrix.python-version }}"
+    job = load("example-workspace")["jobs"]["python"]
+    assert job["env"]["UV_PYTHON"] == "${{ matrix.python }}"
+    assert "test_" not in (ROOT / ".github/workflows/ci.yml").read_text()

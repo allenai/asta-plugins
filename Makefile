@@ -111,6 +111,9 @@ push-version-tag:
 		echo "HEAD ($$SHA) is not on origin/main; check out the merged release commit" >&2; \
 		exit 1; \
 	fi; \
+	test "$$(gh run list --workflow workspace-release-checks.yml --commit $$SHA --status success --json databaseId --jq length)" -gt 0 || { \
+		echo "Run gh workflow run workspace-release-checks.yml --ref main and wait for it to pass before tagging" >&2; exit 1; \
+	}; \
 	scripts/wait-for-main-image.sh $$SHA && \
 	git tag v$$VERSION && \
 	git push origin v$$VERSION && \
@@ -156,3 +159,52 @@ check: format-check lint test-unit
 # Full CI check
 ci: format-check lint test check-skills
 	@echo "Full CI checks passed!"
+
+# Workspace checks: ownership is tests/workspace; tools contains real render tests.
+# CI supplies one shard per GitHub job. Local default runs the complete target.
+WORKSPACE_PATHS := plugins/asta-tools/skills/workspace/ src/asta/commands/workspace src/asta/commands/overleaf examples/workspace tests/workspace/ tests/browser/ tests/dom/ .github/workflows/ scripts/ Makefile pyproject.toml uv.lock tests/conftest.py tests/_workspace_helpers.py src/asta/cli.py
+export WORKSPACE_PATHS
+WORKSPACE_SHARD ?= 0
+WORKSPACE_SHARDS ?= 1
+WORKSPACE_CASE ?= prose
+PREVIEW_SITE ?= preview-site/pr-preview/pr-$(PR_NUMBER)
+.PHONY: test-plugins test-workspace test-workspace-tools workspace-dom workspace-browser workspace-local workspace-compare workspace-demo workspace-scope
+
+test-plugins:
+	uv run --extra test pytest -v --ignore=tests/workspace
+
+test-workspace:
+	@command -v make >/dev/null
+	uv run --extra test pytest -v $$(python3 -c 'from pathlib import Path; fs=sorted(Path("tests/workspace").glob("test_*.py")); print(" ".join(str(f) for i,f in enumerate(fs) if i % $(WORKSPACE_SHARDS) == $(WORKSPACE_SHARD)))')
+
+check-workspace-tools: test-workspace-tools workspace-local
+
+test-workspace-tools:
+	@for tool in quarto make perl latexmk pdftotext; do command -v $$tool >/dev/null || { echo "Missing required tool: $$tool" >&2; exit 1; }; done
+	uv run --extra test pytest -v tests/workspace/tools
+
+workspace-scope:
+	@python3 scripts/workspace-scope.py "$(BASE_SHA)"
+
+workspace-dom:
+	cd tests/dom && npm ci && npm test
+
+workspace-demo:
+	python3 scripts/build-workspace-demo.py examples/workspace/_site/demo
+
+workspace-local:
+	bash scripts/check-workspace-local.sh
+
+workspace-compare:
+	cd examples/workspace && make workspace-assets
+	PYTHONPATH=$(CURDIR)/src ASTA_WORKSPACE_CASE=$(WORKSPACE_CASE) uv run --no-project --with "$(CURDIR)" python tests/browser/workspace-differential.py tests/browser/artifacts/differential
+
+workspace-browser:
+	cd tests/browser && npm ci && npx playwright install --with-deps chromium
+	python3 tests/browser/render-slides.py tests/browser/fixtures
+	cd tests/browser && node workspace-slides.mjs "$(abspath $(PREVIEW_SITE))" artifacts
+	cd tests/browser && npm test -- "$(abspath $(PREVIEW_SITE))" artifacts
+	@if [ "$(PR_NUMBER)" != 0 ]; then cd tests/browser && node example-preview.mjs ../../preview-site artifacts; fi
+	uv run --no-project --with playwright==1.64.1 python -m playwright install chromium
+	uv run --no-project --with playwright==1.64.1 python tests/browser/deck-review.py "$(PREVIEW_SITE)" tests/browser/artifacts
+	uv run --no-project --with playwright==1.64.1 python tests/browser/local-what-changed-demo.py --site "$(PREVIEW_SITE)/demo" tests/browser/artifacts

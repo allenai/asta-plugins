@@ -177,3 +177,33 @@ on main and releases, and on a PR only when What changed code, scaffold assets,
 the example, or the comparison test itself changes. Workspace/Overleaf unit
 tests use four pytest workers per Python version; other plugins keep their
 existing test command and execution model.
+
+### Workspace checks
+
+The Makefile owns workspace check selection. `WORKSPACE_PATHS` defines one
+conservative workspace-change trigger, shared by both example workflows.
+New offline tests belong in `tests/workspace/`; tests that execute Quarto or TeX
+belong in `tests/workspace/tools/`. A required missing tool fails its target.
+
+| Target | Checks | Trigger | Environment |
+|---|---|---|---|
+| `test-plugins` | Other plugins' existing serial tests | Every PR | Python, existing plugin CLI setup |
+| `test-workspace` | Offline workspace and Overleaf tests | Workspace PR | Python and Make; Python 3.11–3.13, eight GitHub shards |
+| `check-workspace-tools` | Real scaffold/slide/template tests, cold scaffold checks and local deck comparison | Workspace PR | Released TeX image, Quarto and Chromium |
+| `workspace-compare` | Selected vs full What changed, one `WORKSPACE_CASE` | Workspace PR | Released TeX image; 13 independent GitHub jobs |
+| `workspace-dom` | What changed folding | Workspace PR | Node |
+| `workspace-browser` | Themes, evidence, slides, deck review and published demo | Workspace PR, after its single site build | Quarto, Node, Python and Chromium |
+| `workspace-demo` | Build the patch's demo and What changed | Site build; main publication | Released TeX image |
+
+Local targets run the same commands as CI. `make test-workspace` defaults to the
+whole offline suite; `WORKSPACE_SHARD` and `WORKSPACE_SHARDS` select CI's partition.
+`make workspace-compare WORKSPACE_CASE=quote` runs one comparison case.
+`make workspace-browser PR_NUMBER=296` checks the downloaded preview directory.
+
+Before a release, dispatch `workspace-release-checks.yml` at the release commit
+and wait for it to succeed. It runs workspace tests, comparisons and site builds
+on x86 and arm without publishing. `make push-version-tag` requires a successful
+run for the exact commit. Arm validation otherwise runs only on manual dispatch.
+Pushes to main publish the example and its patch-derived demo; workspace check
+jobs are PR/release/manual jobs. PR 281 remains open until PR 296 merges, then
+must be closed; the READMEs already point to the published demo.

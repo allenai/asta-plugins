@@ -13,7 +13,7 @@ import threading
 import time
 from http.client import HTTPConnection
 from pathlib import Path
-from urllib.error import HTTPError, URLError
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 import pytest
@@ -23,7 +23,9 @@ from click.testing import CliRunner
 from asta.commands import workspace as workspace_module
 from asta.commands.workspace import workspace
 
-ASSETS = Path(__file__).parent.parent / "plugins/asta-tools/skills/workspace/assets"
+ASSETS = (
+    Path(__file__).resolve().parents[2] / "plugins/asta-tools/skills/workspace/assets"
+)
 
 # Stands in for `make render` -> `quarto render`: wraps index.qmd in the
 # <main> Quarto emits, so the test needs neither make nor Quarto.
@@ -543,79 +545,6 @@ def test_missing_baseline_layout_does_not_fetch_script(
     assert "new-workspace" in result.output
     assert "Rendering " not in result.output
     assert_single_worktree(project)
-
-
-@pytest.mark.parametrize("directory", [".", "research workspace/docs"])
-def test_template_with_real_quarto(tmp_path: Path, directory: str) -> None:
-    source = os.environ.get("ASTA_TEST_WORKSPACE_TEMPLATE")
-    if not source:
-        pytest.skip("Set ASTA_TEST_WORKSPACE_TEMPLATE to a workspace-template checkout")
-    assert shutil.which("make") and shutil.which("quarto")
-    repository = tmp_path / "project"
-    project = repository / directory
-    project.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(source, project, ignore=shutil.ignore_patterns(".git"))
-    repo = ASSETS.parents[4]
-    ref = subprocess.check_output(
-        ["git", "-C", str(repo), "rev-parse", "HEAD"], text=True
-    ).strip()
-    workflow = project / ".github/workflows/docs.yml"
-    workflow.write_text(
-        re.sub(
-            r"(uses: allenai/asta-plugins/\.github/workflows/workspace-quarto-site\.yml@)\S+",
-            rf"\g<1>{ref}",
-            workflow.read_text(),
-        )
-    )
-    files = subprocess.check_output(
-        ["git", "-C", source, "ls-files"], text=True
-    ).splitlines()
-    git(repository, "init", "-q")
-    git(project, "add", *files)
-    git(repository, "commit", "-qm", "template baseline")
-    git(repository, "tag", "last-read")
-    with (project / "index.qmd").open("a") as page:
-        page.write("\nA newly drafted paragraph for local comparison.\n")
-    subprocess.run(["make", "render"], cwd=project, check=True)
-    with socket.socket() as listener:
-        listener.bind(("127.0.0.1", 0))
-        port = listener.getsockname()[1]
-    with workspace_module.preview_process(
-        ["quarto", "preview", "--no-browser", "--port", str(port)],
-        project,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.STDOUT,
-    ) as live:
-        try:
-            deadline = time.monotonic() + 30
-            while True:
-                assert live.poll() is None, "Live Quarto preview exited"
-                try:
-                    with urlopen(f"http://127.0.0.1:{port}/", timeout=1) as response:
-                        assert response.status == 200
-                        break
-                except (URLError, TimeoutError):
-                    assert time.monotonic() < deadline, "Live preview never started"
-                    time.sleep(0.1)
-            live_page = (project / "_site/index.html").read_bytes()
-            for _ in range(2):
-                result = CliRunner().invoke(
-                    workspace, ["what-changed", "last-read", "--project", str(project)]
-                )
-                assert result.exit_code == 0, result.output
-                report = (
-                    project / ".asta/cache/what-changed/what-changed.html"
-                ).read_text()
-                assert re.search(r"<ins\b[^>]*>[^<]*newly drafted paragraph", report)
-                assert "what-changed/what-changed.html" in result.stdout
-                assert 'href="#what-changed-html"' not in report
-                assert live.poll() is None
-                assert (project / "_site/index.html").read_bytes() == live_page
-        finally:
-            workspace_module.stop_preview(live, signal.SIGTERM)
-    manifest = json.loads((project / ".asta/cache/workspace.json").read_text())
-    assert manifest["ref"] == ref
-    assert "what-changed.py" in manifest["scripts"]
 
 
 def test_site_files_are_never_modified(project: Path) -> None:

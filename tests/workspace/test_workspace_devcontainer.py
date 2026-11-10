@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 ASSET = ROOT / "plugins/asta-tools/skills/workspace/assets/devcontainer.json"
 DOCKERFILE = ROOT / "Dockerfile"
 WORKFLOW = ROOT / ".github/workflows/workspace-quarto-site.yml"

@@ -380,7 +380,7 @@ def test_thin_makefile_bootstraps_managed_targets(tmp_path: Path) -> None:
         pytest.skip("make not installed")
     project = project_with_ref(tmp_path, "main")
     source = (
-        Path(__file__).resolve().parents[1]
+        Path(__file__).resolve().parents[2]
         / "plugins/asta-tools/skills/workspace/assets/Makefile.managed"
     )
     (project / "Makefile").write_text(source.read_text())
@@ -416,7 +416,7 @@ def test_thin_makefile_requires_a_workflow_even_with_cached_rules(
     project = tmp_path / site_dir
     project.mkdir(exist_ok=True)
     source = (
-        Path(__file__).resolve().parents[1]
+        Path(__file__).resolve().parents[2]
         / "plugins/asta-tools/skills/workspace/assets/Makefile.managed"
     )
     (project / "Makefile").write_text(source.read_text())
@@ -457,7 +457,7 @@ def test_thin_makefile_rejects_unrelated_root_with_newer_cached_rules(
         )
     )
     assets = (
-        Path(__file__).resolve().parents[1]
+        Path(__file__).resolve().parents[2]
         / "plugins/asta-tools/skills/workspace/assets"
     )
     (project / "Makefile").write_bytes((assets / "Makefile.managed").read_bytes())
@@ -511,7 +511,7 @@ def test_cached_subfolder_with_local_workflow_rejects_invalid_root(
     )
     root.write_text(original)
     assert workspace_module.workflow_file(project) == root
-    assets = Path(__file__).resolve().parents[1] / workspace_module.ASSET_DIR
+    assets = Path(__file__).resolve().parents[2] / workspace_module.ASSET_DIR
     (project / "Makefile").write_bytes((assets / "Makefile.managed").read_bytes())
     rules = project / ".asta/cache/workspace.mk"
     rules.parent.mkdir(parents=True)
@@ -571,7 +571,7 @@ def test_thin_makefile_resyncs_after_the_asta_version_or_pin_mode_changes(
         pytest.skip("make not installed")
     project = project_with_ref(tmp_path, "v0.110.0")
     source = (
-        Path(__file__).resolve().parents[1]
+        Path(__file__).resolve().parents[2]
         / "plugins/asta-tools/skills/workspace/assets/Makefile.managed"
     )
     (project / "Makefile").write_text(source.read_text())
@@ -648,7 +648,7 @@ def test_thin_makefile_rejects_ref_override(tmp_path: Path) -> None:
         pytest.skip("make not installed")
     project = project_with_ref(tmp_path, "main")
     source = (
-        Path(__file__).resolve().parents[1]
+        Path(__file__).resolve().parents[2]
         / "plugins/asta-tools/skills/workspace/assets/Makefile.managed"
     )
     (project / "Makefile").write_text(source.read_text())
@@ -678,7 +678,7 @@ def test_thin_makefile_dev_needs_no_cli(tmp_path: Path) -> None:
         pytest.skip("make not installed")
     project = project_with_ref(tmp_path, "main")
     source = (
-        Path(__file__).resolve().parents[1]
+        Path(__file__).resolve().parents[2]
         / "plugins/asta-tools/skills/workspace/assets/Makefile.managed"
     )
     (project / "Makefile").write_text(source.read_text())
@@ -700,7 +700,7 @@ def test_thin_makefile_explains_older_cli(tmp_path: Path) -> None:
         pytest.skip("make not installed")
     project = project_with_ref(tmp_path, "latest")
     source = (
-        Path(__file__).resolve().parents[1]
+        Path(__file__).resolve().parents[2]
         / "plugins/asta-tools/skills/workspace/assets/Makefile.managed"
     )
     (project / "Makefile").write_text(source.read_text())
@@ -744,7 +744,7 @@ def test_subfolder_make_explains_missing_selection_support(
         local.write_text(
             f"jobs:\n  docs:\n    uses: allenai/asta-plugins{workspace_module.WORKFLOW}main\n"
         )
-    assets = Path(__file__).resolve().parents[1] / workspace_module.ASSET_DIR
+    assets = Path(__file__).resolve().parents[2] / workspace_module.ASSET_DIR
     (project / "Makefile").write_bytes((assets / "Makefile.managed").read_bytes())
     if cached:
         rules = project / ".asta/cache/workspace.mk"
@@ -883,7 +883,7 @@ def test_thin_makefile_local_goals_need_no_cli(tmp_path: Path, goals) -> None:
     project = tmp_path / "project"
     project.mkdir()
     source = (
-        Path(__file__).resolve().parents[1]
+        Path(__file__).resolve().parents[2]
         / "plugins/asta-tools/skills/workspace/assets/Makefile.managed"
     )
     (project / "Makefile").write_text(
@@ -914,7 +914,7 @@ def test_thin_makefile_local_goals_do_not_skip_shared_targets(
         pytest.skip("make not installed")
     project = project_with_ref(tmp_path, "latest")
     source = (
-        Path(__file__).resolve().parents[1]
+        Path(__file__).resolve().parents[2]
         / "plugins/asta-tools/skills/workspace/assets/Makefile.managed"
     )
     (project / "Makefile").write_text(
@@ -940,7 +940,7 @@ def test_thin_makefile_local_override_precedes_local_goals(tmp_path: Path) -> No
     project = tmp_path / "project"
     project.mkdir()
     source = (
-        Path(__file__).resolve().parents[1]
+        Path(__file__).resolve().parents[2]
         / "plugins/asta-tools/skills/workspace/assets/Makefile.managed"
     )
     (project / "Makefile").write_text(
@@ -961,7 +961,7 @@ def test_thin_makefile_local_override_precedes_local_goals(tmp_path: Path) -> No
 
 def test_full_and_managed_makefiles_share_their_build_recipes() -> None:
     assets = (
-        Path(__file__).resolve().parents[1]
+        Path(__file__).resolve().parents[2]
         / "plugins/asta-tools/skills/workspace/assets"
     )
 
@@ -1004,7 +1004,7 @@ def test_full_and_managed_makefiles_share_their_build_recipes() -> None:
 
 def test_shared_workflow_installs_cli_from_its_own_commit_for_all_projects() -> None:
     workflow = (
-        Path(__file__).resolve().parents[1]
+        Path(__file__).resolve().parents[2]
         / ".github/workflows/workspace-quarto-site.yml"
     ).read_text()
     steps = yaml.load(workflow, Loader=yaml.BaseLoader)["jobs"]["build"]["steps"]
@@ -1041,7 +1041,7 @@ def test_managed_archive_supplies_evidence_extension(
         pytest.skip("make not installed")
     project = project_with_ref(tmp_path, "main")
     assets = (
-        Path(__file__).resolve().parents[1]
+        Path(__file__).resolve().parents[2]
         / "plugins/asta-tools/skills/workspace/assets"
     )
     (project / "Makefile").write_text((assets / "Makefile.managed").read_text())
@@ -1073,7 +1073,7 @@ def test_managed_archive_supplies_evidence_extension(
 
 
 def test_repository_archive_fits_workspace_sync_limits() -> None:
-    root = Path(__file__).resolve().parents[1]
+    root = Path(__file__).resolve().parents[2]
     archive = subprocess.run(
         ["git", "archive", "--format=tar.gz", "HEAD"],
         cwd=root,
@@ -1154,7 +1154,7 @@ def test_require_scripts_allows_removal_only_with_working_managed_targets(
         pytest.skip("make not installed")
     project = project_with_ref(tmp_path, "main")
     assets = (
-        Path(__file__).resolve().parents[1]
+        Path(__file__).resolve().parents[2]
         / "plugins/asta-tools/skills/workspace/assets"
     )
     (project / "Makefile").write_text((assets / "Makefile.managed").read_text())
@@ -1505,7 +1505,7 @@ def test_viewer_rules_require_the_viewer_helpers(tmp_path, monkeypatch, cached):
 @pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
 def test_missing_managed_script_reports_sync_guidance(tmp_path: Path) -> None:
     assets = (
-        Path(__file__).resolve().parents[1]
+        Path(__file__).resolve().parents[2]
         / "plugins/asta-tools/skills/workspace/assets"
     )
     shutil.copy(assets / "workspace.mk", tmp_path / "Makefile")
@@ -1525,7 +1525,7 @@ def test_missing_managed_script_reports_sync_guidance(tmp_path: Path) -> None:
 @pytest.mark.parametrize("committed", [False, True])
 def test_workspace_rules_prefer_committed_script(tmp_path: Path, committed) -> None:
     assets = (
-        Path(__file__).resolve().parents[1]
+        Path(__file__).resolve().parents[2]
         / "plugins/asta-tools/skills/workspace/assets"
     )
     shutil.copy(assets / "workspace.mk", tmp_path / "workspace.mk")
@@ -1611,7 +1611,7 @@ def test_refresh_keeps_rules_and_scripts_on_one_version(
 @pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
 def test_ejected_rules_and_scripts_work_without_cli_or_cache(tmp_path) -> None:
     assets = (
-        Path(__file__).resolve().parents[1]
+        Path(__file__).resolve().parents[2]
         / "plugins/asta-tools/skills/workspace/assets"
     )
     shutil.copy(assets / "workspace.mk", tmp_path / "workspace.mk")
@@ -1660,7 +1660,7 @@ def test_empty_archived_script_is_rejected(name) -> None:
 @pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
 def test_full_makefile_preview_helpers_need_no_cli_or_cache(tmp_path) -> None:
     assets = (
-        Path(__file__).resolve().parents[1]
+        Path(__file__).resolve().parents[2]
         / "plugins/asta-tools/skills/workspace/assets"
     )
     shutil.copy(assets / "Makefile", tmp_path / "Makefile")
@@ -1948,7 +1948,7 @@ def test_adopt_asta_theme_upgrades_only_the_scaffold_default(tmp_path: Path) -> 
 
 
 def test_scaffold_quarto_config_uses_the_managed_asta_theme() -> None:
-    root = Path(__file__).resolve().parents[1]
+    root = Path(__file__).resolve().parents[2]
     assets = root / "plugins/asta-tools/skills/workspace/assets"
     for config in (assets / "_quarto.yml", root / "examples/workspace/_quarto.yml"):
         text = config.read_text()
@@ -2210,7 +2210,7 @@ def test_sync_does_not_adopt_theme_without_managed_asset_rules(
 def test_all_asset_installers_require_the_same_theme_files():
     import re
 
-    assets = Path(__file__).resolve().parents[1] / workspace_module.ASSET_DIR
+    assets = Path(__file__).resolve().parents[2] / workspace_module.ASSET_DIR
     for name in ("workspace.mk", "Makefile"):
         match = re.search(r'theme_files="([^"]+)"', (assets / name).read_text())
         assert match is not None
@@ -2284,7 +2284,7 @@ def test_cached_subfolder_parallel_recursive_make_checks_once_without_sync(
             f"jobs:\n  docs:\n    uses: allenai/asta-plugins{workspace_module.WORKFLOW}v0.114.0\n"
         )
     (project / ".gitignore").write_text(".asta/cache/\n")
-    repo = Path(__file__).resolve().parents[1]
+    repo = Path(__file__).resolve().parents[2]
     assets = repo / "plugins/asta-tools/skills/workspace/assets"
     (project / "Makefile").write_bytes((assets / "Makefile.managed").read_bytes())
     tools = tmp_path / "tools"

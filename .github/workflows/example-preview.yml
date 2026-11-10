@@ -7,6 +7,11 @@ on:
     branches: [main]
   pull_request:
     types: [opened, synchronize, reopened, closed]
+  workflow_call:
+    inputs:
+      release-check:
+        type: boolean
+        default: false
   workflow_dispatch:
     inputs:
       preview-pr:
@@ -20,36 +25,41 @@ permissions:
   pages: read
 
 jobs:
+  scope:
+    runs-on: ubuntu-latest
+    outputs:
+      workspace: ${{ steps.scope.outputs.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: scope
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
+        run: echo "workspace=$(make --silent workspace-scope)" >> "$GITHUB_OUTPUT"
   docs:
+    needs: scope
+    if: github.event_name != 'pull_request' || github.event.action == 'closed' || needs.scope.outputs.workspace == 'true'
     uses: ./.github/workflows/workspace-quarto-site.yml
     with:
       preview-pr: ${{ inputs.preview-pr || '' }}
+      publish: ${{ !inputs.release-check }}
       site-dir: examples/workspace
       paper-strict: true
       artifact-command: |
-        # The demo PR already carries the patch; its ordinary preview is the demo.
-        [ "${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}" != example-demo-pr ] || exit 0
         docker run --rm --cap-drop ALL --security-opt no-new-privileges \
           --user "$(id -u):$(id -g)" -e HOME=/tmp \
           -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" -w "$GITHUB_WORKSPACE" \
           ghcr.io/allenai/asta:latest-tex bash -e -o pipefail -c '
             export PATH="$(uv tool dir --bin):$PATH"
             uv tool install --force .
-            python3 scripts/build-workspace-demo.py examples/workspace/_site/demo
+            make workspace-demo
           '
-      render-paths: |
-        examples/workspace/**
-        examples/workspace-demo.patch
-        scripts/build-workspace-demo.py
-        src/asta/commands/workspace.py
-        plugins/asta-tools/skills/workspace/assets/**
-        .github/workflows/workspace-quarto-site.yml
-        .github/workflows/example-preview.yml
-        tests/browser/**
+      render-paths: "**"
 
   # arm on main and on demand only; a PR waits on x86 alone.
   docs-arm:
-    if: github.event_name != 'pull_request' && inputs.preview-pr == ''
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call'
     uses: ./.github/workflows/workspace-quarto-site.yml
     with:
       publish: false
@@ -57,28 +67,20 @@ jobs:
       site-dir: examples/workspace
       paper-strict: true
       artifact-command: |
-        # The demo PR already carries the patch; its ordinary preview is the demo.
-        [ "${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}" != example-demo-pr ] || exit 0
         docker run --rm --cap-drop ALL --security-opt no-new-privileges \
           --user "$(id -u):$(id -g)" -e HOME=/tmp \
           -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" -w "$GITHUB_WORKSPACE" \
           ghcr.io/allenai/asta:latest-tex bash -e -o pipefail -c '
             export PATH="$(uv tool dir --bin):$PATH"
             uv tool install --force .
-            python3 scripts/build-workspace-demo.py examples/workspace/_site/demo
+            make workspace-demo
           '
-      render-paths: |
-        examples/workspace/**
-        examples/workspace-demo.patch
-        scripts/build-workspace-demo.py
-        src/asta/commands/workspace.py
-        plugins/asta-tools/skills/workspace/assets/**
-        .github/workflows/**
+      render-paths: "**"
 
   check-preview:
     name: Example preview browser
     needs: docs
-    if: always() && github.event.action != 'closed'
+    if: always() && github.event_name != 'push' && github.event.action != 'closed' && needs.docs.result != 'skipped'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -130,55 +132,16 @@ jobs:
           cache: npm
           cache-dependency-path: tests/browser/package-lock.json
       - if: steps.browser.outputs.run == 'true'
-        name: Install browser checks
-        working-directory: tests/browser
-        run: |
-          npm ci
-          npx playwright install --with-deps chromium
-      - if: steps.browser.outputs.run == 'true'
         uses: quarto-dev/quarto-actions/setup@v2
         with:
           version: release
       - if: steps.browser.outputs.run == 'true'
-        name: Render slide customization fixtures
-        # Match the site's Quarto setup; these HTML fixtures need no TeX image.
-        run: python3 tests/browser/render-slides.py tests/browser/fixtures
-      - if: steps.browser.outputs.run == 'true'
-        name: Check slide geometry and standalone behavior
-        working-directory: tests/browser
-        env:
-          PR_NUMBER: ${{ github.event.pull_request.number || inputs.preview-pr || '0' }}
-        run: node workspace-slides.mjs "../../preview-site/pr-preview/pr-$PR_NUMBER" artifacts
-      - if: steps.browser.outputs.run == 'true'
-        name: Check both themes and evidence readability
-        working-directory: tests/browser
-        env:
-          PR_NUMBER: ${{ github.event.pull_request.number || inputs.preview-pr || '0' }}
-        run: npm test -- "../../preview-site/pr-preview/pr-$PR_NUMBER" artifacts
-      - if: steps.browser.outputs.run == 'true' && (github.event_name == 'pull_request' || inputs.preview-pr != '')
-        name: Check the preview and What changed in a browser
-        working-directory: tests/browser
-        env:
-          PR_NUMBER: ${{ github.event.pull_request.number || inputs.preview-pr || '0' }}
-        run: node example-preview.mjs ../../preview-site artifacts
-      - if: steps.browser.outputs.run == 'true'
         uses: astral-sh/setup-uv@v6
       - if: steps.browser.outputs.run == 'true'
-        name: Check rendered deck review
+        name: Check example preview
         env:
           PR_NUMBER: ${{ github.event.pull_request.number || inputs.preview-pr || '0' }}
-        run: |
-          uv run --no-project --with playwright==1.64.1 python -m playwright install chromium
-          uv run --no-project --with playwright==1.64.1 python tests/browser/deck-review.py "preview-site/pr-preview/pr-$PR_NUMBER" tests/browser/artifacts
-      - if: steps.browser.outputs.run == 'true'
-        name: Check the demo What changed in the published preview
-        env:
-          PR_NUMBER: ${{ github.event.pull_request.number || inputs.preview-pr || '0' }}
-          HEAD_BRANCH: ${{ github.head_ref || github.ref_name }}
-        run: |
-          site="preview-site/pr-preview/pr-$PR_NUMBER"
-          if [ "$HEAD_BRANCH" != example-demo-pr ]; then site="$site/demo"; fi
-          uv run --no-project --with playwright==1.64.1 python tests/browser/local-what-changed-demo.py --site "$site" tests/browser/artifacts
+        run: make workspace-browser
       - if: steps.browser.outputs.run == 'true'
         uses: actions/upload-artifact@v4
         with:

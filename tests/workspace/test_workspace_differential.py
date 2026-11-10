@@ -9,7 +9,7 @@ import pytest
 
 from asta.commands.workspace_selection import select_pages
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tests/browser"))
 spec = importlib.util.spec_from_file_location(
     "differential", ROOT / "tests/browser/workspace-differential.py"

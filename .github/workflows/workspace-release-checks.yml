@@ -1,0 +1,16 @@
+name: Workspace release checks
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+  pull-requests: write
+  pages: read
+jobs:
+  checks:
+    uses: ./.github/workflows/example-workspace.yml
+    with:
+      ref-name: ''
+  site:
+    uses: ./.github/workflows/example-preview.yml
+    with:
+      release-check: true

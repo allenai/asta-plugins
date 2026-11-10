@@ -1,140 +1,102 @@
 name: Example workspace
-
-# Checks examples/workspace from a checkout, as a researcher runs it, in the
-# published -tex image: cold `make check` and the local What changed of a deck edit.
-# Example site builds the site and demo once and checks them in a browser.
-# Releases call this after `latest` moves; it never publishes. Not required.
 on:
+  pull_request:
   workflow_call:
     inputs:
       ref-name:
-        description: Final release tag whose -tex image and assets build the example
         type: string
         required: true
-  # PRs check the local checkout path on x86; main and releases add arm.
-  pull_request:
-  push:
-    branches: [main]
   workflow_dispatch:
-
 permissions:
   contents: read
-
-concurrency:
-  group: example-workspace-${{ github.event.pull_request.number || inputs.ref-name || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-
 jobs:
-  build:
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      matrix:
-        runner: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["ubuntu-latest", "ubuntu-24.04-arm"]') }}
-    timeout-minutes: 60
-    env:
-      # Browser acceptance tests share the install path across separate steps.
-      PLAYWRIGHT_BROWSERS_PATH: /tmp/asta-test-chromium
-      ASTA_WORKSPACE_RESOLVED_SHA: ${{ github.sha }}
-      ASTA_WORKSPACE_RESOLVED_REPOSITORY: ${{ github.repository }}
-    container:
-      image: ghcr.io/allenai/asta:${{ inputs.ref-name && format('{0}-tex', inputs.ref-name) || 'latest-tex' }}
-    defaults:
-      run:
-        working-directory: examples/workspace
+  scope:
+    runs-on: ubuntu-latest
+    outputs:
+      workspace: ${{ steps.scope.outputs.workspace }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          persist-credentials: false
-      - name: Build and validate the example
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          uv tool install --force ../..
-          export PATH="$(uv tool dir --bin):$PATH"
-          # Start cold: the example must fetch its own managed rules and extensions.
-          rm -rf .asta/cache _extensions
-          make check
-          test -f .asta/cache/workspace.mk
-          test -f _extensions/asta-theme/light.scss
-          test -f _extensions/evidence/snippet.lua
-          test -f _extensions/asta-slides/_extension.yml
-          # Verify the resolved source, not just the requested workflow pin.
-          python3 -c 'import json, os; from pathlib import Path; state = json.loads(Path(".asta/cache/workspace.json").read_text()); assert state["source_ref"] == os.environ["GITHUB_SHA"], state; assert Path(".asta/cache/workspace.mk").read_bytes().endswith(Path("../../plugins/asta-tools/skills/workspace/assets/workspace.mk").read_bytes())'
-          for extension in asta-theme evidence asta-slides; do
-            diff -r "../../plugins/asta-tools/skills/workspace/assets/_extensions/$extension" "_extensions/$extension"
-          done
-          git check-ignore .asta/cache/workspace.mk _extensions/asta-theme/light.scss
-          make preview-artifact-check
-          git diff --exit-code  # prints any tracked file a build or sync modified
-      - name: Check local What changed renders a deck edit
-        shell: bash
-        run: |
-          set -euo pipefail
-          uv tool install --force ../..
-          # The image ships a released asta; run the one just built from this checkout.
-          export PATH="$(uv tool dir --bin):$PATH"
-          test "$(command -v asta)" = "$(uv tool dir --bin)/asta"
-          # Only acceptance tests need a browser; the CLI compares live decks without one.
-          uv run --no-project --with playwright==1.64.1 python -m playwright install --with-deps chromium >/dev/null
-          uv run --no-project --with playwright==1.64.1 python ../../tests/browser/local-what-changed.py . ../../tests/browser/artifacts
-          git diff --exit-code  # prints any tracked file a build or sync modified
-      - name: Decide whether the edit comparison runs
-        id: differential
-        shell: bash
+      - id: scope
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: |
-          set -euo pipefail
-          # Always on main and releases; on a PR only when What changed or the scaffold changes.
-          if [ "${{ github.event_name }}" != pull_request ]; then
-            echo "run=true" >> "$GITHUB_OUTPUT"; exit 0
-          fi
-          top=$(git rev-parse --show-toplevel)
-          changed=$(git -C "$top" diff --name-only "$BASE_SHA" HEAD -- \
-            'src/asta/commands/workspace*.py' plugins/asta-tools/skills/workspace/assets \
-            examples/workspace .github/workflows/example-workspace.yml \
-            tests/browser/workspace-differential.py tests/browser/report_signature.py)
-          if [ -n "$changed" ]; then run=true; else run=false; fi
-          echo "run=$run" >> "$GITHUB_OUTPUT"
-          echo "Edit comparison: run=$run" >> "$GITHUB_STEP_SUMMARY"
-      - name: Compare selected edits with same-run full reports
-        if: steps.differential.outputs.run == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          export PATH="$(uv tool dir --bin):$PATH"
-          # Import the exact checkout's CLI for transparent render instrumentation.
-          export PYTHONPATH="$GITHUB_WORKSPACE/src"
-          uv run --no-project --with "$GITHUB_WORKSPACE" python ../../tests/browser/workspace-differential.py ../../tests/browser/artifacts/differential 2>&1 | tee "$RUNNER_TEMP/differential.log"
-      - name: Record differential timings
-        if: always()
-        shell: bash
-        run: |
-          if test -f "$RUNNER_TEMP/differential.log"; then
-            {
-              echo '### Differential edit matrix (timings are informational)'
-              echo '```text'
-              sed -n '/^### /p; /What changed timings:/,+12p' "$RUNNER_TEMP/differential.log"
-              echo '```'
-            } >> "$GITHUB_STEP_SUMMARY"
-          fi
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
+        run: echo "workspace=$(make --silent workspace-scope)" >> "$GITHUB_OUTPUT"
+  python:
+    needs: scope
+    if: github.event_name != 'pull_request' || needs.scope.outputs.workspace == 'true'
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.12', '3.13']
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+        runner: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["ubuntu-latest", "ubuntu-24.04-arm"]') }}
+    env:
+      UV_PYTHON: ${{ matrix.python }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+      - run: make test-workspace WORKSPACE_SHARD=${{ matrix.shard }} WORKSPACE_SHARDS=8
+  tools:
+    needs: scope
+    if: github.event_name != 'pull_request' || needs.scope.outputs.workspace == 'true'
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        runner: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["ubuntu-latest", "ubuntu-24.04-arm"]') }}
+    container:
+      image: ghcr.io/allenai/asta:${{ inputs.ref-name && format('{0}-tex', inputs.ref-name) || 'latest-tex' }}
+    env:
+      ASTA_WORKSPACE_RESOLVED_SHA: ${{ github.sha }}
+      ASTA_WORKSPACE_RESOLVED_REPOSITORY: ${{ github.repository }}
+      PLAYWRIGHT_BROWSERS_PATH: /tmp/asta-test-chromium
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - run: make check-workspace-tools
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: workspace-differential-${{ matrix.runner }}
+          name: workspace-local-${{ matrix.runner }}
+          path: tests/browser/artifacts
+  comparison:
+    needs: scope
+    if: github.event_name != 'pull_request' || needs.scope.outputs.workspace == 'true'
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        case: [prose, metadata, slide, quote, bibliography, config, image, new, deleted, renamed, paper-bibliography, paper, include]
+        runner: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["ubuntu-latest", "ubuntu-24.04-arm"]') }}
+    container:
+      image: ghcr.io/allenai/asta:${{ inputs.ref-name && format('{0}-tex', inputs.ref-name) || 'latest-tex' }}
+    env:
+      ASTA_WORKSPACE_RESOLVED_SHA: ${{ github.sha }}
+      ASTA_WORKSPACE_RESOLVED_REPOSITORY: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          uv tool install --force .
+          echo "$(uv tool dir --bin)" >> "$GITHUB_PATH"
+      - run: make workspace-compare WORKSPACE_CASE=${{ matrix.case }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: comparison-${{ matrix.case }}-${{ matrix.runner }}
           path: tests/browser/artifacts/differential
-          if-no-files-found: ignore
-          retention-days: 30
-      - uses: actions/upload-artifact@v4
-        if: always()
+  dom:
+    needs: scope
+    if: github.event_name != 'pull_request' || needs.scope.outputs.workspace == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          name: local-what-changed-screenshot-${{ matrix.runner }}
-          path: |
-            tests/browser/artifacts/unexpected-look
-            tests/browser/artifacts/local-what-changed-deck.png
-            tests/browser/artifacts/local-what-changed-no-preview.png
-          if-no-files-found: ignore
-          retention-days: 30
-
+          node-version: '20'
+      - run: make workspace-dom

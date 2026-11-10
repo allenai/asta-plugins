@@ -169,7 +169,7 @@ def test_unresolvable_include_selects_its_page(trees):
     assert "dynamic.qmd" in select_pages(after, before, ["slides.qmd"])
 
 
-EXAMPLE = Path(__file__).resolve().parents[1] / "examples" / "workspace"
+EXAMPLE = Path(__file__).resolve().parents[2] / "examples" / "workspace"
 
 
 @pytest.fixture

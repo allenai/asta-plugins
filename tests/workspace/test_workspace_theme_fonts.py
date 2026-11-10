@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 
 THEME = (
-    Path(__file__).resolve().parents[1]
+    Path(__file__).resolve().parents[2]
     / "plugins/asta-tools/skills/workspace/assets/_extensions/asta-theme"
 )
 

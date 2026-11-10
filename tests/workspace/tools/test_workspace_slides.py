@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 ASSETS = (
-    Path(__file__).resolve().parents[1] / "plugins/asta-tools/skills/workspace/assets"
+    Path(__file__).resolve().parents[3] / "plugins/asta-tools/skills/workspace/assets"
 )
 
 
@@ -135,7 +135,6 @@ def test_inlined_links_are_rebased_to_the_diff_page(tmp_path):
     assert 'href="../../lit-review' not in output
 
 
-@pytest.mark.skipif(not shutil.which("quarto"), reason="requires Quarto")
 def test_quarto_builds_and_auto_links_multiple_nested_decks(tmp_path):
     shutil.copytree(
         ASSETS / "_extensions/asta-slides", tmp_path / "_extensions/asta-slides"
@@ -429,7 +428,6 @@ def _site_with_deck(root, render, body):
 DECK = "## Opening\n\nOwn title.\n\n# First\n\n## One\n\nText.\n\n# Second\n\n## Two\n\n{}\n"
 
 
-@pytest.mark.skipif(not shutil.which("quarto"), reason="requires Quarto")
 @pytest.mark.parametrize(
     "command", [["render"], ["render", "slides/workspace/slides.qmd"]]
 )
@@ -446,7 +444,6 @@ def test_deck_two_folders_down_finds_site_extension(tmp_path, command):
     assert (tmp_path / "_site/slides/workspace/slides.html").exists()
 
 
-@pytest.mark.skipif(not shutil.which("quarto"), reason="requires Quarto")
 def test_section_slides_false_drops_dividers_and_what_changed_numbers_as_deck(tmp_path):
     rendered = []
     for text in ["Before.", "After."]:

@@ -12,7 +12,7 @@ from asta.commands import workspace as workspace_module
 from asta.commands import workspace_versions
 from tests._workspace_helpers import _archive, project_with_ref
 
-RULES = Path(__file__).parents[1] / workspace_module.ASSET
+RULES = Path(__file__).parents[2] / workspace_module.ASSET
 pytestmark = pytest.mark.usefixtures("pinned_workspace")
 
 
