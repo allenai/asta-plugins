@@ -24,8 +24,6 @@ def test_template_with_real_quarto(tmp_path: Path, directory: str) -> None:
         "ASTA_TEST_WORKSPACE_TEMPLATE",
         str(Path(__file__).resolve().parents[3] / "examples/workspace"),
     )
-    if not source:
-        pytest.skip("Set ASTA_TEST_WORKSPACE_TEMPLATE to a workspace-template checkout")
     assert shutil.which("make") and shutil.which("quarto")
     repository = tmp_path / "project"
     project = repository / directory

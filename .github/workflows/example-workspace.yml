@@ -9,6 +9,9 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: example-workspace-${{ github.event.pull_request.number || inputs.ref-name || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   scope:
     runs-on: ubuntu-latest
@@ -21,7 +24,10 @@ jobs:
       - id: scope
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
-        run: echo "workspace=$(make --silent workspace-scope)" >> "$GITHUB_OUTPUT"
+        run: |
+          workspace=$(make --silent workspace-scope)
+          case "$workspace" in true|false) ;; *) echo "::error::Invalid workspace scope: $workspace"; exit 1;; esac
+          echo "workspace=$workspace" >> "$GITHUB_OUTPUT"
   python:
     needs: scope
     if: github.event_name != 'pull_request' || needs.scope.outputs.workspace == 'true'
@@ -36,13 +42,14 @@ jobs:
       UV_PYTHON: ${{ matrix.python }}
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v4
+      - uses: astral-sh/setup-uv@v6
       - run: make test-workspace WORKSPACE_SHARD=${{ matrix.shard }} WORKSPACE_SHARDS=8
   tools:
     needs: scope
     if: github.event_name != 'pull_request' || needs.scope.outputs.workspace == 'true'
     runs-on: ${{ matrix.runner }}
     strategy:
+      fail-fast: false
       matrix:
         runner: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["ubuntu-latest", "ubuntu-24.04-arm"]') }}
     container:
@@ -93,7 +100,11 @@ jobs:
   dom:
     needs: scope
     if: github.event_name != 'pull_request' || needs.scope.outputs.workspace == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["ubuntu-latest", "ubuntu-24.04-arm"]') }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

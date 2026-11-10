@@ -24,7 +24,7 @@ def load(name):
         ([{"filename": "examples/workspace/slides/attention/slides.qmd"}], "true"),
         ([{"filename": "examples/workspace-demo.patch"}], "true"),
         ([{"filename": "scripts/build-workspace-demo.py"}], "true"),
-        ([{"filename": "plugins/asta-tools/skills/workspace/SKILL.md"}], "false"),
+        ([{"filename": "plugins/asta-tools/skills/workspace/SKILL.md"}], "true"),
         (
             [
                 {
@@ -72,7 +72,7 @@ def _run_shared_scope(tmp_path, files, *, site_dir=None, patterns=None):
         EVENT="pull_request",
         ACTION="synchronize",
         SITE_DIR="examples/workspace",
-        RENDER_PATHS="examples/workspace/**\nexamples/workspace-demo.patch\nscripts/build-workspace-demo.py\nplugins/asta-tools/skills/workspace/assets/**",
+        RENDER_PATHS="**",
         GITHUB_OUTPUT=str(output),
         GITHUB_REPOSITORY="owner/repo",
         PR_NUMBER="1",
@@ -148,7 +148,9 @@ def test_shared_scope_reads_all_pages_below_file_limit(tmp_path, matches_site):
     files = [{"filename": f"unrelated/{i}.txt"} for i in range(2999)]
     if matches_site:
         files[-1] = {"filename": "examples/workspace/index.qmd"}
-    result, output = _run_shared_scope(tmp_path, files)
+    result, output = _run_shared_scope(
+        tmp_path, files, patterns="examples/workspace/**"
+    )
     assert result.returncode == 0, result.stderr
     assert output.read_text() == f"render={str(matches_site).lower()}\n"
 
@@ -375,8 +377,10 @@ def test_example_publishes_one_patch_through_existing_artifact_hook():
         not in (ROOT / ".github/workflows/example-preview.yml").read_text()
     )
     assert "demo-pr" not in load("docker")["jobs"]
-    for name in ("examples/workspace/README.md", "DEVELOPER.md"):
-        assert "pull/281" not in (ROOT / name).read_text()
+    for name in ("README.md", "examples/workspace/README.md", "DEVELOPER.md"):
+        text = (ROOT / name).read_text()
+        assert "pull/281" not in text and "pr-preview/pr-281" not in text
+        assert "https://allenai.github.io/asta-plugins/demo/" in text
 
 
 def test_example_uses_current_scaffold_and_managed_inputs():
@@ -384,6 +388,9 @@ def test_example_uses_current_scaffold_and_managed_inputs():
     assert 'state["source_ref"] == os.environ["GITHUB_SHA"]' in script
     assert "for extension in asta-theme evidence asta-slides" in script
     assert "diff -r" in script
+    assert "make workspace-assets workspace-viewers workspace-check-gate" in script
+    assert "make check\n" not in script
+    assert "make preview-artifact-check" not in script
 
 
 def test_published_demo_reuses_local_content_assertions():
@@ -411,7 +418,7 @@ def test_all_example_browser_checks_use_the_installed_browser_path():
     )
 
 
-def test_pr_waits_on_x86_only_and_main_adds_arm():
+def test_pr_uses_x86_and_release_or_manual_adds_arm():
     workflow = load("example-workspace")
     assert "push" not in workflow["on"]
     for job in ("python", "tools", "comparison"):
@@ -421,11 +428,11 @@ def test_pr_waits_on_x86_only_and_main_adds_arm():
         )
     assert (
         load("example-preview")["jobs"]["docs-arm"]["if"]
-        == "github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call'"
+        == "github.event_name == 'workflow_dispatch' || inputs.release-check"
     )
 
 
-def test_edit_comparison_runs_on_main_and_on_what_changed_prs():
+def test_edit_comparison_runs_independently_on_workspace_prs():
     jobs = load("example-workspace")["jobs"]
     assert jobs["comparison"]["needs"] == "scope"
     assert len(jobs["comparison"]["strategy"]["matrix"]["case"]) == 13
@@ -506,8 +513,8 @@ def test_dispatched_preview_requires_exact_open_same_repo_head(tmp_path, invalid
         (".github/workflows/example-workspace.yml", True),
         ("tests/browser/workspace-differential.py", True),
         ("tests/browser/report_signature.py", True),
-        ("tests/browser/example-preview.mjs", False),
-        (".github/workflows/ci.yml", False),
+        ("tests/browser/example-preview.mjs", True),
+        (".github/workflows/ci.yml", True),
     ],
 )
 def test_edit_comparison_gate_uses_the_pr_diff(tmp_path, path, runs):
@@ -540,15 +547,17 @@ def test_edit_comparison_gate_uses_the_pr_diff(tmp_path, path, runs):
         [sys.executable, str(ROOT / "scripts/workspace-scope.py"), base],
         env=dict(
             os.environ,
-            WORKSPACE_PATHS="plugins/asta-tools/skills/workspace/ src/asta/commands/workspace examples/workspace tests/browser/ .github/workflows/",
+            WORKSPACE_PATHS=(ROOT / "Makefile")
+            .read_text()
+            .split("WORKSPACE_PATHS := ", 1)[1]
+            .splitlines()[0],
         ),
         cwd=tmp_path,
         capture_output=True,
         text=True,
     )
     assert result.returncode == 0, result.stderr
-    expected = path != "README.md"
-    assert result.stdout.strip() == str(expected).lower()
+    assert result.stdout.strip() == str(runs).lower()
 
 
 def test_unpublished_prs_check_the_same_build_without_write_access():
@@ -582,4 +591,83 @@ def test_unpublished_prs_check_the_same_build_without_write_access():
 def test_workspace_test_matrix_selects_its_interpreter():
     job = load("example-workspace")["jobs"]["python"]
     assert job["env"]["UV_PYTHON"] == "${{ matrix.python }}"
-    assert "test_" not in (ROOT / ".github/workflows/ci.yml").read_text()
+    import re
+
+    assert not re.search(
+        r"test_.*\.py|--ignore", (ROOT / ".github/workflows/ci.yml").read_text()
+    )
+
+
+@pytest.mark.parametrize("workflow", ["example-workspace", "example-preview"])
+@pytest.mark.parametrize(
+    "value,exit_code", [("true", 0), ("false", 0), ("", 0), ("oops", 0), ("false", 1)]
+)
+def test_workspace_scope_step_rejects_errors_and_invalid_outputs(
+    tmp_path, workflow, value, exit_code
+):
+    step = load(workflow)["jobs"]["scope"]["steps"][-1]
+    fake = tmp_path / "make"
+    fake.write_text(f"#!/bin/sh\nprintf '%s\\n' '{value}'\nexit {exit_code}\n")
+    fake.chmod(0o755)
+    output = tmp_path / "out"
+    result = subprocess.run(
+        ["bash", "-e", "-o", "pipefail", "-c", step["run"]],
+        env=dict(
+            os.environ,
+            PATH=f"{tmp_path}:{os.environ['PATH']}",
+            GITHUB_OUTPUT=str(output),
+        ),
+        capture_output=True,
+        text=True,
+    )
+    valid = exit_code == 0 and value in ("true", "false")
+    assert (result.returncode == 0) == valid
+    assert output.exists() == valid
+    if valid:
+        assert output.read_text() == f"workspace={value}\n"
+
+
+def test_example_passes_one_scope_to_shared_build_and_cleanup():
+    docs = load("example-preview")["jobs"]["docs"]
+    assert "if" not in docs
+    assert docs["with"]["render"] == "${{ needs.scope.outputs.workspace }}"
+    assert "render-paths" not in docs["with"]
+
+
+@pytest.mark.parametrize(
+    "scope,expected", [("true", "true"), ("false", "false"), ("bad", None)]
+)
+def test_shared_scope_honors_caller_without_file_lookup(
+    tmp_path, monkeypatch, scope, expected
+):
+    monkeypatch.setenv("RENDER", scope)
+    # The fake gh rejects this response type if called; caller scope needs no API.
+    result, output = _run_shared_scope(tmp_path, [])
+    if expected is None:
+        assert result.returncode != 0
+        assert not output.exists()
+    else:
+        assert result.returncode == 0, result.stderr
+        assert output.read_text() == f"render={expected}\n"
+
+
+@pytest.mark.parametrize(
+    "shard,count,expected", [(0, 1, 0), (1, 2, 0), (2, 2, 1), (0, 0, 1)]
+)
+def test_empty_workspace_shard_never_falls_back_to_all_tests(
+    tmp_path, shard, count, expected
+):
+    (tmp_path / "tests/workspace").mkdir(parents=True)
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "scripts/test-workspace.py"),
+            str(shard),
+            str(count),
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+    )
+    assert (result.returncode == 0) == (expected == 0)
+    assert "pytest" not in result.stdout

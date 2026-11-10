@@ -35,8 +35,7 @@ install:
 	uv sync --extra test
 
 # Run all tests
-test:
-	uv run --extra test pytest -v
+test: test-plugins test-workspace
 
 # Run unit tests only
 test-unit:
@@ -112,7 +111,7 @@ push-version-tag:
 		exit 1; \
 	fi; \
 	test "$$(gh run list --workflow workspace-release-checks.yml --commit $$SHA --status success --json databaseId --jq length)" -gt 0 || { \
-		echo "Run gh workflow run workspace-release-checks.yml --ref main and wait for it to pass before tagging" >&2; exit 1; \
+		echo "Run gh workflow run workspace-release-checks.yml --ref $$SHA and wait for it to pass before tagging" >&2; exit 1; \
 	}; \
 	scripts/wait-for-main-image.sh $$SHA && \
 	git tag v$$VERSION && \
@@ -166,22 +165,22 @@ WORKSPACE_PATHS := plugins/asta-tools/skills/workspace/ src/asta/commands/worksp
 export WORKSPACE_PATHS
 WORKSPACE_SHARD ?= 0
 WORKSPACE_SHARDS ?= 1
-WORKSPACE_CASE ?= prose
+WORKSPACE_CASE ?=
 PREVIEW_SITE ?= preview-site/pr-preview/pr-$(PR_NUMBER)
-.PHONY: test-plugins test-workspace test-workspace-tools workspace-dom workspace-browser workspace-local workspace-compare workspace-demo workspace-scope
+.PHONY: test-plugins test-workspace test-workspace-tools workspace-dom workspace-browser workspace-local workspace-compare workspace-demo workspace-scope check-workspace-tools
 
 test-plugins:
 	uv run --extra test pytest -v --ignore=tests/workspace
 
 test-workspace:
-	@command -v make >/dev/null
-	uv run --extra test pytest -v $$(python3 -c 'from pathlib import Path; fs=sorted(Path("tests/workspace").glob("test_*.py")); print(" ".join(str(f) for i,f in enumerate(fs) if i % $(WORKSPACE_SHARDS) == $(WORKSPACE_SHARD)))')
+	@for tool in make perl; do command -v $$tool >/dev/null || { echo "Missing required tool: $$tool" >&2; exit 1; }; done
+	uv run --extra test python scripts/test-workspace.py $(WORKSPACE_SHARD) $(WORKSPACE_SHARDS)
 
 check-workspace-tools: test-workspace-tools workspace-local
 
 test-workspace-tools:
 	@for tool in quarto make perl latexmk pdftotext; do command -v $$tool >/dev/null || { echo "Missing required tool: $$tool" >&2; exit 1; }; done
-	uv run --extra test pytest -v tests/workspace/tools
+	uv run --extra test pytest -o addopts= -v tests/workspace/tools
 
 workspace-scope:
 	@python3 scripts/workspace-scope.py "$(BASE_SHA)"
@@ -190,6 +189,7 @@ workspace-dom:
 	cd tests/dom && npm ci && npm test
 
 workspace-demo:
+	sh examples/workspace/scripts/check-paper.sh examples/workspace/_site
 	python3 scripts/build-workspace-demo.py examples/workspace/_site/demo
 
 workspace-local:

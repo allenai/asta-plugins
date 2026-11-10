@@ -111,7 +111,9 @@ The version lives in three places:
    ```bash
    git add -A && git commit -m "chore: bump version to x.y.z" && git push
    ```
-5. `make push-version-tag` — verifies all three version files match and that
+5. Dispatch `gh workflow run workspace-release-checks.yml --ref "$(git rev-parse HEAD)"`
+   after the release commit merges, and wait for its workspace validation on both
+   architectures. `make push-version-tag` requires that successful run, verifies all three version files match and that
    `HEAD` is on `origin/main`, then waits for the `Docker` workflow run on that
    commit to succeed (`scripts/wait-for-main-image.sh`, needs `gh`) before it
    creates and pushes the git tag. It exits without tagging if that run failed
@@ -129,12 +131,10 @@ The version lives in three places:
    a release is not a prerequisite for anything.
 8. Check [the demo](https://allenai.github.io/asta-plugins/demo/what-changed.html). Main rebuilds it from `examples/workspace-demo.patch` on every push; no release step maintains a demo branch.
 
-The Example site browser job owns theme, evidence, slide geometry and deck-review
-coverage on main and PRs, including the release demo's dispatched preview. The
-release-only Example workspace call validates cold scaffold checks, local What
-changed and the edit matrix against the tagged `-tex` image on both architectures;
-it does not build a second site for browser checks. Browser slide fixtures use
-the shared site's Quarto setup (`release`), rather than the tagged image's Quarto.
+Workspace browser coverage runs on workspace PRs and release/manual validation.
+Main only publishes the site and patch-derived demo. Pre-release checks use the
+current released `latest-tex` toolchain; the new tag does not exist yet. Browser
+slide fixtures use the shared site's Quarto setup (`release`).
 
 If `push-version-tag` reports a version mismatch, rerun `make set-version` to
 resync — don't hand-edit one file.
@@ -162,21 +162,12 @@ The public example also publishes `/demo/what-changed.html` on each main build.
 `scripts/build-workspace-demo.py` applies `examples/workspace-demo.patch` in a
 fresh shared clone and runs the checkout's CLI with the TeX toolchain. The
 example's existing after-render artifact command includes that report in the
-normal Pages artifact; it adds no publishing workflow or credential. A PR that
-changes the rendered example builds the site and demo once, on x86, through the
-shared site workflow. The demo PR already contains the patch, so its ordinary
-preview is its demo and the patch is not applied again.
-
-One browser job checks the built preview's themes, evidence, slide geometry,
-deck review and demo What changed. Fork and Dependabot PRs cannot publish; their
-browser checks use the same build's artifact with read-only permissions. Main
-and ordinary on-demand rebuilds also validate arm independently, without publishing twice.
-Example workspace separately checks a cold scaffold and the local checkout path
-for a deck edit on x86; main and releases add arm. Its full edit comparison runs
-on main and releases, and on a PR only when What changed code, scaffold assets,
-the example, or the comparison test itself changes. Workspace/Overleaf unit
-tests use four pytest workers per Python version; other plugins keep their
-existing test command and execution model.
+normal Pages artifact; it adds no publishing workflow or credential. A workspace PR builds the site and demo once, on x86, through the
+shared site workflow. The patch is applied only by that build's artifact hook.
+One browser job checks that build's preview (or its identical artifact for fork
+and Dependabot PRs) with read-only permissions. The artifact hook validates the existing paper output without rebuilding it.
+Separate GitHub jobs check cold asset bootstrap and the local deck-edit path and all 13 selected/full comparison cases. Neither waits
+on the published site.
 
 ### Workspace checks
 
@@ -188,7 +179,7 @@ belong in `tests/workspace/tools/`. A required missing tool fails its target.
 | Target | Checks | Trigger | Environment |
 |---|---|---|---|
 | `test-plugins` | Other plugins' existing serial tests | Every PR | Python, existing plugin CLI setup |
-| `test-workspace` | Offline workspace and Overleaf tests | Workspace PR | Python and Make; Python 3.11–3.13, eight GitHub shards |
+| `test-workspace` | Offline workspace and Overleaf tests | Workspace PR | Python, Make and Perl; Python 3.11–3.13, eight GitHub shards |
 | `check-workspace-tools` | Real scaffold/slide/template tests, cold scaffold checks and local deck comparison | Workspace PR | Released TeX image, Quarto and Chromium |
 | `workspace-compare` | Selected vs full What changed, one `WORKSPACE_CASE` | Workspace PR | Released TeX image; 13 independent GitHub jobs |
 | `workspace-dom` | What changed folding | Workspace PR | Node |
@@ -197,7 +188,7 @@ belong in `tests/workspace/tools/`. A required missing tool fails its target.
 
 Local targets run the same commands as CI. `make test-workspace` defaults to the
 whole offline suite; `WORKSPACE_SHARD` and `WORKSPACE_SHARDS` select CI's partition.
-`make workspace-compare WORKSPACE_CASE=quote` runs one comparison case.
+`make workspace-compare` runs all 13 cases; `WORKSPACE_CASE=quote` selects one.
 `make workspace-browser PR_NUMBER=296` checks the downloaded preview directory.
 
 Before a release, dispatch `workspace-release-checks.yml` at the release commit
@@ -205,5 +196,4 @@ and wait for it to succeed. It runs workspace tests, comparisons and site builds
 on x86 and arm without publishing. `make push-version-tag` requires a successful
 run for the exact commit. Arm validation otherwise runs only on manual dispatch.
 Pushes to main publish the example and its patch-derived demo; workspace check
-jobs are PR/release/manual jobs. PR 281 remains open until PR 296 merges, then
-must be closed; the READMEs already point to the published demo.
+jobs are PR/release/manual jobs.

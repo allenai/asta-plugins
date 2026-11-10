@@ -52,6 +52,10 @@ on:
         type: string
         default: "."
 
+      render:
+        description: Optional caller-owned PR scope (true or false); empty uses render-paths
+        type: string
+        default: ""
       render-paths:
         description: Newline-separated Python fnmatch patterns (both * and ** cross /) affecting rendered content; defaults to everything under site-dir
         type: string
@@ -75,6 +79,7 @@ jobs:
           ACTION: ${{ github.event.action }}
           SITE_DIR: ${{ inputs.site-dir }}
           RENDER_PATHS: ${{ inputs.render-paths }}
+          RENDER: ${{ inputs.render }}
           DISPATCH_PR: ${{ inputs.preview-pr }}
         shell: python
         run: |
@@ -105,6 +110,10 @@ jobs:
                   raise SystemExit('::error::site-dir must stay inside the repository.')
               if os.environ['EVENT'] != 'pull_request':
                   render = True
+              elif os.environ.get('RENDER', ''):
+                  if os.environ['RENDER'] not in ('true', 'false'):
+                      raise SystemExit('::error::render must be true or false.')
+                  render = os.environ['RENDER'] == 'true'
               else:
                   pages = json.loads(subprocess.check_output([
                       'gh', 'api', '--paginate', '--slurp',
