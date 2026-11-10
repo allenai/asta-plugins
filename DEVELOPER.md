@@ -136,6 +136,15 @@ The version lives in three places:
    never merge it. The patch is the only source of its sample edit; do not merge
    main into the demo branch or maintain another copy by hand. A patch that no
    longer applies fails the release's demo job with the patch path in the error.
+   The job waits for GitHub to report the pushed PR head before dispatching;
+   a timeout fails the job instead of refreshing an outdated preview.
+
+The Example site browser job owns theme, evidence, slide geometry and deck-review
+coverage on main and PRs, including the release demo's dispatched preview. The
+release-only Example workspace call validates cold scaffold checks, local What
+changed and the edit matrix against the tagged `-tex` image on both architectures;
+it does not build a second site for browser checks. Browser slide fixtures use
+the shared site's Quarto setup (`release`), rather than the tagged image's Quarto.
 
 If `push-version-tag` reports a version mismatch, rerun `make set-version` to
 resync — don't hand-edit one file.

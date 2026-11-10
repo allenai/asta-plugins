@@ -22,6 +22,8 @@ def load(name):
     "files,expected",
     [
         ([{"filename": "examples/workspace/slides/attention/slides.qmd"}], "true"),
+        ([{"filename": "examples/workspace-demo.patch"}], "true"),
+        ([{"filename": "scripts/build-workspace-demo.py"}], "true"),
         ([{"filename": "plugins/asta-tools/skills/workspace/SKILL.md"}], "false"),
         (
             [
@@ -491,10 +493,15 @@ def test_pr_waits_on_x86_only_and_main_adds_arm():
 
 def test_edit_comparison_runs_on_main_and_on_what_changed_prs():
     steps = load("example-workspace")["jobs"]["build"]["steps"]
+    checkout = next(
+        s for s in steps if s.get("uses", "").startswith("actions/checkout@")
+    )
+    # The PR base used by the gate must exist on real CI checkouts too.
+    assert checkout["with"]["fetch-depth"] == "0"
     by_name = {s.get("name"): s for s in steps}
     gate = by_name["Decide whether the edit comparison runs"]
     for path in (
-        "src/asta/commands/workspace.py",
+        "src/asta/commands/workspace*.py",
         "plugins/asta-tools/skills/workspace/assets",
         "examples/workspace",
     ):
@@ -570,10 +577,15 @@ def test_dispatched_preview_requires_exact_open_same_repo_head(tmp_path, invalid
         ("src/asta/commands/workspace.py", True),
         ("src/asta/commands/workspace_selection.py", True),
         ("src/asta/commands/workspace_versions.py", True),
+        ("src/asta/commands/workspace_comparison.py", True),
         ("plugins/asta-tools/skills/workspace/assets/what-changed.py", True),
         ("examples/workspace/index.qmd", True),
         ("README.md", False),
-        (".github/workflows/example-workspace.yml", False),
+        (".github/workflows/example-workspace.yml", True),
+        ("tests/browser/workspace-differential.py", True),
+        ("tests/browser/report_signature.py", True),
+        ("tests/browser/example-preview.mjs", False),
+        (".github/workflows/ci.yml", False),
     ],
 )
 def test_edit_comparison_gate_uses_the_pr_diff(tmp_path, path, runs):
@@ -635,4 +647,19 @@ def test_unpublished_prs_check_the_same_build_without_write_access():
     )
     assert "needs.docs.outputs.published != 'true'" in download["if"]
     assert download["with"]["name"] == "site-ubuntu-latest"
+    upload = next(
+        s
+        for s in shared["jobs"]["build"]["steps"]
+        if s.get("uses", "").startswith("actions/upload-artifact@")
+    )
+    assert upload["with"]["name"] == "site-${{ inputs.build-runner }}"
+    assert (
+        shared["on"]["workflow_call"]["inputs"]["build-runner"]["default"]
+        == "ubuntu-latest"
+    )
     assert download["with"]["path"].startswith("preview-site/pr-preview/pr-")
+
+
+def test_workspace_test_matrix_selects_its_interpreter():
+    job = load("ci")["jobs"]["workspace-test"]
+    assert job["env"]["UV_PYTHON"] == "${{ matrix.python-version }}"

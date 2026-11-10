@@ -130,7 +130,12 @@ def test_write_access_is_confined_to_branch_publication_jobs():
     assert jobs["latest"]["outputs"]["version"] == "${{ steps.newest.outputs.version }}"
 
 
-def test_demo_release_rebuilds_the_patch_and_dispatches_its_preview(release, tmp_path):
+@pytest.mark.parametrize(
+    "head_response", ["current", "stale-then-current", "stale", "api-error"]
+)
+def test_demo_release_rebuilds_the_patch_and_dispatches_its_preview(
+    release, tmp_path, head_response
+):
     origin, work, _, _ = release
     # Populate the tagged release with the real patch's input files.
     patch = ROOT / "examples/workspace-demo.patch"
@@ -147,12 +152,40 @@ def test_demo_release_rebuilds_the_patch_and_dispatches_its_preview(release, tmp
     git(work, "tag", "v3.0.0")
     git(work, "push", "-q", "origin", "main", "--tags")
     fake = tmp_path / "gh"
-    fake.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> "$DISPATCH_LOG"\n')
+    fake.write_text(
+        "#!/usr/bin/env python3\n"
+        "import os, subprocess, sys\n"
+        "from pathlib import Path\n"
+        "args = sys.argv[1:]\n"
+        "if args[0] == 'api':\n"
+        "    assert args[1:] == ['repos/owner/repo/pulls/281', '--jq', '.head.sha']\n"
+        "    log = Path(os.environ['POLL_LOG'])\n"
+        "    count = len(log.read_text().splitlines()) if log.exists() else 0\n"
+        "    with log.open('a') as out: out.write('poll\\n')\n"
+        "    mode = os.environ['HEAD_RESPONSE']\n"
+        "    if mode == 'api-error': sys.exit(1)\n"
+        "    if mode == 'stale' or (mode == 'stale-then-current' and count < 2):\n"
+        "        print('a' * 40)\n"
+        "    else:\n"
+        "        print(subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip())\n"
+        "else:\n"
+        "    assert args[:2] == ['workflow', 'run']\n"
+        "    with open(os.environ['DISPATCH_LOG'], 'a') as out: out.write(' '.join(args) + '\\n')\n"
+    )
     fake.chmod(0o755)
+    sleep = tmp_path / "sleep"
+    sleep.write_text("#!/bin/sh\nexit 0\n")
+    sleep.chmod(0o755)
     job = WORKFLOW["jobs"]["demo-pr"]
-    assert job["permissions"] == {"contents": "write", "actions": "write"}
+    assert job["permissions"] == {
+        "contents": "write",
+        "actions": "write",
+        "pull-requests": "read",
+    }
     script = job["steps"][-1]["run"]
     for _ in range(2):
+        polls = tmp_path / "polls"
+        polls.unlink(missing_ok=True)
         result = subprocess.run(
             ["bash", "-c", script],
             cwd=work,
@@ -165,9 +198,21 @@ def test_demo_release_rebuilds_the_patch_and_dispatches_its_preview(release, tmp
                 "PATH": f"{tmp_path}:{os.environ['PATH']}",
                 "GITHUB_REPOSITORY": "owner/repo",
                 "DISPATCH_LOG": str(tmp_path / "dispatches"),
+                "POLL_LOG": str(polls),
+                "HEAD_RESPONSE": head_response,
             },
         )
+        if head_response in ("stale", "api-error"):
+            assert result.returncode != 0
+            assert not (tmp_path / "dispatches").exists()
+            if head_response == "stale":
+                assert "preview not dispatched" in result.stdout
+                assert len(polls.read_text().splitlines()) == 30
+            return
         assert result.returncode == 0, result.stderr
+        assert len(polls.read_text().splitlines()) == (
+            3 if head_response == "stale-then-current" else 1
+        )
         head = git(origin, "rev-parse", "refs/heads/example-demo-pr")
         assert git(work, "rev-parse", f"{head}^") == release_sha
         assert re.sub(

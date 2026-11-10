@@ -7,7 +7,6 @@ import sys
 import tempfile
 from pathlib import Path
 
-from playwright.sync_api import sync_playwright
 from site_server import _serve
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -17,17 +16,31 @@ changed = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(changed)
 
 
+def copy_site(site, destination):
+    # A published preview already carries its own What changed output. Exclude
+    # only these top-level outputs, preserving real nested pages/assets like
+    # slides/demo/ in the deck under test.
+    generated = {
+        "demo",
+        "what-changed.html",
+        "what-changed-decks",
+        "what-changed-assets",
+    }
+
+    def ignore(directory, names):
+        return generated.intersection(names) if Path(directory) == site else set()
+
+    shutil.copytree(site, destination, ignore=ignore)
+
+
 def check(site, artifacts):
+    from playwright.sync_api import sync_playwright
+
     artifacts.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory() as temporary:
         root = Path(temporary)
-        # A published preview already carries its own What changed output, which
-        # would otherwise be diffed as extra pages beside the deck under test.
-        generated = shutil.ignore_patterns(
-            "demo", "what-changed.html", "what-changed-decks", "what-changed-assets"
-        )
         for side in ("old", "new"):
-            shutil.copytree(site, root / side, ignore=generated)
+            copy_site(site, root / side)
         deck = Path("slides/attention/slides.html")
         original = (root / "old" / deck).read_text()
         slides = changed.reveal_slides(original)

@@ -257,6 +257,7 @@ jobs:
     permissions:
       contents: write
       actions: write
+      pull-requests: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -276,6 +277,18 @@ jobs:
             -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
             commit -q -m "Demo: the sample edit (examples/workspace-demo.patch) on $NEWEST"
           git push --force origin HEAD:refs/heads/example-demo-pr
+          # GitHub may briefly report the old PR head after the force-push. The
+          # preview dispatch requires an exact head match, so wait before firing.
+          expected=$(git rev-parse HEAD)
+          for attempt in $(seq 1 30); do
+            actual=$(gh api "repos/$GITHUB_REPOSITORY/pulls/281" --jq .head.sha)
+            if [ "$actual" = "$expected" ]; then break; fi
+            if [ "$attempt" -eq 30 ]; then
+              echo "::error::Demo PR head did not reach $expected; preview not dispatched"
+              exit 1
+            fi
+            sleep 2
+          done
           # GITHUB_TOKEN pushes do not start unattended PR checks. Explicit
           # workflow_dispatch does, with no long-lived bot token to provision.
           gh workflow run example-preview.yml --repo "$GITHUB_REPOSITORY" \

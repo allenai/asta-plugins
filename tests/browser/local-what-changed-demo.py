@@ -64,7 +64,8 @@ def check_frames(page, missing):
         # Include the unchanged slides a reviewer can unfold, in each actual view.
         for fold in review.locator("details.dr-unchanged").all():
             fold.evaluate("node => node.open = true")
-        for view in ("marked", "clean", "before"):
+        # Finish on the default marked view for the evidence check and screenshot.
+        for view in ("before", "clean", "marked"):
             review.locator(f'.dr-seg button[data-v="{view}"]').click()
             for i, el in enumerate(review.locator("iframe:visible").all(), 1):
                 label = f"deck {review_number}, {view}, slide frame {i}"

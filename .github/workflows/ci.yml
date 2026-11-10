@@ -66,6 +66,8 @@ jobs:
   # their existing make test invocation and execution model.
   workspace-test:
     runs-on: ubuntu-latest
+    env:
+      UV_PYTHON: ${{ matrix.python-version }}
     strategy:
       matrix:
         python-version: ["3.11", "3.12", "3.13"]
