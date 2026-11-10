@@ -83,7 +83,7 @@ jobs:
   check-preview:
     name: Example preview browser
     needs: docs
-    if: always() && github.event_name != 'push' && github.event.action != 'closed' && needs.docs.result != 'skipped'
+    if: always() && github.event_name != 'push' && github.event.action != 'closed'
     runs-on: ubuntu-latest
     permissions:
       contents: read

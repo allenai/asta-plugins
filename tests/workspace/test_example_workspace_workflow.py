@@ -197,6 +197,9 @@ def test_stable_browser_check_succeeds_without_rendering_unrelated_prs():
     assert check["name"] == "Example preview browser"
     assert "always()" in check["if"]
     assert "needs.docs.outputs.rendered" not in check["if"]
+    assert (
+        "needs.docs.result" not in check["if"]
+    )  # upstream failure must fail this stable check
     assert check["steps"][0]["run"] == 'test "$RESULT" = success'
     gate = check["steps"][1]
     assert gate["id"] == "browser"
