@@ -111,7 +111,10 @@ The version lives in three places:
    ```bash
    git add -A && git commit -m "chore: bump version to x.y.z" && git push
    ```
-5. `make push-version-tag` — verifies all three version files match and that
+5. After the release commit merges, dispatch
+   `gh workflow run workspace-release-checks.yml --ref main` and wait for it to
+   pass on both architectures. Confirm the run uses the release commit; if main
+   has advanced, select a branch or tag pointing to that commit instead. `make push-version-tag` requires that successful run, verifies all three version files match and that
    `HEAD` is on `origin/main`, then waits for the `Docker` workflow run on that
    commit to succeed (`scripts/wait-for-main-image.sh`, needs `gh`) before it
    creates and pushes the git tag. It exits without tagging if that run failed
@@ -127,6 +130,12 @@ The version lives in three places:
 7. *(Future)* Create a GitHub release from the tag for human-readable notes.
    This is bookkeeping only — the Docker image is already published by step 5, so
    a release is not a prerequisite for anything.
+8. Check [the demo](https://allenai.github.io/asta-plugins/demo/what-changed.html). Main rebuilds it from `examples/workspace-demo.patch` on every push; no release step maintains a demo branch.
+
+Workspace browser coverage runs on workspace PRs and release/manual validation.
+Main only publishes the site and patch-derived demo. Pre-release checks use the
+current released `latest-tex` toolchain; the new tag does not exist yet. Browser
+slide fixtures use the shared site's Quarto setup (`release`).
 
 If `push-version-tag` reports a version mismatch, rerun `make set-version` to
 resync — don't hand-edit one file.
@@ -149,3 +158,60 @@ TeX is the full TeX Live 2026 install.
 - **Extending the CLI** (commands, API endpoints, dependencies, passthrough tools) — [docs/cli-commands.md](docs/cli-commands.md)
 - **Authoring skills and hooks** — [docs/plugins.md](docs/plugins.md)
 - **Docker image (build, manual test, troubleshooting)** — [docs/docker.md](docs/docker.md)
+
+The public example also publishes `/demo/what-changed.html` on each main build.
+`scripts/build-workspace-demo.py` applies `examples/workspace-demo.patch` in a
+fresh shared clone and runs the checkout's CLI with the TeX toolchain. The
+example's existing after-render artifact command includes that report in the
+normal Pages artifact; it adds no publishing workflow or credential. A workspace PR builds the site and demo once, on x86, through the
+shared site workflow. The patch is applied only by that build's artifact hook.
+One browser job checks that build's preview (or its identical artifact for fork
+and Dependabot PRs) with read-only permissions. The artifact hook validates the existing paper output without rebuilding it.
+Separate GitHub jobs check cold asset bootstrap and the local deck-edit path and all 13 selected/full comparison cases. Neither waits
+on the published site.
+Cold bootstrap checks the managed assets, generated viewers and check gate without
+rendering another site. The shared build runs the example's full `make check` and
+validates its rendered paper. Arm browser validation downloads that build's
+artifact into a separate job, so a browser failure is distinct from a build failure.
+
+### Workspace checks
+
+The Makefile owns workspace check selection. `WORKSPACE_PATHS` defines one
+conservative workspace-change trigger, shared by both example workflows.
+New offline tests belong in `tests/workspace/`; tests that execute Quarto or TeX
+belong in `tests/workspace/tools/`. A required missing tool fails its target.
+
+| Target | Checks | Trigger | Environment |
+|---|---|---|---|
+| `test-plugins` | Other plugins' existing serial tests | Every PR | Python, existing plugin CLI setup |
+| `test-workspace` | Offline workspace and Overleaf tests | Workspace PR | Python, Make and Perl; Python 3.11–3.13, eight GitHub shards |
+| `check-workspace-tools` | Real scaffold/slide/template tests, cold scaffold checks and local deck comparison | Workspace PR | Released TeX image, Quarto and Chromium |
+| `workspace-compare` | Selected vs full What changed, one `WORKSPACE_CASE` | Workspace PR | Released TeX image; 13 independent GitHub jobs |
+| `workspace-dom` | What changed folding | Workspace PR | Node |
+| `workspace-browser` | Themes, evidence, slides, deck review and published demo | Workspace PR, after its single site build | Quarto, Node, Python and Chromium |
+| `workspace-demo` | Build the patch's demo and What changed | Site build; main publication | Released TeX image |
+| `workspace-status` | Aggregate results, allowing only intended skips | Every PR; release/manual | Python and GitHub job metadata |
+
+Local targets run the same commands as CI. `make test-workspace` defaults to the
+whole offline suite; `WORKSPACE_SHARD` and `WORKSPACE_SHARDS` select CI's partition.
+`make workspace-compare` runs all 13 cases; `WORKSPACE_CASE=quote` selects one.
+`make workspace-cases` supplies CI's job matrix from that same case list, so a new
+case needs no YAML edit.
+`make workspace-browser PR_NUMBER=296` checks the downloaded preview directory.
+For a local artifact, pass `PREVIEW_SITE=/path/to/site`; `PR_NUMBER` defaults to
+`0`, disabling only the PR URL check.
+
+`workspace-ok` is the stable aggregate result for the offline, tools, comparison
+and DOM jobs. It fails on failed, cancelled or unexpectedly skipped jobs, and
+passes when an unrelated PR deliberately skips them all. A maintainer should
+require `workspace-ok` and `Example preview browser` in the repository's merge
+rules, rather than individual matrix names. Workflow changes do not configure
+those repository settings.
+
+Before a release, dispatch `workspace-release-checks.yml` at the release commit
+and wait for it to succeed. It reuses the existing plugin and dev-container checks, and runs workspace
+tests, comparisons, DOM/browser checks and site builds on x86 and arm without
+publishing. Ordinary plugin-check commands and triggers stay unchanged. `make push-version-tag` requires a successful
+run for the exact commit. Arm validation otherwise runs only on manual dispatch.
+Pushes to main publish the example and its patch-derived demo; workspace check
+jobs are PR/release/manual jobs.

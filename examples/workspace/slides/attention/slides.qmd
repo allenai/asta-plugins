@@ -46,3 +46,13 @@ Write the talk, review and paper in the same repository.
 Review changes together, then share the rendered talk as a single HTML file.
 
 Review local changes with `asta workspace what-changed`; PR previews use the same comparison.
+
+## Read the original paper
+
+The transformer was introduced in [Attention Is All You Need](https://arxiv.org/abs/1706.03762).
+
+## A figure carried inside the slide
+
+![Queries, keys and values](data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMjAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCAxMjAgNDAiPjxyZWN0IHdpZHRoPSIxMjAiIGhlaWdodD0iNDAiIHJ4PSI2IiBmaWxsPSIjMGZjYjhjIi8+PHRleHQgeD0iNjAiIHk9IjI2IiBmb250LWZhbWlseT0ic2Fucy1zZXJpZiIgZm9udC1zaXplPSIxNiIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0iIzBhMzIzNSI+UcK3S+KGklY8L3RleHQ+PC9zdmc+){width="240"}
+
+The figure is an inline `data:` image, so the deck needs no separate file for it.

@@ -95,7 +95,8 @@ to review local branch edits at `/what-changed.html` before pushing. Run
 `git fetch origin` first if you want a fresher comparison base.
 
 See it in the example workspace, published from main: [its site](https://allenai.github.io/asta-plugins/),
-with a LaTeX paper and [a pull request's preview](https://allenai.github.io/asta-plugins/pr-preview/pr-281/), kept open as a demo;
+with a LaTeX paper and [the sample edit](https://allenai.github.io/asta-plugins/demo/)
+([What changed](https://allenai.github.io/asta-plugins/demo/what-changed.html));
 [its paper in Overleaf](https://www.overleaf.com/project/6ad3a5f38f722e2e09c9a8f9/share#a44d86bf6428da0098e082455586b759b61d54f5764c735f)
 (view only); and [its source](examples/workspace/).
 

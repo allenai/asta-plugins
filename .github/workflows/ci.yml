@@ -3,6 +3,12 @@ name: CI
 on:
   push:
     branches: [main]
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      build-runner:
+        type: string
+        default: ubuntu-latest
   pull_request:
     branches: [main]
 
@@ -11,6 +17,9 @@ env:
 
 jobs:
   code-quality:
+    # x86 for every build-runner: these checks read source, so the machine
+    # can't change their result, and the shellcheck action installs an x86_64
+    # binary that can't run on an arm runner.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -33,10 +42,12 @@ jobs:
         run: make check-skills
 
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.build-runner || 'ubuntu-latest' }}
     strategy:
       matrix:
-        python-version: ["3.11", "3.12", "3.13"]
+        python-version: ["3.11", "3.12", "3.13", "3.14", "3.15"]
+    env:
+      UV_PYTHON: ${{ matrix.python-version }}
 
     steps:
       - uses: actions/checkout@v4
@@ -55,29 +66,23 @@ jobs:
       - name: Run tests
         env:
           ASTA_TEST_CLAUDE_PLUGIN_DEPS: "1"
-        run: make test
+        run: make test-plugins
 
-  dom-test:
+  tests-ok:
+    # One check for main to require that keeps its name when the Python matrix changes.
+    needs: test
+    if: always()
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: npm
-          cache-dependency-path: tests/dom/package-lock.json
-
-      - name: Install DOM test dependencies
-        working-directory: tests/dom
-        run: npm ci
-
-      - name: Exercise what-changed folding in a DOM
-        working-directory: tests/dom
-        run: npm test
+      - run: |
+          echo "test: $RESULT"
+          test "$RESULT" = success
+        env:
+          RESULT: ${{ needs.test.result }}
 
   docker:
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.build-runner || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -95,7 +100,7 @@ jobs:
   plugin-install:
     # Verify `npx plugins add` installs the plugins into Claude Code and Codex.
     # No API auth required — only checks the installed files land correctly.
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.build-runner || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
 

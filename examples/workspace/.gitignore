@@ -3,9 +3,11 @@
 _site/
 quarto-render.*
 
-# A committed symlink loads the evidence extension from this checkout.
-_extensions/evidence/
-!_extensions/evidence
+# Managed extensions, fetched by the scaffold rules (the scaffold's own lines,
+# so `asta workspace sync` leaves this file unchanged).
+_extensions/evidence
+_extensions/asta-theme/
+_extensions/asta-slides/
 
 # LaTeX build artifacts
 paper/build/

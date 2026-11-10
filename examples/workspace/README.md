@@ -1,6 +1,6 @@
 # Asta workspace example
 
-A small example workspace for the [Asta workspace skill](../../plugins/asta-tools/skills/workspace): a Quarto literature review that cites the workspace [`references.bib`](references.bib), and a separate LaTeX paper paired with an Overleaf project that anyone can [view by link](https://www.overleaf.com/project/6ad3a5f38f722e2e09c9a8f9/share#a44d86bf6428da0098e082455586b759b61d54f5764c735f). Main publishes it through the same shared workflow as any workspace, and each pull request that changes it gets a preview. See it live: [the example's site](https://allenai.github.io/asta-plugins/), as a project's readers see it, and [the preview](https://allenai.github.io/asta-plugins/pr-preview/pr-281/) of a [pull request kept open as a demo](https://github.com/allenai/asta-plugins/pull/281), as its reviewers see it, whose [What changed](https://allenai.github.io/asta-plugins/pr-preview/pr-281/what-changed.html) lists that pull request's edits to the paper and the literature review. Local preview, VS Code and pull request previews are covered in the skill's [`DEVELOPER.md`](../../plugins/asta-tools/skills/workspace/assets/DEVELOPER.md). Its content is public sample text and public references only.
+A small example workspace for the [Asta workspace skill](../../plugins/asta-tools/skills/workspace): a Quarto literature review that cites the workspace [`references.bib`](references.bib), and a separate LaTeX paper paired with an Overleaf project that anyone can [view by link](https://www.overleaf.com/project/6ad3a5f38f722e2e09c9a8f9/share#a44d86bf6428da0098e082455586b759b61d54f5764c735f). Main publishes it through the same shared workflow as any workspace, and each pull request that changes it gets a preview. See it live: [the example's site](https://allenai.github.io/asta-plugins/), as a project's readers see it, and [the demo](https://allenai.github.io/asta-plugins/demo/), the sample edit in [`examples/workspace-demo.patch`](../workspace-demo.patch) built on every push to main as a pull request's reviewers see it, whose [What changed](https://allenai.github.io/asta-plugins/demo/what-changed.html) lists that edit's changes to the paper and the literature review. Local preview, VS Code and pull request previews are covered in the skill's [`DEVELOPER.md`](../../plugins/asta-tools/skills/workspace/assets/DEVELOPER.md). Its content is public sample text and public references only.
 
 | File | Role | Rendered on the site? |
 |------|------|-----------------------|
@@ -41,15 +41,6 @@ The new PR-preview and What changed links above become available only after
 that switch and a successful preview build; their temporary unavailability does
 not mean the existing live site has been removed.
 
-### Maintaining the open demo PR
+### The demo
 
-Keep [the demo PR](https://github.com/allenai/asta-plugins/pull/281) in draft and
-open, with its sample edits to the paper and literature review unmerged. After
-the migration, merge main into the demo branch and push to build its first
-preview. Refresh it the same way after changes to main, so What changed compares
-with the latest published main build. If an update makes the sample edits
-identical to main, replace them with a new sample edit before pushing. The demo
-uses the same scope and cleanup rules as every workspace PR: it loses its
-preview if it stops changing rendered content or is closed. To restore it,
-reopen if needed and push a sample edit that changes the site. After every
-refresh, check its preview and What changed links before calling them ready.
+The sample edit has one copy, [`examples/workspace-demo.patch`](../workspace-demo.patch). Every push to main rebuilds the demo from it; there is no demo branch or pull request to maintain. A patch that no longer applies fails main's site build with the patch path in the error.

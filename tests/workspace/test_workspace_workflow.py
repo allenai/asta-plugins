@@ -1,0 +1,1895 @@
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tarfile
+import textwrap
+import tomllib
+from pathlib import Path
+
+import pytest
+import yaml
+
+WORKFLOW = Path(".github/workflows/workspace-quarto-site.yml")
+WORKSPACE_ASSETS = Path("plugins/asta-tools/skills/workspace/assets")
+
+
+@pytest.fixture
+def checkout_asta(tmp_path: Path, monkeypatch):
+    # These workflow blocks run from temporary projects, outside `uv run`'s
+    # environment. Never resolve a stale CLI preinstalled in the CI image.
+    bin_dir = tmp_path / "checkout-bin"
+    bin_dir.mkdir()
+    launcher = bin_dir / "asta"
+    launcher.write_text(
+        f"#!{sys.executable}\n"
+        "import sys\n"
+        f"sys.path.insert(0, {str(Path('src').resolve())!r})\n"
+        "from asta.cli import cli\n"
+        "cli()\n"
+    )
+    launcher.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ['PATH']}")
+
+
+def test_site_artifacts_keep_runner_builds_separate():
+    jobs = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)["jobs"]
+    upload = next(
+        step
+        for step in jobs["build"]["steps"]
+        if step.get("name") == "Upload rendered site"
+    )
+    download = next(
+        step
+        for step in jobs["deploy"]["steps"]
+        if step.get("uses", "").startswith("actions/download-artifact@")
+    )
+    assert upload["with"]["name"] == "site-${{ inputs.build-runner }}"
+    assert download["with"]["name"] == upload["with"]["name"]
+
+
+def _run_paper_step(
+    tmp_path: Path,
+    *,
+    download_fails: bool = False,
+    workflow_ref: str = "owner/repo/workflow.yml@refs/heads/main",
+    pull_failures: int = 5,
+    run_fails: bool = False,
+    build_files: dict[str, str] | None = None,
+    site_subdir: str = "",
+):
+    workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+    step = next(
+        item for item in workflow["jobs"]["build"]["steps"] if item.get("id") == "paper"
+    )
+    script = step["run"].replace("${{ job.workflow_repository }}", "owner/repo")
+    script = script.replace("${{ job.workflow_sha }}", "source-commit")
+    source = WORKSPACE_ASSETS / "paper-discovery.py"
+    checkout = tmp_path / "project"
+    project = checkout / site_subdir
+    paper = project / "paper"
+    paper.mkdir(parents=True)
+    (paper / "main.tex").write_text("paper")
+    for name, text in (build_files or {}).items():
+        (paper / "build").mkdir(exist_ok=True)
+        (paper / "build" / name).write_text(text)
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    curl = bin_dir / "curl"
+    curl.write_text(
+        "#!/bin/sh\n"
+        '[ "${FAIL_CURL:-0}" != 1 ] || exit 1\n'
+        'while [ "$#" -gt 0 ] && [ "$1" != -o ]; do shift; done\n'
+        '[ "$#" -ge 2 ] || exit 2\n'
+        'cp "$DISCOVERY_SOURCE" "$2"\n'
+    )
+    curl.chmod(0o755)
+    docker = bin_dir / "docker"
+    docker.write_text(
+        "#!/bin/sh\n"
+        'printf "%s\\n" "$*" >> "$DOCKER_LOG"\n'
+        '[ "$1" != run ] || exit "${DOCKER_RUN_STATUS:-0}"\n'
+        '[ "$1" = pull ] || exit 0\n'
+        "attempt=$(grep -c '^pull ' \"$DOCKER_LOG\")\n"
+        '[ "$attempt" -gt "$PULL_FAILURES" ]\n'
+    )
+    docker.chmod(0o755)
+    (bin_dir / "sleep").write_text("#!/bin/sh\nexit 0\n")
+    (bin_dir / "sleep").chmod(0o755)
+    env = {
+        "PATH": f"{bin_dir}:{os.environ['PATH']}",
+        "PR_BASE": "",
+        "WORKFLOW_REF": workflow_ref,
+        "DOCKER_LOG": str(project / "docker.log"),
+        "GITHUB_WORKSPACE": str(checkout),
+        "PULL_FAILURES": str(pull_failures),
+        "DISCOVERY_SOURCE": str(source.resolve()),
+        "FAIL_CURL": "1" if download_fails else "0",
+        "DOCKER_RUN_STATUS": "1" if run_fails else "0",
+    }
+    result = subprocess.run(
+        ["bash", "-e", "-o", "pipefail", "-c", script],
+        cwd=project,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    return project, result
+
+
+@pytest.mark.parametrize("pull_failures", [0, 2, 5])
+def test_paper_image_pull_retries_without_changing_the_selected_release(
+    tmp_path: Path, pull_failures: int
+) -> None:
+    project, result = _run_paper_step(
+        tmp_path,
+        workflow_ref="owner/repo/workflow.yml@refs/tags/v0.108.0",
+        pull_failures=pull_failures,
+    )
+    commands = (project / "docker.log").read_text().splitlines()
+    pulls = [line for line in commands if line.startswith("pull ")]
+    assert pulls == ["pull -q ghcr.io/allenai/asta:v0.108.0-tex"] * min(
+        pull_failures + 1, 5
+    )
+    runs = [line for line in commands if line.startswith("run ")]
+    if pull_failures < 5:
+        assert result.returncode == 0, result.stderr
+        assert len(runs) == 1
+        assert (
+            "--network none --cap-drop ALL --security-opt no-new-privileges" in runs[0]
+        )
+        assert "ghcr.io/allenai/asta:v0.108.0-tex bash" in runs[0]
+    else:
+        assert result.returncode != 0
+        assert not runs
+        assert (project / "_site/paper-previews/paper/build-failed.txt").is_file()
+    assert "latest-tex" not in "\n".join(commands)
+
+
+@pytest.mark.parametrize("tag", ["v1/x", "v1.2.3+metadata"])
+def test_paper_image_invalid_release_tag_fails_before_pull(
+    tmp_path: Path, tag: str
+) -> None:
+    project, result = _run_paper_step(
+        tmp_path, workflow_ref=f"owner/repo/workflow.yml@refs/tags/{tag}"
+    )
+    assert result.returncode != 0
+    assert not (project / "docker.log").exists()
+    assert (
+        project / "_site/paper-previews/paper/build-failed.txt"
+    ).read_text().strip() == (f"The workflow tag {tag} is not a valid image tag.")
+
+
+def test_paper_image_missing_workflow_ref_fails_before_pull(tmp_path: Path) -> None:
+    project, result = _run_paper_step(tmp_path, workflow_ref="")
+    assert result.returncode != 0
+    assert not (project / "docker.log").exists()
+    assert (
+        project / "_site/paper-previews/paper/build-failed.txt"
+    ).read_text().strip() == (
+        "The reusable workflow ref is missing; cannot select the LaTeX image."
+    )
+
+
+def test_paper_toolchain_failure_keeps_preview_diagnostic(tmp_path: Path) -> None:
+    project, result = _run_paper_step(tmp_path)
+
+    assert result.returncode != 0
+    assert (
+        project / "_site/paper-previews/paper/build-failed.txt"
+    ).read_text().strip() == (
+        "Could not pull the LaTeX image ghcr.io/allenai/asta:latest-tex. "
+        "For a new release, retry after its Docker promotion workflow succeeds."
+    )
+    assert (
+        project / "_site/paper-previews/paper/preview.json"
+    ).read_text().strip() == ('{"changed":false}')
+
+
+def test_paper_discovery_failure_keeps_site_diagnostic(tmp_path: Path) -> None:
+    project, result = _run_paper_step(tmp_path, download_fails=True)
+
+    assert result.returncode != 0
+    assert (project / "_site/paper-previews/build-failed.txt").read_text().strip() == (
+        "Could not download the paper discovery script."
+    )
+
+
+def test_what_changed_uses_managed_generator_without_project_copy(
+    tmp_path: Path,
+    checkout_asta,
+) -> None:
+    workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+    step = next(
+        s
+        for s in workflow["jobs"]["build"]["steps"]
+        if s.get("name") == "Generate What changed"
+    )
+    project = tmp_path / "project"
+    (project / "_site").mkdir(parents=True)
+    (project / "_site/index.html").write_text(
+        "<html><head><title>Test</title></head><body><main>New page</main></body></html>"
+    )
+    subprocess.run(
+        ["git", "init", "-b", "main", str(project)], check=True, capture_output=True
+    )
+    remote = tmp_path / "remote.git"
+    subprocess.run(
+        ["git", "init", "--bare", str(remote)], check=True, capture_output=True
+    )
+    subprocess.run(
+        ["git", "remote", "add", "origin", str(remote)],
+        cwd=project,
+        check=True,
+        capture_output=True,
+    )
+    script = step["run"].replace("${{ job.workflow_repository }}", "owner/repo")
+    script = script.replace("${{ job.workflow_sha }}", "source-commit")
+    result = subprocess.run(
+        ["bash", "-e", "-o", "pipefail", "-c", script],
+        cwd=project,
+        env={
+            **os.environ,
+            "PR_NUMBER": "8",
+        },
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert (project / "_site/what-changed.html").is_file()
+    assert "no deployed baseline" in (project / "_site/what-changed.html").read_text()
+
+
+@pytest.mark.parametrize("failed_command", ["ls-remote", "fetch", "archive"])
+def test_what_changed_skips_diff_when_baseline_read_fails(
+    tmp_path: Path, failed_command: str
+) -> None:
+    workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+    step = next(
+        s
+        for s in workflow["jobs"]["build"]["steps"]
+        if s.get("name") == "Generate What changed"
+    )
+    project = tmp_path / "project"
+    (project / "_site").mkdir(parents=True)
+    (project / "_site/index.html").write_text("PR content")
+    subprocess.run(
+        ["git", "init", "-b", "main", str(project)], check=True, capture_output=True
+    )
+    remote = tmp_path / "remote.git"
+    baseline = tmp_path / "baseline"
+    subprocess.run(
+        ["git", "init", "--bare", str(remote)], check=True, capture_output=True
+    )
+    subprocess.run(
+        ["git", "init", "-b", "gh-pages", str(baseline)],
+        check=True,
+        capture_output=True,
+    )
+    (baseline / "index.html").write_text("deployed main")
+    for args in (
+        ("config", "user.name", "Test"),
+        ("config", "user.email", "test@example.invalid"),
+        ("add", "index.html"),
+        ("commit", "-m", "Baseline"),
+        ("remote", "add", "origin", str(remote)),
+        ("push", "origin", "gh-pages"),
+    ):
+        subprocess.run(["git", *args], cwd=baseline, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "remote", "add", "origin", str(remote)],
+        cwd=project,
+        check=True,
+        capture_output=True,
+    )
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    git = bin_dir / "git"
+    git.write_text(
+        "#!/bin/sh\n"
+        'printf "%s\\n" "$1" >> "$GIT_COMMAND_LOG"\n'
+        '[ "$1" != "$FAILED_COMMAND" ] || exit 1\n'
+        'exec "$REAL_GIT" "$@"\n'
+    )
+    git.chmod(0o755)
+    script = step["run"].replace("${{ job.workflow_repository }}", "owner/repo")
+    script = script.replace("${{ job.workflow_sha }}", "source-commit")
+    result = subprocess.run(
+        ["bash", "-e", "-o", "pipefail", "-c", script],
+        cwd=project,
+        env={
+            **os.environ,
+            "PATH": f"{bin_dir}:{os.environ['PATH']}",
+            "REAL_GIT": shutil.which("git"),
+            "FAILED_COMMAND": failed_command,
+            "GIT_COMMAND_LOG": str(tmp_path / "git-commands.log"),
+            "PR_NUMBER": "8",
+        },
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert not (project / "_site/what-changed.html").exists()
+    assert "skipping the diff page" in result.stdout
+    commands = (tmp_path / "git-commands.log").read_text().splitlines()
+    assert failed_command in commands
+    if failed_command == "archive":
+        assert "fetch" in commands
+
+
+def test_workspace_can_pin_quarto_for_generated_sources() -> None:
+    workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+    assert workflow["on"]["workflow_call"]["inputs"]["quarto-version"]["default"] == (
+        "release"
+    )
+    setup = next(
+        step
+        for step in workflow["jobs"]["build"]["steps"]
+        if step.get("uses") == "quarto-dev/quarto-actions/setup@v2"
+    )
+    assert setup["with"]["version"] == "${{ inputs.quarto-version }}"
+
+
+def test_workspace_baseline_archive_excludes_pr_previews(tmp_path: Path) -> None:
+    workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+    script = next(
+        step["run"]
+        for step in workflow["jobs"]["build"]["steps"]
+        if step.get("name") == "Generate What changed"
+    )
+    archive_line = next(
+        line.strip() for line in script.splitlines() if "git archive " in line
+    )
+    assert archive_line.startswith("|| ! ")
+    archive_command = archive_line.removeprefix("|| ! ").removesuffix("; then")
+    repo = tmp_path / "repo"
+    (repo / "pr-preview/pr-1").mkdir(parents=True)
+    (repo / "docs/pr-preview").mkdir(parents=True)
+    (repo / "index.html").write_text("main site")
+    (repo / "pr-preview/pr-1/index.html").write_text("preview")
+    (repo / "docs/pr-preview/index.html").write_text("nested site content")
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    subprocess.run(
+        ["git", "add", "index.html", "pr-preview", "docs"], cwd=repo, check=True
+    )
+    tree = subprocess.check_output(["git", "write-tree"], cwd=repo, text=True).strip()
+    subprocess.run(
+        ["git", "update-ref", "refs/remotes/origin/gh-pages", tree],
+        cwd=repo,
+        check=True,
+    )
+    baseline = tmp_path / "baseline"
+    baseline.mkdir()
+    subprocess.run(
+        [
+            "bash",
+            "-o",
+            "pipefail",
+            "-c",
+            archive_command,
+        ],
+        cwd=repo,
+        env={"PATH": os.environ["PATH"], "baseline": str(baseline)},
+        check=True,
+    )
+    assert (baseline / "index.html").read_text() == "main site"
+    assert (baseline / "docs/pr-preview/index.html").read_text() == (
+        "nested site content"
+    )
+    assert not (baseline / "pr-preview").exists()
+
+
+def test_workspace_assets_use_called_workflow_identity() -> None:
+    workflow = WORKFLOW.read_text()
+
+    assert workflow.count("${{ job.workflow_repository }}") == 7
+    assert workflow.count("${{ job.workflow_sha }}") == 7
+    assert "github.job_workflow" not in workflow
+
+
+def test_workspace_deploy_commit_identifies_its_workflow_run() -> None:
+    workflow = WORKFLOW.read_text()
+
+    assert "git commit --allow-empty" in workflow
+    assert (
+        "Deploy ${{ github.event_name }} ${{ github.sha }} (run ${{ github.run_id }})"
+        in workflow
+    )
+    assert "for asset in quarto-check.sh wait-for-preview.sh" in workflow
+
+
+def test_workspace_checks_both_vendored_scripts_for_drift() -> None:
+    workflow = WORKFLOW.read_text()
+
+    assert "for asset in quarto-check.sh wait-for-preview.sh" in workflow
+
+
+def test_scaffolded_workflow_ref_matches_project_version() -> None:
+    """Release-managed workspace assets must advance under one version tag."""
+    project_version = tomllib.loads(Path("pyproject.toml").read_text())["project"][
+        "version"
+    ]
+    scaffold = (WORKSPACE_ASSETS / "docs.yml").read_text()
+    match = re.search(r"workspace-quarto-site\.yml@v([0-9.]+)", scaffold)
+
+    assert match is not None
+    assert match.group(1) == project_version
+
+
+def test_workspace_makefile_refreshes_evidence_extension(tmp_path: Path) -> None:
+    archive_root = tmp_path / "archive" / "asta-plugins-test"
+    source = archive_root / WORKSPACE_ASSETS / "_extensions/evidence"
+    shutil.copytree(WORKSPACE_ASSETS / "_extensions/evidence", source)
+
+    archive = tmp_path / "asta-plugins.tar.gz"
+    with tarfile.open(archive, "w:gz") as bundle:
+        bundle.add(archive_root, arcname=archive_root.name)
+
+    project = tmp_path / "project"
+    target = project / "_extensions/evidence"
+    target.mkdir(parents=True)
+    (target / "stale-file").write_text("remove me")
+
+    env = {
+        "ASTA_PLUGINS_ARCHIVE_URL": archive.as_uri(),
+        "PATH": os.environ["PATH"],
+    }
+    subprocess.run(
+        [
+            "make",
+            "-f",
+            str((WORKSPACE_ASSETS / "Makefile").resolve()),
+            "workspace-assets",
+        ],
+        cwd=project,
+        env=env,
+        check=True,
+    )
+
+    assert not (target / "stale-file").exists()
+    assert (target / "snippet.lua").read_bytes() == (
+        WORKSPACE_ASSETS / "_extensions/evidence/snippet.lua"
+    ).read_bytes()
+
+
+def _run_workspace_assets(project: Path, archive_url: str) -> str:
+    return subprocess.run(
+        [
+            "make",
+            "-f",
+            str((WORKSPACE_ASSETS / "Makefile").resolve()),
+            "workspace-assets",
+        ],
+        cwd=project,
+        env={"ASTA_PLUGINS_ARCHIVE_URL": archive_url, "PATH": os.environ["PATH"]},
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+
+
+def test_workspace_makefile_leaves_symlinked_evidence_alone(tmp_path: Path) -> None:
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    (checkout / "snippet.lua").write_text("-- local edit")
+    project = tmp_path / "project"
+    (project / "_extensions").mkdir(parents=True)
+    (project / "_extensions/evidence").symlink_to(checkout)
+
+    out = _run_workspace_assets(project, (tmp_path / "unreachable.tar.gz").as_uri())
+
+    assert "symlink" in out
+    assert (project / "_extensions/evidence").is_symlink()
+    assert (checkout / "snippet.lua").read_text() == "-- local edit"
+
+
+def test_workspace_makefile_leaves_committed_evidence_alone(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    target = project / "_extensions/evidence"
+    target.mkdir(parents=True)
+    (target / "snippet.lua").write_text("-- customized")
+    git = ["git", "-C", str(project), "-c", "user.name=t", "-c", "user.email=t@t"]
+    subprocess.run([*git, "init", "-q"], check=True)
+    subprocess.run([*git, "add", "_extensions/evidence"], check=True)
+    subprocess.run([*git, "commit", "-qm", "customize evidence"], check=True)
+
+    out = _run_workspace_assets(project, (tmp_path / "unreachable.tar.gz").as_uri())
+
+    assert "committed" in out
+    assert (target / "snippet.lua").read_text() == "-- customized"
+
+
+def test_workspace_makefile_does_not_race_an_active_install(tmp_path: Path) -> None:
+    archive_root = tmp_path / "archive" / "asta-plugins-test"
+    source = archive_root / WORKSPACE_ASSETS / "_extensions/evidence"
+    shutil.copytree(WORKSPACE_ASSETS / "_extensions/evidence", source)
+
+    archive = tmp_path / "asta-plugins.tar.gz"
+    with tarfile.open(archive, "w:gz") as bundle:
+        bundle.add(archive_root, arcname=archive_root.name)
+
+    project = tmp_path / "project"
+    target = project / "_extensions/evidence"
+    target.mkdir(parents=True)
+    sentinel = target / "current-version"
+    sentinel.write_text("keep me")
+    (project / "_extensions/.evidence-install.lock").mkdir()
+
+    env = {
+        "ASTA_PLUGINS_ARCHIVE_URL": archive.as_uri(),
+        "PATH": os.environ["PATH"],
+    }
+    result = subprocess.run(
+        [
+            "make",
+            "-f",
+            str((WORKSPACE_ASSETS / "Makefile").resolve()),
+            "workspace-assets",
+        ],
+        cwd=project,
+        env=env,
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode != 0
+    assert "another workspace-assets install is in progress" in result.stderr
+    assert sentinel.read_text() == "keep me"
+
+
+def test_workspace_makefile_keeps_cache_when_offline(tmp_path: Path) -> None:
+    # A download failure (no network) with a previously fetched extension must
+    # warn and keep the cached copy rather than fail — so a render works offline
+    # (e.g. on a plane). Point the archive URL at a file that does not exist to
+    # simulate an unreachable upstream.
+    project = tmp_path / "project"
+    cache = project / "_extensions/evidence"
+    cache.mkdir(parents=True)
+    sentinel = cache / "snippet.lua"
+    sentinel.write_text("cached copy")
+
+    env = {
+        "ASTA_PLUGINS_ARCHIVE_URL": (tmp_path / "missing.tar.gz").as_uri(),
+        "PATH": os.environ["PATH"],
+    }
+    result = subprocess.run(
+        [
+            "make",
+            "-f",
+            str((WORKSPACE_ASSETS / "Makefile").resolve()),
+            "workspace-assets",
+        ],
+        cwd=project,
+        env=env,
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "keeping the cached" in result.stderr
+    assert sentinel.read_text() == "cached copy"
+
+
+def test_workspace_makefile_fails_offline_without_cache(tmp_path: Path) -> None:
+    # A download failure with no cached extension is a hard error: the first
+    # fetch genuinely needs the network.
+    project = tmp_path / "project"
+    project.mkdir()
+
+    env = {
+        "ASTA_PLUGINS_ARCHIVE_URL": (tmp_path / "missing.tar.gz").as_uri(),
+        "PATH": os.environ["PATH"],
+    }
+    result = subprocess.run(
+        [
+            "make",
+            "-f",
+            str((WORKSPACE_ASSETS / "Makefile").resolve()),
+            "workspace-assets",
+        ],
+        cwd=project,
+        env=env,
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode != 0
+    assert "no cached" in result.stderr
+    assert not (project / "_extensions/evidence").exists()
+
+
+def _write_fake_gh(bin_dir: Path) -> None:
+    fake = bin_dir / "gh"
+    fake.write_text(
+        """#!/bin/sh
+set -eu
+printf '%s\\n' "$*" >> "$GH_LOG"
+case "$1 $2" in
+  "repo view") echo owner/project ;;
+  "run list")
+    count=0
+    [ ! -f "$GH_RUN_COUNT" ] || count=$(cat "$GH_RUN_COUNT")
+    count=$((count + 1))
+    printf '%s\\n' "$count" > "$GH_RUN_COUNT"
+    [ "${GH_RUN_FAIL_ON:-0}" != "$count" ] || {
+      echo '{"message":"temporary failure"}'
+      exit 1
+    }
+    if [ "$count" -eq 1 ]; then
+      echo "${GH_BEFORE_RUN:-100}"
+    elif [ "$count" -ge "${GH_RUN_ON:-2}" ]; then
+      echo "101"
+    fi
+    ;;
+  "run view") echo "${GH_RUN_STATUS:-completed} ${GH_RUN_CONCLUSION:-success}" ;;
+  "api repos/owner/project/branches/gh-pages")
+    count=0
+    [ ! -f "$GH_TIP_COUNT" ] || count=$(cat "$GH_TIP_COUNT")
+    count=$((count + 1))
+    printf '%s\\n' "$count" > "$GH_TIP_COUNT"
+    if [ "$count" -eq 1 ] && [ "${GH_NO_BASELINE_BRANCH:-0}" = 1 ]; then
+      echo 'gh: Not Found (HTTP 404)' >&2
+      exit 1
+    fi
+    if [ "$count" -eq 1 ]; then echo before; else echo "${GH_AFTER_TIP:-before}"; fi
+    ;;
+  "api repos/owner/project/compare/before..."*)
+    [ "${GH_COMPARE_FAIL:-0}" != 1 ] || {
+      echo '{"message":"temporary failure"}'
+      exit 1
+    }
+    jq_filter=
+    while [ "$#" -gt 0 ]; do
+      if [ "$1" = --jq ]; then jq_filter=$2; break; fi
+      shift
+    done
+    marker_run=${GH_MARKER_RUN:-101}
+    printf '{"status":"ahead","total_commits":1,"commits":[{"sha":"published-sha","commit":{"message":"Deploy pull_request abc (run %s)\\\\n"}}]}\\n' "$marker_run" | jq -r "$jq_filter"
+    ;;
+  "api repos/owner/project/commits?sha=gh-pages&per_page=100")
+    jq_filter=
+    while [ "$#" -gt 0 ]; do
+      if [ "$1" = --jq ]; then jq_filter=$2; break; fi
+      shift
+    done
+    marker_run=${GH_MARKER_RUN:-101}
+    printf '[{"sha":"published-sha","commit":{"message":"Deploy pull_request abc (run %s)\\\\n"}}]\\n' "$marker_run" | jq -r "$jq_filter"
+    ;;
+  "api repos/owner/project/pages/builds?per_page=10")
+    [ "${GH_PAGES_API_FAIL:-0}" != 1 ] || exit 1
+    echo "${GH_BUILT:-1}"
+    ;;
+  *) echo "unexpected gh invocation: $*" >&2; exit 2 ;;
+esac
+"""
+    )
+    fake.chmod(0o755)
+
+
+def _preview_project(tmp_path: Path) -> tuple[Path, dict[str, str]]:
+    project = tmp_path / "project"
+    project.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=project, check=True)
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.email=t@t",
+            "-c",
+            "user.name=t",
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "seed",
+            "--no-gpg-sign",
+        ],
+        cwd=project,
+        check=True,
+    )
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    _write_fake_gh(bin_dir)
+    env = {
+        "PATH": f"{bin_dir}:{os.environ['PATH']}",
+        "GH_LOG": str(tmp_path / "gh.log"),
+        "GH_RUN_COUNT": str(tmp_path / "run-count"),
+        "GH_TIP_COUNT": str(tmp_path / "tip-count"),
+        "WORKFLOW_TIMEOUT": "3",
+        "RUN_TIMEOUT": "2",
+        "PAGES_TIMEOUT": "2",
+        "POLL": "1",
+    }
+    return project, env
+
+
+def test_preview_wait_retries_lookup_from_detached_head(tmp_path: Path) -> None:
+    project, env = _preview_project(tmp_path)
+    script = (WORKSPACE_ASSETS / "wait-for-preview.sh").resolve()
+
+    subprocess.run([script, "baseline"], cwd=project, env=env, check=True)
+    subprocess.run(["git", "checkout", "--detach", "-q"], cwd=project, check=True)
+    env.update(GH_RUN_ON="3", GH_RUN_FAIL_ON="2", GH_AFTER_TIP="after")
+    result = subprocess.run(
+        [script, "wait"], cwd=project, env=env, text=True, capture_output=True
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "Pages published published-sha" in result.stdout
+    run_lookups = [
+        line
+        for line in Path(env["GH_LOG"]).read_text().splitlines()
+        if "run list" in line
+    ]
+    assert all("--branch" not in line for line in run_lookups)
+
+
+def test_preview_wait_matches_pages_build_to_workflow_deployment(
+    tmp_path: Path,
+) -> None:
+    project, env = _preview_project(tmp_path)
+    script = (WORKSPACE_ASSETS / "wait-for-preview.sh").resolve()
+
+    subprocess.run([script, "baseline"], cwd=project, env=env, check=True)
+    env["GH_AFTER_TIP"] = "after"
+    result = subprocess.run(
+        [script, "wait"], cwd=project, env=env, text=True, capture_output=True
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "Pages published published-sha" in result.stdout
+    log = Path(env["GH_LOG"]).read_text()
+    assert "compare/before...after" in log
+    assert "(run 101)" in log
+    assert "pages/builds?per_page=10" in log
+
+
+def test_preview_wait_rejects_an_unidentified_pages_update(tmp_path: Path) -> None:
+    project, env = _preview_project(tmp_path)
+    script = (WORKSPACE_ASSETS / "wait-for-preview.sh").resolve()
+
+    subprocess.run([script, "baseline"], cwd=project, env=env, check=True)
+    env.update(GH_AFTER_TIP="after", GH_MARKER_RUN="999")
+    result = subprocess.run(
+        [script, "wait"], cwd=project, env=env, text=True, capture_output=True
+    )
+
+    assert result.returncode == 1
+    assert "no identifiable run-ID marker" in result.stderr
+    assert (project / ".git/preview-run-before").exists()
+
+
+def test_preview_wait_supports_initial_pages_deployment(tmp_path: Path) -> None:
+    project, env = _preview_project(tmp_path)
+    script = (WORKSPACE_ASSETS / "wait-for-preview.sh").resolve()
+    env.update(GH_NO_BASELINE_BRANCH="1", GH_AFTER_TIP="first-pages-tip")
+
+    baseline = subprocess.run(
+        [script, "baseline"], cwd=project, env=env, text=True, capture_output=True
+    )
+    result = subprocess.run(
+        [script, "wait"], cwd=project, env=env, text=True, capture_output=True
+    )
+
+    assert baseline.returncode == 0, baseline.stderr
+    assert result.returncode == 0, result.stderr
+    assert "Pages published published-sha" in result.stdout
+    assert "commits?sha=gh-pages&per_page=100" in Path(env["GH_LOG"]).read_text()
+
+
+def test_preview_wait_preserves_baseline_when_correlation_fails(
+    tmp_path: Path,
+) -> None:
+    project, env = _preview_project(tmp_path)
+    script = (WORKSPACE_ASSETS / "wait-for-preview.sh").resolve()
+
+    subprocess.run([script, "baseline"], cwd=project, env=env, check=True)
+    env.update(GH_AFTER_TIP="after", GH_COMPARE_FAIL="1")
+    result = subprocess.run(
+        [script, "wait"], cwd=project, env=env, text=True, capture_output=True
+    )
+
+    assert result.returncode == 1
+    assert "Could not correlate" in result.stderr
+    assert (project / ".git/preview-run-before").exists()
+
+
+def test_preview_wait_preserves_baseline_for_retry(tmp_path: Path) -> None:
+    project, env = _preview_project(tmp_path)
+    script = (WORKSPACE_ASSETS / "wait-for-preview.sh").resolve()
+
+    subprocess.run([script, "baseline"], cwd=project, env=env, check=True)
+    env.update(GH_RUN_ON="3", WORKFLOW_TIMEOUT="1", GH_AFTER_TIP="after")
+    first = subprocess.run(
+        [script, "wait"], cwd=project, env=env, text=True, capture_output=True
+    )
+    assert first.returncode == 1
+    assert (project / ".git/preview-run-before").exists()
+
+    second = subprocess.run(
+        [script, "wait"], cwd=project, env=env, text=True, capture_output=True
+    )
+    assert second.returncode == 0, second.stderr
+    assert not (project / ".git/preview-run-before").exists()
+
+
+def test_preview_wait_bounds_workflow_completion(tmp_path: Path) -> None:
+    project, env = _preview_project(tmp_path)
+    script = (WORKSPACE_ASSETS / "wait-for-preview.sh").resolve()
+
+    subprocess.run([script, "baseline"], cwd=project, env=env, check=True)
+    env.update(GH_RUN_STATUS="queued", RUN_TIMEOUT="1")
+    result = subprocess.run(
+        [script, "wait"], cwd=project, env=env, text=True, capture_output=True
+    )
+
+    assert result.returncode == 1
+    assert "did not complete within 1s" in result.stderr
+    assert (project / ".git/preview-run-before").exists()
+
+
+def test_preview_wait_reports_unreadable_pages_api(tmp_path: Path) -> None:
+    project, env = _preview_project(tmp_path)
+    script = (WORKSPACE_ASSETS / "wait-for-preview.sh").resolve()
+
+    subprocess.run([script, "baseline"], cwd=project, env=env, check=True)
+    env.update(GH_AFTER_TIP="after", GH_PAGES_API_FAIL="1", PAGES_TIMEOUT="1")
+    result = subprocess.run(
+        [script, "wait"], cwd=project, env=env, text=True, capture_output=True
+    )
+
+    assert result.returncode == 1
+    assert "Could not read Pages builds" in result.stderr
+    assert "verify Pages API access" in result.stderr
+    assert (project / ".git/preview-run-before").exists()
+
+
+def test_preview_wait_rejects_invalid_timing(tmp_path: Path) -> None:
+    project, env = _preview_project(tmp_path)
+    script = (WORKSPACE_ASSETS / "wait-for-preview.sh").resolve()
+    env["POLL"] = "0"
+
+    result = subprocess.run(
+        [script, "baseline"], cwd=project, env=env, text=True, capture_output=True
+    )
+
+    assert result.returncode == 2
+    assert "POLL must be a positive integer" in result.stderr
+
+
+def test_preview_baseline_surfaces_run_lookup_failure(tmp_path: Path) -> None:
+    project, env = _preview_project(tmp_path)
+    script = (WORKSPACE_ASSETS / "wait-for-preview.sh").resolve()
+    env["GH_RUN_FAIL_ON"] = "1"
+
+    result = subprocess.run(
+        [script, "baseline"], cwd=project, env=env, text=True, capture_output=True
+    )
+
+    assert result.returncode == 1
+    assert "Could not read workflow runs" in result.stderr
+
+
+def test_preview_wait_bounds_pages_poll_and_preserves_baseline(tmp_path: Path) -> None:
+    project, env = _preview_project(tmp_path)
+    script = (WORKSPACE_ASSETS / "wait-for-preview.sh").resolve()
+
+    subprocess.run([script, "baseline"], cwd=project, env=env, check=True)
+    env.update(GH_AFTER_TIP="after", GH_BUILT="0", PAGES_TIMEOUT="1")
+    result = subprocess.run(
+        [script, "wait"], cwd=project, env=env, text=True, capture_output=True
+    )
+
+    assert result.returncode == 1
+    assert "Pages did not publish" in result.stderr
+    assert (project / ".git/preview-run-before").exists()
+
+
+def _make_evidence_archive(archive: Path) -> None:
+    """Write a tarball whose layout mirrors an asta-plugins source archive."""
+    archive_root = archive.parent / "asta-plugins-test"
+    source = archive_root / WORKSPACE_ASSETS / "_extensions/evidence"
+    if source.exists():
+        shutil.rmtree(source)
+    shutil.copytree(WORKSPACE_ASSETS / "_extensions/evidence", source)
+    with tarfile.open(archive, "w:gz") as bundle:
+        bundle.add(archive_root, arcname=archive_root.name)
+
+
+def test_workspace_makefile_resolves_latest_version_tag(tmp_path: Path) -> None:
+    # A local git repo standing in for asta-plugins: git ls-remote reads its
+    # tags, and curl reads a co-located archive/ dir via file://. The default
+    # (no ASTA_PLUGINS_REF, no ASTA_PLUGINS_ARCHIVE_URL) must pick the highest
+    # semver tag and skip non-version tags.
+    repo = tmp_path / "asta-plugins"
+    (repo / "archive").mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo),
+            "-c",
+            "user.email=t@t",
+            "-c",
+            "user.name=t",
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "seed",
+            "--no-gpg-sign",
+        ],
+        check=True,
+    )
+    for tag in ("v0.2.0", "v0.10.0", "v0.9.0", "v2-reproduction-work"):
+        subprocess.run(["git", "-C", str(repo), "tag", tag], check=True)
+
+    # Only the latest semver tag's archive exists; if resolution picked any
+    # other ref (main, v2-reproduction-work, v0.9.0), the curl would 404.
+    _make_evidence_archive(repo / "archive/v0.10.0.tar.gz")
+
+    project = tmp_path / "project"
+    project.mkdir()
+    env = {
+        "ASTA_PLUGINS_REPO": repo.as_uri(),
+        "PATH": os.environ["PATH"],
+    }
+    result = subprocess.run(
+        [
+            "make",
+            "-f",
+            str((WORKSPACE_ASSETS / "Makefile").resolve()),
+            "workspace-assets",
+        ],
+        cwd=project,
+        env=env,
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "asta-plugins@v0.10.0" in result.stdout
+    assert (project / "_extensions/evidence/snippet.lua").read_bytes() == (
+        WORKSPACE_ASSETS / "_extensions/evidence/snippet.lua"
+    ).read_bytes()
+
+
+@pytest.mark.parametrize("exit_code", [0, 23])
+def test_artifact_command_checks_completed_site_before_upload(tmp_path, exit_code):
+    workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+    build = workflow["jobs"]["build"]
+    steps = build["steps"]
+    names = [s.get("name") for s in steps]
+    assert names.index("Generate What changed") < names.index(
+        "Check project preview artifacts"
+    )
+    assert names.index("Check project preview artifacts") < names.index(
+        "Upload rendered site"
+    )
+    assert build["permissions"]["contents"] == "read"
+    assert workflow["jobs"]["deploy"]["needs"] == ["scope", "build"]
+    assert (
+        workflow["on"]["workflow_call"]["inputs"]["artifact-command"]["default"] == ""
+    )
+    step = steps[names.index("Check project preview artifacts")]
+    assert "continue-on-error" not in step
+    (tmp_path / "_site").mkdir()
+    (tmp_path / "_site/paper.html").write_text("rendered paper")
+    env = dict(
+        os.environ,
+        SITE_DIR="_site",
+        ARTIFACT_COMMAND=f"test -s _site/paper.html; exit {exit_code}",
+    )
+    result = subprocess.run(
+        ["bash", "-e", "-o", "pipefail", "-c", step["run"]], cwd=tmp_path, env=env
+    )
+    assert result.returncode == exit_code
+
+
+def test_paper_overrides_stay_in_unprivileged_build() -> None:
+    workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+    build = workflow["jobs"]["build"]
+    assert build["permissions"] == {"contents": "read"}
+    assert "secrets" not in workflow["on"]["workflow_call"]
+    assert "secrets." not in str(build)
+    for event in ("pull_request_target", "workflow_run"):
+        assert f"github.event_name != '{event}'" in build["if"]
+    for asset in ("paper-discovery.py", "paper-preview.sh"):
+        assert not any(
+            asset in step.get("run", "") for step in workflow["jobs"]["deploy"]["steps"]
+        )
+
+
+@pytest.mark.parametrize(
+    "event,action,head_repo,actor,expected",
+    [
+        (
+            "pull_request",
+            "opened",
+            "owner/site",
+            "contributor",
+            (True, True, False, False),
+        ),
+        (
+            "pull_request",
+            "synchronize",
+            "contributor/site",
+            "contributor",
+            (True, False, False, True),
+        ),
+        ("pull_request", "opened", "", "contributor", (True, False, False, True)),
+        (
+            "pull_request",
+            "closed",
+            "owner/site",
+            "contributor",
+            (False, False, True, False),
+        ),
+        (
+            "pull_request",
+            "closed",
+            "contributor/site",
+            "contributor",
+            (False, False, False, False),
+        ),
+        (
+            "pull_request",
+            "opened",
+            "owner/site",
+            "dependabot[bot]",
+            (True, False, False, True),
+        ),
+        (
+            "pull_request",
+            "closed",
+            "owner/site",
+            "dependabot[bot]",
+            (False, False, False, False),
+        ),
+        ("push", "", "", "contributor", (True, True, False, False)),
+        ("push", "", "", "dependabot[bot]", (True, True, False, False)),
+        ("workflow_dispatch", "", "", "contributor", (True, True, False, False)),
+        ("schedule", "", "", "contributor", (True, True, False, False)),
+        ("release", "published", "", "contributor", (True, True, False, False)),
+    ],
+)
+def test_preview_job_conditions(event, action, head_repo, actor, expected) -> None:
+    workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+    context = {
+        "needs.scope.outputs.render": "true",
+        "github.repository": "owner/site",
+        "github.event_name": event,
+        "github.event.action": action,
+        "github.event.pull_request.head.repo.full_name": head_repo,
+        "github.actor": actor,
+        "github.ref": "refs/heads/main",
+        "github.event.repository.default_branch": "main",
+    }
+    for job, enabled in zip(
+        ("build", "deploy", "cleanup-preview", "preview-unavailable"), expected
+    ):
+        assert (
+            _condition_enabled(workflow["jobs"][job].get("if", "True"), context)
+            == enabled
+        )
+
+
+def _condition_enabled(expression, context):
+    # These workflow guards use only comparisons, boolean operators, !, always()
+    # and format() with positional {N} placeholders.
+    # Fixtures use canonical casing; unlike Python, GitHub ignores string case.
+    expression = re.sub(
+        r"\b(?:github|needs|inputs)\.[\w.-]+",
+        lambda match: repr(
+            context.get(
+                match.group(), True if match.group() == "inputs.publish" else ""
+            )
+        ),
+        expression,
+    )
+    expression = expression.replace("&&", " and ").replace("||", " or ")
+    expression = re.sub(r"!(?!=)", " not ", expression)
+    expression = expression.replace("always()", "True")
+    return eval(
+        expression,
+        {"__builtins__": {}, "format": lambda template, *args: template.format(*args)},
+    )
+
+
+@pytest.mark.parametrize(
+    "ref,deploys", [("refs/heads/main", True), ("refs/heads/topic", False)]
+)
+def test_workflow_dispatch_publishes_only_the_default_branch(ref, deploys) -> None:
+    workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+    context = {
+        "needs.scope.outputs.render": "true",
+        "github.repository": "owner/site",
+        "github.event_name": "workflow_dispatch",
+        "github.actor": "contributor",
+        "github.ref": ref,
+        "github.event.repository.default_branch": "main",
+    }
+    assert _condition_enabled(workflow["jobs"]["build"].get("if", "True"), context)
+    assert _condition_enabled(workflow["jobs"]["deploy"]["if"], context) == deploys
+
+
+@pytest.mark.parametrize(
+    "head_repo,actor,reason",
+    [
+        ("contributor/site", "contributor", "This PR comes from contributor/site"),
+        ("", "contributor", "This PR comes from a deleted fork"),
+        ("owner/site", "dependabot[bot]", "This run was triggered by Dependabot"),
+    ],
+)
+def test_preview_unavailable_explains_reason_and_remedy(
+    tmp_path, head_repo, actor, reason
+) -> None:
+    workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+    notice = workflow["jobs"]["preview-unavailable"]
+    assert notice["permissions"] == {}
+    assert "No preview (fork PR)" in notice["name"]
+    assert "No preview (Dependabot)" in notice["name"]
+    summary = tmp_path / "summary.md"
+    result = subprocess.run(
+        ["bash", "-e", "-o", "pipefail", "-c", notice["steps"][0]["run"]],
+        env=dict(
+            os.environ,
+            HEAD_REPO=head_repo,
+            BASE_REPO="owner/site",
+            RUN_ACTOR=actor,
+            GITHUB_STEP_SUMMARY=str(summary),
+        ),
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "::warning title=No PR preview::" in result.stdout
+    for output in (result.stdout, summary.read_text()):
+        assert reason in output
+        assert "read-only token" in output
+        assert "push these changes to a branch in owner/site" in output
+        assert "open a PR from that branch" in output
+        assert "build check still renders and checks the site" in output
+
+
+@pytest.mark.parametrize("deploy_result", ["skipped", "failure", "success"])
+@pytest.mark.parametrize("paper_result", ["failure", "success", "skipped"])
+def test_paper_failure_gate_survives_skipped_deploy(deploy_result, paper_result):
+    workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+    gate = workflow["jobs"]["paper-gate"]
+    assert gate["needs"] == ["build", "deploy"]
+    assert "always()" in gate["if"]
+    assert _condition_enabled(
+        gate["if"],
+        {
+            "needs.build.outputs.paper": paper_result,
+            "needs.deploy.result": deploy_result,
+        },
+    ) == (paper_result == "failure")
+    if paper_result == "failure":
+        result = subprocess.run(
+            ["bash", "-e", "-c", gate["steps"][0]["run"]],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 1
+        assert "::error::The paper failed to build" in result.stdout
+
+
+@pytest.mark.parametrize("asset", ["paper-discovery.py", "paper-preview.sh"])
+@pytest.mark.parametrize("copy_state", ["tracked", "untracked", "missing", "directory"])
+def test_paper_script_override_selection_and_copy_failures(tmp_path, asset, copy_state):
+    workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+    step = next(
+        item for item in workflow["jobs"]["build"]["steps"] if item.get("id") == "paper"
+    )
+    script = step["run"].replace("${{ job.workflow_repository }}", "owner/repo")
+    script = script.replace("${{ job.workflow_sha }}", "source-commit")
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    sources = tmp_path / "sources"
+    sources.mkdir()
+    marker = tmp_path / "executed"
+    downloads = tmp_path / "downloads"
+    papers = [] if asset == "paper-discovery.py" else ["paper"]
+    for name in ("paper-discovery.py", "paper-preview.sh"):
+        if name.endswith(".py"):
+            source = (
+                "import json, os\n"
+                "from pathlib import Path\n"
+                "Path(os.environ['EXECUTION_MARKER']).write_text('managed')\n"
+                f"print(json.dumps({{'papers': {papers!r}, 'removed': [], 'warnings': []}}))\n"
+            )
+        else:
+            source = '#!/bin/sh\nprintf managed > "$EXECUTION_MARKER"\n'
+        (sources / name).write_text(source)
+    project_copy = scripts / asset
+    project_copy.write_text((sources / asset).read_text().replace("managed", "project"))
+    if copy_state != "untracked":
+        subprocess.run(["git", "add", f"scripts/{asset}"], cwd=tmp_path, check=True)
+    if copy_state in ("missing", "directory"):
+        project_copy.unlink()
+        if copy_state == "directory":
+            project_copy.mkdir()
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "curl").write_text(
+        "#!/bin/sh\n"
+        'name="${2##*/}"\n'
+        'printf "%s\\n" "$name" >> "$DOWNLOAD_MARKER"\n'
+        'cp "$MANAGED_SOURCES/$name" "$4"\n'
+    )
+    (bin_dir / "curl").chmod(0o755)
+    # Run the image's command on the host: drop docker's options and the image.
+    (bin_dir / "docker").write_text(
+        '#!/bin/sh\n[ "$1" = run ] || exit 0\n'
+        'while [ "$#" -gt 0 ] && [ "$1" != bash ]; do shift; done\n'
+        '[ "$#" -gt 0 ] || exit 2\nexec "$@"\n'
+    )
+    (bin_dir / "docker").chmod(0o755)
+    env = {
+        "PATH": f"{bin_dir}:{os.environ['PATH']}",
+        "PR_BASE": "",
+        "EXECUTION_MARKER": str(marker),
+        "WORKFLOW_REF": "owner/repo/workflow.yml@refs/heads/main",
+        "DOWNLOAD_MARKER": str(downloads),
+        "MANAGED_SOURCES": str(sources),
+    }
+    result = subprocess.run(
+        ["bash", "-e", "-o", "pipefail", "-c", script],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    downloaded = downloads.read_text().splitlines() if downloads.exists() else []
+    if copy_state in ("tracked", "untracked"):
+        assert result.returncode == 0, result.stderr
+        if copy_state == "tracked":
+            assert marker.read_text() == "project"
+            assert asset not in downloaded
+        else:
+            assert marker.read_text() == "managed"
+            assert asset in downloaded
+    else:
+        assert result.returncode != 0
+        failure_dir = tmp_path / "_site/paper-previews"
+        if asset == "paper-preview.sh":
+            failure_dir /= "paper"
+            assert (failure_dir / "preview.json").read_text().strip() == (
+                '{"changed":false}'
+            )
+        assert (failure_dir / "build-failed.txt").read_text().strip() == (
+            f"Could not copy scripts/{asset}."
+        )
+        assert asset not in downloaded
+
+
+@pytest.mark.parametrize(
+    ("ref", "image"),
+    [
+        (
+            "allenai/asta-plugins/.github/workflows/workspace-quarto-site.yml@refs/tags/v0.108.0",
+            "ghcr.io/allenai/asta:v0.108.0-tex",
+        ),
+        (
+            "allenai/asta-plugins/.github/workflows/workspace-quarto-site.yml@refs/heads/main",
+            "ghcr.io/allenai/asta:latest-tex",
+        ),
+        (
+            "allenai/asta-plugins/.github/workflows/workspace-quarto-site.yml@0123456789abcdef",
+            "ghcr.io/allenai/asta:latest-tex",
+        ),
+    ],
+)
+def test_paper_preview_builds_inside_the_released_tex_image(ref, image):
+    workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+    step = next(
+        item for item in workflow["jobs"]["build"]["steps"] if item.get("id") == "paper"
+    )
+    assert step["env"]["WORKFLOW_REF"] == "${{ job.workflow_ref }}"
+    assert "apt-get" not in step["run"]
+    assert (
+        "--network none --cap-drop ALL --security-opt no-new-privileges" in step["run"]
+    )
+    assert '"$tex_image" bash /tmp/paper-preview.sh "$base" "$d"' in step["run"]
+    case = step["run"].split('case "$WORKFLOW_REF" in', 1)[1].split("esac", 1)[0]
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            f'case "$WORKFLOW_REF" in{case}esac; printf "image=%s\\n" "$tex_image"',
+        ],
+        env={"WORKFLOW_REF": ref},
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert result.stdout.splitlines()[-1] == f"image={image}"
+    assert ("::warning::" in result.stdout) == (image.endswith("latest-tex"))
+
+
+def test_runner_disk_is_freed_before_the_paper_image_pull() -> None:
+    workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+    steps = workflow["jobs"]["build"]["steps"]
+    names = [step.get("name") for step in steps]
+    free = names.index("Free runner disk for the LaTeX image")
+    assert free + 1 == names.index("Build paper preview")
+    run = steps[free]["run"]
+    removed = re.search(r"sudo rm -rf (.+)", run).group(1).split()
+    assert removed == [
+        "/usr/local/lib/android",
+        "/usr/share/dotnet",
+        "/opt/ghc",
+        "/usr/local/.ghcup",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("tracked", "frees"),
+    [
+        ("paper/iclr2027_conference.tex", True),
+        ("paper/main.tex", True),
+        ("README.md", False),
+    ],
+)
+def test_runner_disk_is_freed_for_any_discoverable_paper(
+    tmp_path: Path, tracked: str, frees: bool
+) -> None:
+    workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+    step = next(
+        item
+        for item in workflow["jobs"]["build"]["steps"]
+        if item.get("name") == "Free runner disk for the LaTeX image"
+    )
+    project = tmp_path / "project"
+    (project / tracked).parent.mkdir(parents=True, exist_ok=True)
+    (project / tracked).write_text("\\documentclass{article}\n")
+    subprocess.run(["git", "init", "-q"], cwd=project, check=True)
+    subprocess.run(["git", "add", tracked], cwd=project, check=True)
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    for name in ("sudo", "df"):
+        (bin_dir / name).write_text(f'#!/bin/sh\necho {name} "$@" >> "$LOG"\n')
+        (bin_dir / name).chmod(0o755)
+    log = tmp_path / "commands.log"
+    subprocess.run(
+        ["bash", "-e", "-c", step["run"]],
+        cwd=project,
+        env={"PATH": f"{bin_dir}:{os.environ['PATH']}", "LOG": str(log)},
+        check=True,
+    )
+    commands = log.read_text().splitlines() if log.exists() else []
+    assert any(line.startswith("sudo rm -rf") for line in commands) == frees
+
+    discovery = subprocess.run(
+        ["python3", str((WORKSPACE_ASSETS / "paper-discovery.py").resolve())],
+        cwd=project,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert bool(json.loads(discovery.stdout)["papers"]) == frees
+
+
+def _preview_comment_script() -> str:
+    workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+    step = next(
+        item
+        for item in workflow["jobs"]["deploy"]["steps"]
+        if item.get("name") == "Publish to gh-pages"
+    )
+    script = step["run"].split("# For a PR, ensure", 1)[1]
+    return (
+        ("# For a PR, ensure" + script)
+        .replace("${{ github.event_name }}", "pull_request")
+        .replace("${{ github.repository }}", "owner/site")
+    )
+
+
+@pytest.mark.parametrize(
+    "old,new,base_status,expected",
+    [
+        (
+            "allenai/asta-plugins@v0.113.0",
+            "allenai/asta-plugins@v0.114.0",
+            0,
+            "⬆️ asta-plugins version: v0.113.0 → v0.114.0 "
+            "(https://github.com/allenai/asta-plugins/releases/tag/v0.114.0)",
+        ),
+        ("allenai/asta-plugins@v0.113.0", "allenai/asta-plugins@v0.113.0", 0, None),
+        (
+            "allenai/asta-plugins@v0.113.0",
+            "allenai/asta-plugins@main",
+            0,
+            "⬆️ asta-plugins version: v0.113.0 → main "
+            "(https://github.com/allenai/asta-plugins/tree/main)",
+        ),
+        (
+            "allenai/asta-plugins@v0.113.0",
+            "other/asta-plugins@v0.113.0",
+            0,
+            "⬆️ asta-plugins version: allenai/asta-plugins@v0.113.0 → "
+            "other/asta-plugins@v0.113.0 "
+            "(https://github.com/other/asta-plugins/releases/tag/v0.113.0)",
+        ),
+        (
+            "other/asta-plugins@main",
+            "allenai/asta-plugins@latest",
+            0,
+            "⬆️ asta-plugins version: other/asta-plugins@main → "
+            "allenai/asta-plugins@latest "
+            "(https://github.com/allenai/asta-plugins/tree/latest)",
+        ),
+        # Missing base files and failed API responses must still post the preview.
+        (None, "allenai/asta-plugins@v0.114.0", 1, None),
+        ("allenai/asta-plugins@v0.113.0", "allenai/asta-plugins@v0.114.0", 1, None),
+        (None, "allenai/asta-plugins@v0.114.0", 0, None),
+        ("allenai/asta-plugins@v0.113.0", None, 0, None),
+    ],
+)
+@pytest.mark.parametrize("existing_comment", ["", "123"])
+def test_preview_comment_reports_asta_plugins_version_change(
+    tmp_path, old, new, base_status, expected, existing_comment
+) -> None:
+    def stub(pin):
+        if pin is None:
+            return '{"message":"Not Found"}\n'
+        repo, ref = pin.split("@", 1)
+        return (
+            "jobs:\n  docs:\n"
+            f"    uses: {repo}/.github/workflows/workspace-quarto-site.yml@{ref}\n"
+        )
+
+    workspace = tmp_path / "checkout"
+    (workspace / ".github/workflows").mkdir(parents=True)
+    if new is not None:
+        (workspace / ".github/workflows/docs.yml").write_text(stub(new))
+    (tmp_path / "base.yml").write_text(stub(old))
+    # Publish changes cwd to the gh-pages worktree before generating the comment.
+    pages = tmp_path / "gh-pages"
+    pages.mkdir()
+    comment_body = tmp_path / "comment.txt"
+    api_log = tmp_path / "api.log"
+    script = (
+        'tmp="$PREVIEW_WORKTREE"\n'
+        'gh() { printf "%s\\n" "$*" >> "$API_LOG"; case "$*" in\n'
+        '  *"repos/owner/site/pages"*) printf "https://example/" ;;\n'
+        '  *"contents/.github/workflows/docs.yml?ref=base123"*)\n'
+        '    cat "$BASE_WORKFLOW"; return "$BASE_STATUS" ;;\n'
+        '  *--jq*) printf "%s" "$EXISTING_COMMENT" ;;\n'
+        '  *) for arg; do case "$arg" in\n'
+        '    body=*) printf "%s" "${arg#body=}" > "$COMMENT_BODY" ;;\n'
+        "  esac; done ;;\n"
+        "esac; }\n"
+        + _preview_comment_script()
+        + '\nprintf "comment block completed\\n"'
+    )
+    result = subprocess.run(
+        ["bash", "--noprofile", "--norc", "-e", "-o", "pipefail", "-c", script],
+        cwd=pages,
+        env={
+            **os.environ,
+            "GITHUB_WORKSPACE": str(workspace),
+            "PREVIEW_WORKTREE": str(pages),
+            "BASE_WORKFLOW": str(tmp_path / "base.yml"),
+            "BASE_STATUS": str(base_status),
+            "COMMENT_BODY": str(comment_body),
+            "EXISTING_COMMENT": existing_comment,
+            "API_LOG": str(api_log),
+            "PR_NUMBER": "7",
+            "CALLER_WORKFLOW_REF": "owner/site/.github/workflows/docs.yml@refs/pull/7/merge",
+            "BASE_SHA": "base123",
+        },
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert "comment block completed" in result.stdout
+    lines = comment_body.read_text().splitlines()
+    assert lines[0] == "📄 Preview: https://example/pr-preview/pr-7/"
+    assert lines[1:] == ([expected] if expected else [])
+    commands = api_log.read_text().splitlines()
+    if existing_comment:
+        assert any("issues/comments/123 -X PATCH" in command for command in commands)
+    else:
+        assert any("issues/7/comments -f body=" in command for command in commands)
+
+
+def _workflow_snippet(start: str, end: str) -> str:
+    text = WORKFLOW.read_text()
+    begin = text.index(start)
+    return textwrap.dedent(text[begin : text.index(end, begin) + len(end)])
+
+
+@pytest.mark.parametrize("previous_bibliography", [False, True])
+def test_failed_default_branch_paper_keeps_last_good_pdf(
+    tmp_path: Path, previous_bibliography: bool
+) -> None:
+    workspace, published = tmp_path / "workspace", tmp_path / "published"
+    failed = workspace / "_site/paper-previews/paper"
+    failed.mkdir(parents=True)
+    (failed / "build-failed.txt").write_text("LaTeX produced no PDF\n")
+    for name in ("main.bbl", "what-changed.pdf", "latex-errors.json", "main.log"):
+        (failed / name).write_text("mismatched artifact")
+    built = workspace / "_site/paper-previews/other"
+    built.mkdir(parents=True)
+    (built / "main.pdf").write_text("new other")
+    for name, pdf in [("paper", "last good"), ("other", "old other")]:
+        (published / "paper-previews" / name).mkdir(parents=True)
+        (published / "paper-previews" / name / "main.pdf").write_text(pdf)
+    previous = published / "paper-previews/paper"
+    if previous_bibliography:
+        (previous / "main.bbl").write_text("last good bibliography")
+    (previous / "what-changed.pdf").write_text("old diff")
+    (previous / "latex-errors.json").write_text('{"errors":3}')
+    (previous / "main.log").write_text("old log")
+    script = _workflow_snippet(
+        "# BEGIN main publication",
+        "# END main publication",
+    )
+
+    subprocess.run(
+        ["bash", "-c", "set -euo pipefail\n" + script],
+        env={
+            "PATH": os.environ["PATH"],
+            "GITHUB_WORKSPACE": str(workspace),
+            "tmp": str(published),
+        },
+        check=True,
+    )
+
+    assert (published / "paper-previews/paper/main.pdf").read_text() == "last good"
+    assert (
+        "did not build"
+        in (published / "paper-previews/paper/build-failed.txt").read_text()
+    )
+    assert (published / "paper-previews/other/main.pdf").read_text() == "new other"
+    retained = published / "paper-previews/paper"
+    if previous_bibliography:
+        assert (retained / "main.bbl").read_text() == "last good bibliography"
+    else:
+        assert not (retained / "main.bbl").exists()
+    for name in ("what-changed.pdf", "latex-errors.json", "main.log"):
+        assert not (retained / name).exists(), name
+
+
+@pytest.mark.parametrize("empty_paper_directory", [False, True])
+def test_default_branch_site_without_papers_still_publishes(
+    tmp_path: Path, empty_paper_directory: bool
+) -> None:
+    workspace, published = tmp_path / "workspace", tmp_path / "published"
+    site = workspace / "_site"
+    site.mkdir(parents=True)
+    (site / "index.html").write_text("new site")
+    if empty_paper_directory:
+        (site / "paper-previews").mkdir()
+    (published / "pr-preview/pr-7").mkdir(parents=True)
+    (published / "pr-preview/pr-7/index.html").write_text("existing preview")
+    (published / "index.html").write_text("old site")
+    script = _workflow_snippet(
+        "# BEGIN main publication",
+        "# END main publication",
+    )
+
+    subprocess.run(
+        ["bash", "-c", "set -euo pipefail\n" + script],
+        env={
+            "PATH": os.environ["PATH"],
+            "GITHUB_WORKSPACE": str(workspace),
+            "tmp": str(published),
+        },
+        check=True,
+    )
+
+    assert (published / "index.html").read_text() == "new site"
+    assert (published / "pr-preview/pr-7/index.html").read_text() == "existing preview"
+
+
+@pytest.mark.parametrize(
+    ("report", "expected"),
+    [
+        ({"errors": 2, "warnings": 0}, "2 LaTeX errors, as Overleaf"),
+        ({"errors": 1, "warnings": 0}, "1 LaTeX error, as Overleaf"),
+        (
+            {"errors": 0, "warnings": 1},
+            "1 warning (unresolved citations or a missing bibliography), as Overleaf",
+        ),
+        (
+            {"errors": 2, "warnings": 1},
+            "2 LaTeX errors and 1 warning (unresolved citations or a missing bibliography), as Overleaf",
+        ),
+        (
+            {"errors": 0, "warnings": 0, "latexmk_exit_status": 12},
+            "a compiler failure (exit status 12), as Overleaf",
+        ),
+        ("malformed JSON", "build diagnostics, as Overleaf"),
+    ],
+)
+def test_pr_comment_reports_latex_errors_with_log(tmp_path, report, expected) -> None:
+    paper_dir = tmp_path / "paper"
+    paper_dir.mkdir()
+    (paper_dir / "latex-errors.json").write_text(
+        report if isinstance(report, str) else json.dumps(report)
+    )
+    script = _workflow_snippet(
+        'if [ -f "$paper_dir/latex-errors.json" ]; then',
+        "# End paper build diagnostics",
+    )
+
+    result = subprocess.run(
+        ["bash", "-e", "-o", "pipefail", "-c", script + '\nprintf "%s" "$body"'],
+        env={
+            **os.environ,
+            "paper_dir": str(paper_dir),
+            "label": "Paper",
+            "paper_url": "https://x/paper-previews/paper",
+            "body": "",
+        },
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert expected in result.stdout
+    assert "https://x/paper-previews/paper/main.log" in result.stdout
+
+
+def test_failed_paper_note_includes_log_of_non_main_tex_file(tmp_path: Path) -> None:
+    project, result = _run_paper_step(
+        tmp_path,
+        pull_failures=0,
+        run_fails=True,
+        build_files={
+            ".asta-paper-stem": "iclr2027_conference\n",
+            "iclr2027_conference.log": "./iclr2027_conference.tex:9: Emergency stop.\n",
+        },
+    )
+
+    assert result.returncode != 0
+    note = (project / "_site/paper-previews/paper/build-failed.txt").read_text()
+    assert "iclr2027_conference.tex:9: Emergency stop." in note
+
+
+@pytest.mark.parametrize("separator", ["", "\n"])
+def test_preview_noindex_keeps_embedded_slide_javascript_intact(tmp_path, separator):
+    workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+    publish = next(
+        step["run"]
+        for step in workflow["jobs"]["deploy"]["steps"]
+        if step.get("name") == "Publish to gh-pages"
+    )
+    start = publish.index('find "$tmp/pr-preview/pr-$PR_NUMBER"')
+    injection = "\n".join(publish[start:].splitlines()[:2])
+    # The notes plugin embeds a second HTML document in a JavaScript string.
+    script = (
+        '<script>document.write("<head><title>Speaker View</title></head>")</script>'
+    )
+    original = f"<!doctype html><html><head>{separator}{script}</head><body>Slide</body></html>"
+    target = tmp_path / "pr-preview/pr-123/slides.html"
+    target.parent.mkdir(parents=True)
+    target.write_text(original)
+    subprocess.run(
+        ["bash", "-eu", "-c", injection],
+        env={"PATH": os.environ["PATH"], "tmp": str(tmp_path), "PR_NUMBER": "123"},
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    actual = target.read_text()
+    assert script in actual
+    meta = '<meta name="robots" content="noindex, nofollow">'
+    assert actual == original.replace("<head>", "<head>" + meta, 1)
+
+
+def test_preview_noindex_skips_directories_named_like_html(tmp_path):
+    workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+    publish = next(
+        step["run"]
+        for step in workflow["jobs"]["deploy"]["steps"]
+        if step.get("name") == "Publish to gh-pages"
+    )
+    start = publish.index('find "$tmp/pr-preview/pr-$PR_NUMBER"')
+    injection = "\n".join(publish[start:].splitlines()[:2])
+    preview = tmp_path / "pr-preview/pr-7"
+    images = preview / "what-changed-decks/slides/x/slides.html"
+    images.mkdir(parents=True)
+    (images / "s1.png").write_bytes(b"PNG")
+    (preview / "what-changed.html").write_text("<html><head></head></html>")
+    result = subprocess.run(
+        ["bash", "-eu", "-o", "pipefail", "-c", injection],
+        env={"PATH": os.environ["PATH"], "tmp": str(tmp_path), "PR_NUMBER": "7"},
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "noindex" in (preview / "what-changed.html").read_text()
+    assert (images / "s1.png").read_bytes() == b"PNG"
+
+
+@pytest.mark.parametrize("site_subdir", ["", "examples/workspace"])
+def test_paper_container_keeps_checkout_history_for_sites_in_subdirectories(
+    tmp_path, site_subdir
+):
+    project, result = _run_paper_step(
+        tmp_path, pull_failures=0, site_subdir=site_subdir
+    )
+    assert result.returncode == 0, result.stderr
+    command = next(
+        line
+        for line in (project / "docker.log").read_text().splitlines()
+        if line.startswith("run ")
+    ).split()
+    checkout = tmp_path / "project"
+    assert f"{checkout}:{checkout}" in command
+    assert command[command.index("-w") + 1] == str(project)
+
+
+def test_what_changed_reads_full_baseline_for_site_in_subfolder(
+    tmp_path: Path,
+    checkout_asta,
+) -> None:
+    workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+    step = next(
+        s
+        for s in workflow["jobs"]["build"]["steps"]
+        if s.get("name") == "Generate What changed"
+    )
+    remote = tmp_path / "remote.git"
+    project = tmp_path / "project"
+    subprocess.run(
+        ["git", "init", "--bare", str(remote)], check=True, capture_output=True
+    )
+    subprocess.run(
+        ["git", "init", "-b", "gh-pages", str(project)], check=True, capture_output=True
+    )
+
+    def git(*args: str) -> None:
+        subprocess.run(["git", *args], cwd=project, check=True, capture_output=True)
+
+    git("config", "user.name", "Test")
+    git("config", "user.email", "test@example.invalid")
+    # main publishes the subfolder site's build at the gh-pages root.
+    (project / "index.html").write_text("<html><body><p>Home before.</p></body></html>")
+    (project / "about.html").write_text("<html><body><p>Unchanged.</p></body></html>")
+    (project / "pr-preview/pr-3").mkdir(parents=True)
+    (project / "pr-preview/pr-3/index.html").write_text("<p>Other preview.</p>")
+    git("add", ".")
+    git("commit", "-m", "Publish main")
+    git("remote", "add", "origin", str(remote))
+    git("push", "origin", "gh-pages")
+    git("switch", "--orphan", "main")
+    site = project / "examples/workspace"
+    (site / "scripts").mkdir(parents=True)
+    shutil.copy(
+        "plugins/asta-tools/skills/workspace/assets/what-changed.py",
+        site / "scripts/what-changed.py",
+    )
+    git("add", "examples/workspace/scripts/what-changed.py")
+    git("commit", "-m", "Site in a subfolder")
+    (site / "_site").mkdir()
+    (site / "_site/index.html").write_text(
+        "<html><body><p>Home after.</p></body></html>"
+    )
+    (site / "_site/about.html").write_text(
+        "<html><body><p>Unchanged.</p></body></html>"
+    )
+
+    script = step["run"].replace("${{ job.workflow_repository }}", "owner/repo")
+    script = script.replace("${{ job.workflow_sha }}", "source-commit")
+    result = subprocess.run(
+        ["bash", "-e", "-o", "pipefail", "-c", script],
+        cwd=site,
+        env={**os.environ, "PR_NUMBER": "7"},
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    page = (site / "_site/what-changed.html").read_text()
+    assert "PR 7 · Pages " in page
+    assert "new page" not in page
+    text = re.sub(r"<[^>]+>", "", page)
+    assert "before" in text and "after" in text, text[-3000:]
+    assert "about.html" not in page
+    assert "pr-preview" not in page
+
+
+@pytest.mark.parametrize("rules", ["Makefile", "workspace.mk"])
+@pytest.mark.parametrize("tmpdir", ["sandbox temp", "", None])
+def test_make_check_uses_explicit_tmpdir_templates(tmp_path, rules, tmpdir):
+    """Deny implicit mktemp paths, as on macOS in an agent sandbox."""
+    project = tmp_path / "project"
+    project.mkdir()
+    subprocess.run(["git", "init", str(project)], check=True, capture_output=True)
+    scripts = project / "scripts"
+    scripts.mkdir()
+    shutil.copy(WORKSPACE_ASSETS / "quarto-check.sh", scripts)
+    (scripts / "paper-discovery.py").write_text("print('[]')\n")
+    (scripts / "paper-viewer.py").write_text(
+        "import sys\nassert sys.stdin.read().strip() == '[]'\n"
+    )
+    archive = tmp_path / "source.tar.gz"
+    _make_evidence_archive(archive)
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    real_mktemp = shutil.which("mktemp")
+    assert real_mktemp is not None, "Required test executable is missing: mktemp"
+    wrapper = bin_dir / "mktemp"
+    wrapper.write_text(
+        "#!/bin/sh\n"
+        'printf "%s\\n" "$*" >> "$TEMP_LOG"\n'
+        'mode=; if [ "$1" = -d ]; then mode=-d; shift; fi\n'
+        # Reject an omitted template even if the platform's mktemp honors TMPDIR.
+        '[ "$#" -eq 1 ] || exit 99\n'
+        'case "$1" in "${TMPDIR:-/tmp}"/asta-*) ;; *) exit 98 ;; esac\n'
+        'created=$("$REAL_MKTEMP" $mode "$@") || exit $?\n'
+        'printf "%s\\n" "$created" >> "$TEMP_PATH_LOG"\n'
+        'printf "%s\\n" "$created"\n'
+    )
+    wrapper.chmod(0o755)
+    quarto = bin_dir / "quarto"
+    quarto.write_text("#!/bin/sh\nmkdir -p _site\necho OK > _site/index.html\n")
+    quarto.chmod(0o755)
+    home = tmp_path / "home"
+    home.mkdir()
+    env = {
+        "PATH": f"{bin_dir}:{os.environ['PATH']}",
+        "HOME": str(home),
+        "ASTA_PLUGINS_ARCHIVE_URL": archive.as_uri(),
+        "REAL_MKTEMP": real_mktemp,
+        "TEMP_LOG": str(tmp_path / "temps.log"),
+        "TEMP_PATH_LOG": str(tmp_path / "temp-paths.log"),
+    }
+    if tmpdir is not None:
+        env["TMPDIR"] = str(tmp_path / tmpdir) if tmpdir else ""
+        if tmpdir:
+            Path(env["TMPDIR"]).mkdir()
+    result = subprocess.run(
+        ["make", "-f", str((WORKSPACE_ASSETS / rules).resolve()), "check"],
+        cwd=project,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    temps = (tmp_path / "temps.log").read_text().splitlines()
+    assert len(temps) == (2 if rules == "workspace.mk" else 1)
+    assert (project / "_extensions/evidence/snippet.lua").is_file()
+    created = (tmp_path / "temp-paths.log").read_text().splitlines()
+    assert len(created) == len(temps)
+    assert all(not Path(path).exists() for path in created), (
+        "temporary files were not cleaned up"
+    )
+
+
+@pytest.mark.parametrize("publish", [True, False])
+@pytest.mark.parametrize("preview_pr", ["", "281"])
+def test_dispatched_preview_uses_pr_directory_and_arm_never_publishes(
+    publish, preview_pr
+):
+    jobs = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)["jobs"]
+    context = {
+        "inputs.publish": publish,
+        "inputs.preview-pr": preview_pr,
+        "github.event_name": "workflow_dispatch",
+        "github.event.action": "",
+        "github.ref": "refs/heads/example-demo-pr",
+        "github.event.repository.default_branch": "main",
+    }
+    assert _condition_enabled(jobs["deploy"]["if"], context) == bool(
+        publish and preview_pr
+    )
+    env = next(
+        s["env"]
+        for s in jobs["deploy"]["steps"]
+        if s.get("name") == "Publish to gh-pages"
+    )
+    assert _condition_enabled(env["PUBLISH_MAIN"][3:-2], context) == (not preview_pr)
+    assert (
+        env["PR_NUMBER"]
+        == "${{ github.event.pull_request.number || inputs.preview-pr }}"
+    )

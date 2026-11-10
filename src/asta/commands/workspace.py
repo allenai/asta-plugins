@@ -1,5 +1,6 @@
 """Fetch workspace build rules from the version selected by a project."""
 
+import concurrent.futures
 import functools
 import hashlib
 import http.client
@@ -9,7 +10,6 @@ import json
 import os
 import posixpath
 import re
-import shlex
 import shutil
 import signal
 import socket
@@ -18,6 +18,7 @@ import sys
 import tarfile
 import tempfile
 import threading
+import time
 from collections.abc import Mapping
 from contextlib import contextmanager, redirect_stdout
 from pathlib import Path
@@ -40,7 +41,7 @@ CHECK_SCRIPTS = ("quarto-check.sh", "wait-for-preview.sh")
 VIEWER_SCRIPTS = ("paper-discovery.py", "paper-viewer.py")
 # Cached when the selected ref ships it; `asta workspace what-changed` runs it.
 DIFF_SCRIPT = "what-changed.py"
-# Optional beside DIFF_SCRIPT: renders a changed deck's slides when Playwright is installed.
+# Optional beside DIFF_SCRIPT: publishes marked live decks without browser dependencies.
 DECK_SCRIPT = "deck-review.py"
 SCRIPTS = CHECK_SCRIPTS + VIEWER_SCRIPTS + (DIFF_SCRIPT, DECK_SCRIPT)
 MANAGED_SCRIPTS_MARKER = b"ASTA_WORKSPACE_MANAGED_SCRIPTS := 1"
@@ -1100,13 +1101,35 @@ def diff_script(project: Path) -> Path:
     raise click.ClickException(guidance)
 
 
+def prime_quarto_sass_cache(scratch: Path) -> None:
+    """Make Quarto create its Sass cache database before two renders share it.
+
+    Quarto keeps its compiled-theme cache in one SQLite database in the user's
+    cache directory. Two renders that start together while it does not exist
+    can both try to create it, and one stops with "database is locked". One
+    render of a one-line page in SCRATCH, before the others start, creates the
+    database where Quarto itself looks for it, on every platform and without
+    changing any environment variable or setting. Best effort: if this render
+    fails, the real renders run as before and report their own errors.
+    """
+    if shutil.which("quarto") is None:
+        return
+    scratch.mkdir()
+    (scratch / "sass-cache.md").write_text("# Sass cache\n", encoding="utf-8")
+    command = ["quarto", "render", "sass-cache.md", "--to", "html", "--quiet"]
+    with preview_process(
+        command, scratch, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+    ) as process:
+        process.wait()
+
+
 def render_site(directory: Path, label: str, pages: list[str] | None = None) -> Path:
     if not directory.is_dir():
         raise click.ClickException(
             f"Project directory does not exist for {label}: {directory}"
         )
     click.echo(f"Rendering {label} with 'make render'", err=True)
-    command = ["make", "render"]
+    command = ["make", "-o", "workspace-assets", "-o", "workspace-viewers", "render"]
     if pages is not None:
         command += [
             "ASTA_WORKSPACE_RENDER_OUTPUT=_site",
@@ -1131,8 +1154,121 @@ def render_site(directory: Path, label: str, pages: list[str] | None = None) -> 
 
 
 COMPARISON_DIR = Path(".asta/cache/what-changed")
+
+
 # Rendered slide images, beside the comparison page in its site copy.
 DECK_IMAGES = "what-changed-decks"
+
+
+# A page that exists only in each temporary copy, rendered beside a
+# slide-only edit so the report takes the site's look from the project's
+# own config without running any project page.
+THEME_PAGE = "asta-what-changed-look.qmd"
+# `format: html` keeps it an ordinary page under a deck-format _metadata.yml.
+THEME_PAGE_SOURCE = (
+    "---\ntitle: What changed\nformat: html\n---\n\nThe site's look for What changed.\n"
+)
+
+
+def _add_theme_page(project: Path) -> tuple[Path, bytes] | None | bool:
+    """Write the look page so Quarto renders it in this project.
+
+    A project that lists its pages in `project.render` gets the page appended
+    there. Returns the config to restore after the render, None when the
+    config is unchanged, or False when the page can't be listed.
+    """
+    (project / THEME_PAGE).write_text(THEME_PAGE_SOURCE, encoding="utf-8")
+    config = next(
+        (
+            project / name
+            for name in ("_quarto.yml", "_quarto.yaml")
+            if (project / name).is_file()
+        ),
+        None,
+    )
+    if config is None:
+        return None
+    original = config.read_bytes()
+    try:
+        data = yaml.safe_load(original)
+    except yaml.YAMLError:
+        return False
+    settings = data.get("project") if isinstance(data, dict) else None
+    listed = settings.get("render") if isinstance(settings, dict) else None
+    if listed is None:
+        return None
+    if not isinstance(listed, list) or config.is_symlink():
+        return False
+    settings["render"] = [*listed, THEME_PAGE]
+    config.write_text(
+        yaml.safe_dump(data, sort_keys=False, allow_unicode=True), encoding="utf-8"
+    )
+    return config, original
+
+
+_REDIRECT = re.compile(
+    r"http-equiv\s*=\s*[\"']?refresh|window\.location", re.IGNORECASE
+)
+_STYLESHEET = re.compile(r"<link\b[^>]*>", re.IGNORECASE)
+_HREF = re.compile(r"""\bhref\s*=\s*["']([^"']+)["']""", re.IGNORECASE)
+
+
+def _is_themed_page(page: Path, site: Path) -> bool:
+    """Whether a built page is an ordinary site page whose stylesheets are present.
+
+    A Quarto redirect home page, a deck, or a page whose site_libs a partial
+    render left out cannot supply the site's theme.
+    """
+    if page.name.startswith("what-changed") or page.is_symlink() or not page.is_file():
+        return False
+    html = page.read_text(encoding="utf-8", errors="ignore")
+    if 'class="reveal' in html:
+        return False
+    sheets = []
+    for tag in _STYLESHEET.findall(html):
+        href = _HREF.search(tag)
+        if "stylesheet" in tag.lower() and href:
+            sheets.append(href.group(1).split("?")[0].split("#")[0])
+    local = [h for h in sheets if not re.match(r"(?i)^(?:[a-z]+:|//|/)", h)]
+    if not local:
+        return False
+    root = site.resolve()
+    for href in local:
+        target = (page.parent / href).resolve()
+        if not target.is_relative_to(root) or not target.is_file():
+            return False
+    return True
+
+
+def _has_site_page(site: Path) -> bool:
+    """Whether a built site has an ordinary page that carries the site's theme."""
+    return any(
+        _is_themed_page(page, site)
+        for page in site.rglob("*.html")
+        if DECK_IMAGES not in page.relative_to(site).parts
+    )
+
+
+def _is_ordinary_source(project: Path, name: str) -> bool:
+    """Whether a selected source surely renders an ordinary page (not a deck).
+
+    Unsure (a deck format from a directory's _metadata.yml, a redirect) means
+    no, which only costs one extra page in the build.
+    """
+    texts = [project / name]
+    for parent in Path(name).parents:
+        texts += [
+            project / parent / "_metadata.yml",
+            project / parent / "_metadata.yaml",
+        ]
+    for path in texts:
+        try:
+            text = path.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        if "revealjs" in text or _REDIRECT.search(text):
+            return False
+    return True
 
 
 def _has_deck(site: Path) -> bool:
@@ -1158,32 +1294,93 @@ def _is_env_file(name: str) -> bool:
     return base == ".env" or base.startswith(".env.")
 
 
+IGNORED_RENDER_INPUTS = (".asta/cache", "_extensions")
+
+
+def copy_ignored_render_inputs(project: Path, destination: Path) -> None:
+    """Copy the project's git-ignored render inputs into a fresh copy.
+
+    A scaffolded workspace ignores its synced make rules (`.asta/cache`) and
+    fetched theme extensions, and `make -o workspace-assets` skips refetching
+    them, so each copy takes them from the project every run. Files the copy
+    already has (tracked at that commit) win; `.env*` files are never copied.
+    """
+    listed = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(project),
+            "ls-files",
+            "-z",
+            "--others",
+            "--ignored",
+            "--exclude-standard",
+            "--",
+            *IGNORED_RENDER_INPUTS,
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if listed.returncode != 0:
+        raise click.ClickException(
+            f"Could not list ignored render inputs: {listed.stderr.strip()}"
+        )
+    comparison = project / COMPARISON_DIR
+    for name in filter(None, listed.stdout.split("\0")):
+        source = project / name
+        if (
+            _is_env_file(name)
+            or source == comparison
+            or comparison in source.parents
+            or Path(name).parts[:3] == (".asta", "cache", "what-changed")
+            or Path(name).name.startswith(".what-changed-")
+        ):
+            continue
+        target = destination / name
+        if os.path.lexists(target) or not os.path.lexists(source):
+            continue
+        if source.is_dir() and not source.is_symlink():
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target, follow_symlinks=False)
+
+
 def working_copy(repository: Path, prefix: str, destination: Path) -> Path:
     """Copy render inputs only: Git-visible files plus the synced workspace cache.
 
     Other ignored files (virtualenvs, outputs, caches) and untracked .env files
     stay out, so comparisons stay quick and do not duplicate secrets. The copy is
-    a linked worktree, like the baseline, so `git rev-parse --git-common-dir`
-    finds the main checkout (and its ignored .venv) from both renders.
+    a private shared clone: neither render registers a worktree or writes
+    into the source repository. Ignored virtualenvs are not copied.
     """
     project = repository / prefix
     added = _git(
         repository,
-        "worktree",
-        "add",
-        "--detach",
+        "clone",
+        "--shared",
         "--no-checkout",
+        str(repository),
         str(destination),
-        "HEAD",
     )
     if added.returncode != 0:
         raise click.ClickException(
             f"Could not copy the working tree: {added.stderr.strip()}"
         )
+    checked = _git(destination, "checkout", "--detach", "HEAD")
+    if checked.returncode != 0:
+        raise click.ClickException(
+            f"Could not check out the working tree: {checked.stderr.strip()}"
+        )
     entries = _git(repository, "ls-files", "--stage", "-z")
     if entries.returncode != 0:
         raise click.ClickException(
             f"Could not read the working-tree index: {entries.stderr.strip()}"
+        )
+    cleared = _git(destination, "read-tree", "--empty")
+    if cleared.returncode != 0:
+        raise click.ClickException(
+            f"Could not clear the copied index: {cleared.stderr.strip()}"
         )
     # Rebuild a standalone index, including staging in linked/split-index worktrees.
     indexed = subprocess.run(
@@ -1203,15 +1400,33 @@ def working_copy(repository: Path, prefix: str, destination: Path) -> Path:
         if not _is_env_file(name)
     ]
     live = (project / "_site", project / ".quarto")
-    files = dict.fromkeys(_ls_files(repository, "--cached") + untracked)
-    click.echo(f"Copying {len(files)} Git-visible render inputs", err=True)
+    changed = _git(
+        repository, "diff", "--name-only", "--no-renames", "-z", "HEAD", "--"
+    )
+    if changed.returncode != 0:
+        raise click.ClickException(
+            f"Could not list changed render inputs: {changed.stderr.strip()}"
+        )
+    files = dict.fromkeys(
+        [name for name in changed.stdout.split("\0") if name] + untracked
+    )
+    click.echo(f"Overlaying {len(files)} changed/untracked render inputs", err=True)
     for name in files:
         source = repository / name
+        target = destination / name
         if not os.path.lexists(source) or any(
             source == path or path in source.parents for path in live
         ):
+            if target.is_dir() and not target.is_symlink():
+                shutil.rmtree(target)
+            elif os.path.lexists(target):
+                target.unlink()
             continue
-        target = destination / name
+        if os.path.lexists(target):
+            if target.is_dir() and not target.is_symlink():
+                shutil.rmtree(target)
+            else:
+                target.unlink()
         target.parent.mkdir(parents=True, exist_ok=True)
         if source.is_dir() and not source.is_symlink():
             # A submodule or nested repository checkout.
@@ -1225,26 +1440,7 @@ def working_copy(repository: Path, prefix: str, destination: Path) -> Path:
         else:
             shutil.copy2(source, target, follow_symlinks=False)
 
-    # The Makefile includes rules synced here; reuse them instead of re-syncing.
-    cache = project / ".asta/cache"
-
-    def ignore(directory, names):
-        if Path(directory) != cache:
-            return set()
-        return {
-            name
-            for name in names
-            if name == "what-changed" or name.startswith(".what-changed-")
-        }
-
-    if cache.is_dir() and not cache.is_symlink():
-        shutil.copytree(
-            cache,
-            destination / prefix / ".asta/cache",
-            symlinks=True,
-            dirs_exist_ok=True,
-            ignore=ignore,
-        )
+    copy_ignored_render_inputs(project, destination / prefix)
     return destination / prefix
 
 
@@ -1256,7 +1452,14 @@ def _comparison_directory():
     finally:
         try:
             with preview_cleanup():
-                # Git owns both worktrees; keep failed removals recoverable.
+                for entry in temporary.iterdir():
+                    if entry.name in ("baseline", "working"):
+                        continue
+                    if entry.is_dir() and not entry.is_symlink():
+                        shutil.rmtree(entry)
+                    else:
+                        entry.unlink()
+                # Leave failed clone cleanup visible rather than hiding it.
                 if not any(
                     (temporary / name).exists() for name in ("baseline", "working")
                 ):
@@ -1293,36 +1496,148 @@ def _comparison_script():
     return Path(__file__).parents[3] / ASSET_DIR / DIFF_SCRIPT
 
 
-def _comparison_python(decks):
-    """Only deck comparisons provision the pinned optional browser through uv."""
-    env = os.environ.copy()
-    if not decks:
-        return [sys.executable], env
-    command = ["uv", "run", "--no-project", "--with", "playwright==1.64.1", "python"]
-    relative = env.get("UV_CACHE_DIR") and not Path(env["UV_CACHE_DIR"]).is_absolute()
-    if relative:
-        # Resolved once, so every uv call below shares one cache.
-        env["UV_CACHE_DIR"] = str(Path(env["UV_CACHE_DIR"]).resolve())
+def _asset_script(name: str) -> Path:
+    bundled = Path(__file__).parents[1] / "workspace_assets" / name
+    if bundled.is_file():
+        return bundled
+    return Path(__file__).parents[3] / ASSET_DIR / name
+
+
+def _commit_working_tree(project: Path) -> bool:
+    """Point the throwaway copy's HEAD at a commit of its files.
+
+    paper-preview.sh compares <base>..HEAD, which in the copy would miss the
+    uncommitted edit. commit-tree runs no hooks and never signs.
+    """
+    added = _git(project, "add", "-A")
+    tree = _git(project, "write-tree") if added.returncode == 0 else added
+    if tree.returncode != 0:
+        return False
+    commit = _git(
+        project,
+        "-c",
+        "user.name=asta",
+        "-c",
+        "user.email=asta@localhost",
+        "-c",
+        "commit.gpgSign=false",
+        "commit-tree",
+        tree.stdout.strip(),
+        "-p",
+        "HEAD",
+        "-m",
+        "What changed: working tree",
+    )
+    if commit.returncode != 0:
+        return False
+    moved = _git(project, "update-ref", "--no-deref", "HEAD", commit.stdout.strip())
+    return moved.returncode == 0
+
+
+def _paper_previews(project: Path, base: str, site: Path) -> None:
+    """Build each changed paper's marked diff PDF into the site, as the PR preview does.
+
+    Runs only where LaTeX is installed (e.g. the -tex dev container). As in the
+    PR preview, a project's own scripts/<asset> takes precedence.
+    """
+
+    def script(name):
+        own = project / "scripts" / name
+        return own if own.is_file() else _asset_script(name)
+
+    discovery = subprocess.run(
+        [sys.executable, str(script("paper-discovery.py")), base],
+        cwd=project,
+        capture_output=True,
+        text=True,
+    )
     try:
-        if relative:
-            # A relative cache is per project; keep one Chromium for all of them.
-            cache = tempfile.gettempdir()
-        else:
-            cache = subprocess.run(
-                ["uv", "cache", "dir"], capture_output=True, text=True, check=True
-            ).stdout.strip()
-        env.setdefault("PLAYWRIGHT_BROWSERS_PATH", str(Path(cache) / "asta-chromium"))
-        subprocess.run(
-            [*command, "-m", "playwright", "install", "chromium"], env=env, check=True
-        )
-    except (OSError, subprocess.CalledProcessError) as exc:
+        found = json.loads(discovery.stdout) if discovery.returncode == 0 else None
+        papers, removed = list(found["papers"]), list(found["removed"])
+        if not all(isinstance(d, str) for d in [*papers, *removed]):
+            raise TypeError
+    except (TypeError, KeyError, ValueError):
         click.echo(
-            "Slides shown as text: the browser couldn't be set up here, possibly a"
-            f" sandbox; run outside it to see rendered slides ({exc})",
+            "Warning: could not discover paper projects, so no paper diff is shown"
+            + (f" ({discovery.stderr.strip()})" if discovery.stderr.strip() else ""),
             err=True,
         )
-        return [sys.executable], env
-    return command, env
+        return
+    if not papers and not removed:
+        return
+    # Discovery defines the paper roots/main files; dependency filtering must
+    # happen before checking TeX or snapshotting the disposable working copy.
+    from asta.commands.workspace_selection import paper_affected
+
+    changed = _git(project, "diff", "--name-only", "--no-renames", "-z", base, "--")
+    main_files = found.get("main_files", {})
+    if changed.returncode == 0:
+        prefix = _git(project, "rev-parse", "--show-prefix").stdout.strip()
+        names = [
+            p[len(prefix) :]
+            for p in changed.stdout.split("\0")
+            if p and p.startswith(prefix)
+        ]
+        names += _ls_files(project, "--others", "--exclude-standard")
+        papers = [
+            directory
+            for directory in papers
+            if directory not in main_files
+            or paper_affected(project, directory, main_files[directory], names)
+        ]
+    if not papers and not removed:
+        return
+    missing = [tool for tool in ("latexmk", "latexdiff") if shutil.which(tool) is None]
+    if missing:
+        click.echo(
+            f"Note: paper diffs are skipped because {' and '.join(missing)} "
+            "isn't installed here; run in the -tex dev container to include them.",
+            err=True,
+        )
+        return
+    root = site / "paper-previews"
+    if root.exists():
+        click.echo(
+            "Warning: the site already uses paper-previews/, so no paper diff is shown",
+            err=True,
+        )
+        return
+    if papers and not _commit_working_tree(project):
+        click.echo(
+            "Warning: could not snapshot the working tree, so paper diffs may "
+            "miss uncommitted edits",
+            err=True,
+        )
+    for directory in removed:
+        (root / directory).mkdir(parents=True, exist_ok=True)
+        (root / directory / "preview.json").write_text(
+            '{"changed":true,"removed":true}\n'
+        )
+    for directory in papers:
+        click.echo(f"Building the marked diff of {directory}", err=True)
+        built = subprocess.run(
+            ["bash", str(script("paper-preview.sh")), base, directory],
+            cwd=project,
+            capture_output=True,
+            text=True,
+        )
+        if built.returncode != 0:
+            out = root / directory
+            out.mkdir(parents=True, exist_ok=True)
+            tail = "\n".join((built.stdout + built.stderr).strip().splitlines()[-20:])
+            (out / "build-failed.txt").write_text(tail + "\n")
+            if not (out / "preview.json").is_file():
+                (out / "preview.json").write_text('{"changed":false}\n')
+            click.echo(
+                f"Warning: the paper build for {directory} failed; "
+                f"see {directory}/build in the comparison output",
+                err=True,
+            )
+
+
+def _comparison_python(decks):
+    """Live deck comparisons use the CLI's Python, with no browser dependency."""
+    return [sys.executable], os.environ.copy()
 
 
 def _default_comparison_ref(project):
@@ -1341,67 +1656,49 @@ def _default_comparison_ref(project):
 
 
 def _changed_comparison_pages(project, baseline, ref):
-    """Conservatively select only standalone pages resolved by both projects."""
-    changed = _git(
-        project, "diff", "--name-only", "--no-renames", "-z", ref, "--"
-    ).stdout.split("\0")
-    changed += _ls_files(project, "--others", "--exclude-standard")
-    paths = sorted(set(filter(None, changed)))
-    prefix = _git(project, "rev-parse", "--show-prefix").stdout.strip()
-    if prefix:
-        if any(not p.startswith(prefix) for p in paths):
-            return None
-        paths = [p[len(prefix) :] for p in paths]
-    if not paths or any(
-        not re.fullmatch(r"[A-Za-z0-9/+@.-]+", p)
-        or any(part.startswith(("_", ".")) for part in Path(p).parts)
-        or Path(p).suffix not in (".qmd", ".md", ".ipynb", ".Rmd")
-        or not (project / p).is_file()
-        for p in paths
-    ):
+    """Select dependencies from both trees; unknown inputs force a full render.
+
+    No Quarto/setup or Makefile probe runs here. References are deliberately
+    over-selected: a token appearing in prose is enough to count as a dependency.
+    """
+    from asta.commands.workspace_selection import select_pages
+
+    diff = _git(project, "diff", "--name-only", "--no-renames", "-z", ref, "--")
+    if diff.returncode:
         return None
-    for version in (project, baseline):
-        try:
-            inspected = subprocess.run(
-                ["quarto", "inspect", str(version)],
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-            inputs = json.loads(inspected.stdout)["files"]["input"]
-            resolved = {(version / p).resolve() for p in inputs}
-            if any(
-                (version / p).exists() and (version / p).resolve() not in resolved
-                for p in paths
-            ):
-                return None
-            # Only a recipe explicitly declaring selection support may take this path.
-            with tempfile.TemporaryDirectory(prefix="asta-render-probe-") as probe_dir:
-                shim = Path(probe_dir) / "quarto"
-                shim.write_text("#!/bin/sh\nexit 0\n")
-                shim.chmod(0o700)
-                probe_env = {
-                    **os.environ,
-                    "PATH": probe_dir + os.pathsep + os.environ["PATH"],
-                }
-                recipe = subprocess.run(
-                    [
-                        "make",
-                        "-n",
-                        "render",
-                        "ASTA_WORKSPACE_RENDER_FILES=asta-probe.qmd",
-                    ],
-                    cwd=version,
-                    capture_output=True,
-                    text=True,
-                    check=True,
-                    env=probe_env,
-                )
-            if "asta-workspace-render-page-selection-v1" not in recipe.stdout:
-                return None
-        except (OSError, ValueError, KeyError, subprocess.CalledProcessError):
-            return None
-    return paths
+    paths = diff.stdout.split("\0")
+    paths += _ls_files(project, "--full-name", "--others", "--exclude-standard")
+    prefix = _git(project, "rev-parse", "--show-prefix").stdout.strip()
+    paths = [p[len(prefix) :] for p in paths if p and p.startswith(prefix)]
+    return select_pages(project, baseline, paths)
+
+
+def _comparison_inputs(project):
+    """The files Quarto renders in this project, as `quarto inspect` lists them."""
+    try:
+        result = subprocess.run(
+            ["quarto", "inspect", str(project)],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return {
+            Path(p).resolve() if Path(p).is_absolute() else (project / p).resolve()
+            for p in json.loads(result.stdout)["files"]["input"]
+        }
+    except (OSError, ValueError, KeyError, subprocess.CalledProcessError):
+        # An unavailable inspect must not hide any page; a render then fails loudly.
+        return None
+
+
+def _quarto_rendered(project, pages, inputs):
+    """Selected pages that exist in this project and Quarto renders there."""
+    return [
+        name
+        for name in pages
+        if (project / name).is_file()
+        and (inputs is None or (project / name).resolve() in inputs)
+    ]
 
 
 def _run_comparison(before, after, report, title, project, theme=None):
@@ -1485,6 +1782,9 @@ def compare_built_sites(before: Path, after: Path, title: str | None = None):
 @click.option(
     "--full", is_flag=True, help="Render the full site, including dependent pages."
 )
+@click.option(
+    "--timings", is_flag=True, help="Print how long each step took, on stderr."
+)
 def what_changed(
     ref: str | None,
     project: Path,
@@ -1492,18 +1792,22 @@ def what_changed(
     after_site: Path | None,
     title: str | None,
     full: bool,
+    timings: bool = False,
 ) -> None:
     """Show what changed in the rendered site since a git REF (tag, branch, commit).
 
     Renders REF and a private working-tree copy with the project's own 'make
-    render' (only changed pages when possible, themed from a running preview's
-    _site/) and compares them with the comparator the PR preview uses. The page is written to a copy of the rendered site under
+    render' (only changed pages when possible, themed from ordinary pages rendered during this run; nothing is
+    kept between runs) and compares them with the comparator the PR preview uses. The page is written to a copy of the rendered site under
     .asta/cache/what-changed/, which this command owns and replaces on each run.
     A live _site/ gets a redirect at _site/what-changed.html to this snapshot,
     replacing any project page of that name until the next render.
     Requires Git 2.30 or newer. Choose a trusted REF: its
     build code runs locally. The baseline contains only committed files.
     """
+    global _step_times
+    _step_times = [] if timings else None
+    started = time.perf_counter()
     try:
         with preview_signals():
             if before_site is not None:
@@ -1522,6 +1826,40 @@ def what_changed(
         raise click.exceptions.Exit(130) from None
     except PreviewTerminated as exc:
         raise click.exceptions.Exit(128 + exc.signum) from None
+    finally:
+        if timings:
+            _report_timings(time.perf_counter() - started)
+        _step_times = None
+
+
+_step_times: list[tuple[str, float]] | None = None
+
+
+def _record(step: str, start: float) -> None:
+    if _step_times is not None:
+        _step_times.append((step, time.perf_counter() - start))
+
+
+@contextmanager
+def _timed(step: str):
+    """Record STEP's wall time when --timings is on."""
+    start = time.perf_counter()
+    try:
+        yield
+    finally:
+        _record(step, start)
+
+
+def _report_timings(total: float) -> None:
+    if not _step_times:
+        return
+    width = max(len(step) for step, _ in [*_step_times, ("other", 0)])
+    click.echo("What changed timings:", err=True)
+    for step, seconds in _step_times:
+        click.echo(f"  {step:<{width}}  {seconds:7.2f} s", err=True)
+    rest = total - sum(seconds for _, seconds in _step_times)
+    click.echo(f"  {'other':<{width}}  {rest:7.2f} s", err=True)
+    click.echo(f"  {'total':<{width}}  {total:7.2f} s", err=True)
 
 
 def compare_workspace(ref: str, project: Path, *, full: bool = False) -> None:
@@ -1564,14 +1902,19 @@ def compare_workspace(ref: str, project: Path, *, full: bool = False) -> None:
         baseline = tmp / "baseline"
         added = None
         try:
-            added = _git(
-                project,
-                "worktree",
-                "add",
-                "--detach",
-                str(baseline),
-                commit.stdout.strip(),
-            )
+            with _timed("check out baseline clone"):
+                added = _git(
+                    project,
+                    "clone",
+                    "--shared",
+                    "--no-checkout",
+                    repository.stdout.rstrip("\n"),
+                    str(baseline),
+                )
+                if added.returncode == 0:
+                    added = _git(
+                        baseline, "checkout", "--detach", commit.stdout.strip()
+                    )
             if added.returncode != 0:
                 raise click.ClickException(
                     f"Could not check out {ref}: {added.stderr.strip()}"
@@ -1581,32 +1924,121 @@ def compare_workspace(ref: str, project: Path, *, full: bool = False) -> None:
                 raise click.ClickException(
                     f"Project directory does not exist for {ref}: {baseline_project}"
                 )
-            pages = (
-                None
-                if full
-                else _changed_comparison_pages(project, baseline_project, ref)
-            )
+            copy_ignored_render_inputs(project, baseline_project)
+            with _timed("find changed pages"):
+                pages = (
+                    None
+                    if full
+                    else _changed_comparison_pages(project, baseline_project, ref)
+                )
+            # Both sides are fresh, private builds. Never borrow a preview:
+            # a source edit can arrive while that preview is still rendering.
+            theme = None
+            with _timed("copy working tree"):
+                copied_project = working_copy(
+                    Path(repository.stdout.rstrip("\n")),
+                    prefix.stdout.rstrip("\n"),
+                    tmp / "working",
+                )
+            before_pages = after_pages = theme_pages = []
+            restore = []
             if pages:
-                base_pages = [
-                    name for name in pages if (baseline_project / name).is_file()
-                ]
-                if base_pages:
-                    old_site = render_site(baseline_project, ref, base_pages)
-                else:
-                    old_site = baseline_project / "_site"
-                    old_site.mkdir()
-            else:
-                old_site = render_site(baseline_project, ref)
-            copied_project = working_copy(
-                Path(repository.stdout.rstrip("\n")),
-                prefix.stdout.rstrip("\n"),
-                tmp / "working",
-            )
-            new_site = (
-                render_site(copied_project, "the working tree", pages)
-                if pages
-                else render_site(copied_project, "the working tree")
-            )
+                # Ask Quarto which files each side renders before rendering any:
+                # a README or notes file must never reach `quarto render`.
+                with _timed("list rendered files (quarto inspect)"):
+                    with _parallel_builds() as pool:
+                        before_inputs = pool.submit(
+                            _comparison_inputs, baseline_project
+                        )
+                        after_inputs = pool.submit(_comparison_inputs, copied_project)
+                        before_inputs = before_inputs.result()
+                        after_inputs = after_inputs.result()
+                before_pages = _quarto_rendered(baseline_project, pages, before_inputs)
+                after_pages = _quarto_rendered(copied_project, pages, after_inputs)
+                # A slide-only edit selects no ordinary page; add one to both
+                # builds so each side's site carries the site's look.
+                if (before_pages or after_pages) and not any(
+                    _is_ordinary_source(side, name)
+                    for side, names in (
+                        (baseline_project, before_pages),
+                        (copied_project, after_pages),
+                    )
+                    for name in names
+                ):
+                    added = [
+                        _add_theme_page(side)
+                        for side in (baseline_project, copied_project)
+                    ]
+                    restore = [a for a in added if isinstance(a, tuple)]
+                    if False in added:
+                        click.echo(
+                            "Warning: could not add a page for the site's look to "
+                            "project.render in _quarto.yml, so What changed may "
+                            "look unstyled.",
+                            err=True,
+                        )
+                    else:
+                        theme_pages = [THEME_PAGE]
+
+            def render_side(project_dir, label, selected):
+                if pages is None:
+                    return render_site(project_dir, label)
+                if not selected:
+                    site = project_dir / "_site"
+                    site.mkdir(exist_ok=True)
+                    return site
+                return render_site(project_dir, label, selected)
+
+            if pages is None or before_pages or after_pages:
+                with _timed("prepare Quarto's Sass cache"):
+                    prime_quarto_sass_cache(tmp / "sass-cache")
+            # Record the enclosing wall time, rather than adding overlapping
+            # durations and reporting a negative remainder in --timings.
+            with _timed("render before and after (parallel)"):
+                with _parallel_builds() as pool:
+                    before = pool.submit(
+                        render_side,
+                        baseline_project,
+                        ref,
+                        list(dict.fromkeys([*before_pages, *theme_pages])),
+                    )
+                    after = pool.submit(
+                        render_side,
+                        copied_project,
+                        "the working tree",
+                        list(dict.fromkeys([*after_pages, *theme_pages])),
+                    )
+                    old_site = before.result()
+                    new_site = after.result()
+            if theme_pages:
+                theme = tmp / "theme"
+                theme.mkdir()
+                themed = False
+                for name in theme_pages:
+                    # Take the look from the working tree's build, else the
+                    # base's; drop the page from both so it isn't compared.
+                    for site in (new_site, old_site):
+                        built = site / Path(name).with_suffix(".html")
+                        if built.is_file() and not built.is_symlink():
+                            if not themed and _is_themed_page(built, site):
+                                themed = True
+                                shutil.move(built, theme / built.name)
+                            else:
+                                built.unlink()
+                if not themed:
+                    click.echo(
+                        "Warning: no rendered page carries the site's theme "
+                        "(a redirect home page or missing stylesheets), so "
+                        "What changed may look unstyled.",
+                        err=True,
+                    )
+            if pages:
+                for side in (baseline_project, copied_project):
+                    (side / THEME_PAGE).unlink(missing_ok=True)
+                for config, original in restore:
+                    config.write_bytes(original)
+            with _timed("build paper diffs"):
+                _paper_previews(copied_project, commit.stdout.strip(), new_site)
             # The page sits at the root of a site copy so its relative links
             # to changed pages resolve, as in the PR preview.
             if (project / ".asta").is_symlink() or owned.parent.is_symlink():
@@ -1614,15 +2046,11 @@ def compare_workspace(ref: str, project: Path, *, full: bool = False) -> None:
             owned.parent.mkdir(parents=True, exist_ok=True)
             staged = Path(tempfile.mkdtemp(prefix=".what-changed-", dir=owned.parent))
             try:
-                # Borrow the running preview's theme/assets for partial builds.
-                if pages and (project / "_site").is_dir():
-                    for entry in (project / "_site").iterdir():
-                        if entry.is_dir() and not entry.is_symlink():
-                            shutil.copytree(entry, staged / entry.name, symlinks=True)
-                        else:
-                            shutil.copy2(
-                                entry, staged / entry.name, follow_symlinks=False
-                            )
+                stage_start = time.perf_counter()
+                # The baseline's theme pages link REF's site_libs.
+                base_libs = old_site / "site_libs"
+                if theme_pages and base_libs.is_dir() and not base_libs.is_symlink():
+                    shutil.copytree(base_libs, staged / "site_libs", symlinks=True)
                 # Copy entries, not the root's metadata: staging stays 0700.
                 for entry in new_site.iterdir():
                     if entry.is_dir() and not entry.is_symlink():
@@ -1634,22 +2062,25 @@ def compare_workspace(ref: str, project: Path, *, full: bool = False) -> None:
                         )
                     else:
                         shutil.copy2(entry, staged / entry.name, follow_symlinks=False)
+                _record("stage site copy", stage_start)
                 report = staged / "what-changed.html"
                 report.unlink(missing_ok=True)
-                theme = (
-                    project / "_site"
-                    if pages and (project / "_site").is_dir()
-                    else None
-                )
-                decks = _run_comparison(
-                    old_site, new_site, report, f"Changes since {ref}", project, theme
-                )
+                with _timed("compare pages and picture slides"):
+                    decks = _run_comparison(
+                        old_site,
+                        new_site,
+                        report,
+                        f"Changes since {ref}",
+                        project,
+                        theme,
+                    )
                 deck_images = new_site / DECK_IMAGES
                 if decks and deck_images.is_dir() and not deck_images.is_symlink():
                     shutil.rmtree(staged / DECK_IMAGES, ignore_errors=True)
                     shutil.copytree(deck_images, staged / DECK_IMAGES, symlinks=True)
                 try:
-                    _publish(staged, owned)
+                    with _timed("publish snapshot"):
+                        _publish(staged, owned)
                 except OSError as exc:
                     raise click.ClickException(
                         f"Could not publish the comparison: {exc}"
@@ -1659,26 +2090,9 @@ def compare_workspace(ref: str, project: Path, *, full: bool = False) -> None:
                     shutil.rmtree(staged, ignore_errors=True)
         finally:
             with preview_cleanup():
-                if (tmp / "working").exists():
-                    working = tmp / "working"
-                    removed = _git(
-                        project, "worktree", "remove", "--force", str(working)
-                    )
-                    if removed.returncode != 0:
-                        click.echo(
-                            f"Warning: working worktree cleanup failed for {working}: {removed.stderr.strip()}. "
-                            f"Resolve the cause, then run 'git worktree remove --force {shlex.quote(str(working))}'.",
-                            err=True,
-                        )
-                removed = _git(project, "worktree", "remove", "--force", str(baseline))
-                if removed.returncode != 0 and (
-                    added is None or added.returncode == 0 or baseline.exists()
-                ):
-                    click.echo(
-                        f"Warning: baseline worktree cleanup failed for {baseline}: {removed.stderr.strip()}. "
-                        f"Resolve the cause, then run 'git worktree remove --force {shlex.quote(str(baseline))}'.",
-                        err=True,
-                    )
+                for directory in (tmp / "working", baseline):
+                    if directory.exists():
+                        shutil.rmtree(directory)
     page = owned / "what-changed.html"
     if (project / "_site").is_dir():
         link = project / "_site/what-changed-snapshot"
@@ -1903,6 +2317,33 @@ def stop_preview(process: subprocess.Popen, signum: int) -> None:
             pass
 
 
+# A signal reaches the main thread, while parallel build processes belong
+# to worker threads. Track them so shutdown kills both process groups before
+# waiting for the workers, including a process spawned during cancellation.
+_parallel_state = None
+
+
+@contextmanager
+def _parallel_builds():
+    global _parallel_state
+    state = (threading.Event(), threading.Lock(), [])
+    _parallel_state = state
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=3)
+    try:
+        yield pool
+    except BaseException:
+        state[0].set()
+        with state[1]:
+            processes = list(state[2])
+        for process in processes:
+            if process.poll() is None:
+                stop_preview(process, signal.SIGINT)
+        raise
+    finally:
+        pool.shutdown(wait=True, cancel_futures=True)
+        _parallel_state = None
+
+
 @contextmanager
 def preview_process(command: list[str], project: Path, **kwargs):
     process = None
@@ -1913,6 +2354,13 @@ def preview_process(command: list[str], project: Path, **kwargs):
             )
         except FileNotFoundError as exc:
             raise click.ClickException(f"{command[0]} is not installed") from exc
+        state = _parallel_state
+        if state is not None:
+            with state[1]:
+                state[2].append(process)
+            if state[0].is_set():
+                stop_preview(process, signal.SIGINT)
+                raise KeyboardInterrupt
         yield process
     except BaseException as exc:
         if process is not None:

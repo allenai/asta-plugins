@@ -1,134 +1,145 @@
 name: Example workspace
-
-# Builds examples/workspace in the published -tex image. Releases call this after
-# `latest` moves; this workflow validates only and never publishes the site.
-# The check is not required.
 on:
+  pull_request:
   workflow_call:
     inputs:
       ref-name:
-        description: Final release tag whose -tex image and assets build the example
         type: string
         required: true
-  pull_request:
-    paths:
-      - examples/workspace/**
-      - .asta/overleaf/examples/workspace/**
-      - .github/workflows/example-workspace.yml
-      - plugins/asta-tools/skills/workspace/assets/**
-      - tests/test_example_workspace_workflow.py
-      - tests/browser/**
   workflow_dispatch:
-
 permissions:
   contents: read
-
 concurrency:
   group: example-workspace-${{ github.event.pull_request.number || inputs.ref-name || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-
 jobs:
-  build:
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      matrix:
-        runner: [ubuntu-latest, ubuntu-24.04-arm]
-    timeout-minutes: 30
-    container:
-      image: ghcr.io/allenai/asta:${{ inputs.ref-name && format('{0}-tex', inputs.ref-name) || 'latest-tex' }}
-    defaults:
-      run:
-        working-directory: examples/workspace
+  scope:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      workspace: ${{ steps.scope.outputs.workspace }}
+      cases: ${{ steps.cases.outputs.matrix }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Build and validate the example
-        shell: bash
+      - id: scope
         env:
-          ASTA_EXAMPLE_REF: ${{ inputs.ref-name || github.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
         run: |
-          set -euo pipefail
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          make check
-          make preview-artifact-check
-          test -z "$(git status --porcelain --untracked-files=no)"
-      - name: Render slide customization fixtures
-        run: python3 ../../tests/browser/render-slides.py ../../tests/browser/fixtures
-      - uses: actions/upload-artifact@v4
-        with:
-          name: example-workspace-site-${{ matrix.runner }}
-          path: examples/workspace/_site
-          retention-days: 30
-      - uses: actions/upload-artifact@v4
-        with:
-          name: workspace-slide-fixtures-${{ matrix.runner }}
-          path: tests/browser/fixtures
-          retention-days: 30
-      # After the uploads: this adds what-changed output to the example's _site.
-      - name: Check local What changed renders a deck edit
-        shell: bash
+          workspace=$(make --silent workspace-scope)
+          case "$workspace" in true|false) ;; *) echo "::error::Invalid workspace scope: $workspace"; exit 1;; esac
+          echo "workspace=$workspace" >> "$GITHUB_OUTPUT"
+      - id: cases
         run: |
-          set -euo pipefail
-          export PLAYWRIGHT_BROWSERS_PATH="$RUNNER_TEMP/asta-chromium"
-          uv tool install --force ../..
-          # The image ships a released asta; run the one just built from this checkout.
-          export PATH="$(uv tool dir --bin):$PATH"
-          test "$(command -v asta)" = "$(uv tool dir --bin)/asta"
-          # The CLI installs only the browser; this container also lacks Chromium's system libraries.
-          uv run --no-project --with playwright==1.64.1 python -m playwright install --with-deps chromium >/dev/null
-          uv run --no-project --with playwright==1.64.1 python ../../tests/browser/local-what-changed.py . ../../tests/browser/artifacts
-          test -z "$(git status --porcelain --untracked-files=no)"
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: local-what-changed-screenshot-${{ matrix.runner }}
-          path: tests/browser/artifacts/local-what-changed-deck.png
-          if-no-files-found: ignore
-          retention-days: 30
-
-  theme:
-    needs: build
-    runs-on: ubuntu-latest
+          cases=$(make --silent workspace-cases)
+          echo "matrix=$cases" >> "$GITHUB_OUTPUT"
+  python:
+    needs: scope
+    if: github.event_name != 'pull_request' || needs.scope.outputs.workspace == 'true'
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.12', '3.13', '3.14', '3.15']
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+        runner: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["ubuntu-latest", "ubuntu-24.04-arm"]') }}
+    env:
+      UV_PYTHON: ${{ matrix.python }}
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: make test-workspace WORKSPACE_SHARD=${{ matrix.shard }} WORKSPACE_SHARDS=8
+  tools:
+    needs: scope
+    if: github.event_name != 'pull_request' || needs.scope.outputs.workspace == 'true'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["ubuntu-latest", "ubuntu-24.04-arm"]') }}
+    container:
+      image: ghcr.io/allenai/asta:${{ inputs.ref-name && format('{0}-tex', inputs.ref-name) || 'latest-tex' }}
+    env:
+      ASTA_WORKSPACE_RESOLVED_SHA: ${{ github.sha }}
+      ASTA_WORKSPACE_RESOLVED_REPOSITORY: ${{ github.repository }}
+      PLAYWRIGHT_BROWSERS_PATH: /tmp/asta-test-chromium
+    steps:
+      - uses: actions/checkout@v4
         with:
-          name: example-workspace-site-ubuntu-latest
-          path: examples/workspace/_site
-      - uses: actions/download-artifact@v4
-        with:
-          name: workspace-slide-fixtures-ubuntu-latest
-          path: tests/browser/fixtures
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: tests/browser/package-lock.json
-      - name: Install browser checks
-        working-directory: tests/browser
-        run: |
-          npm ci
-          npx playwright install --with-deps chromium
-      - name: Check slide geometry and standalone behavior
-        working-directory: tests/browser
-        run: node workspace-slides.mjs ../../examples/workspace/_site artifacts
-      - name: Check rendered deck review
-        run: |
-          python3 -m venv "$RUNNER_TEMP/deck-review-venv"
-          "$RUNNER_TEMP/deck-review-venv/bin/python" -m pip install playwright==1.64.1
-          "$RUNNER_TEMP/deck-review-venv/bin/python" -m playwright install --with-deps chromium
-          "$RUNNER_TEMP/deck-review-venv/bin/python" tests/browser/deck-review.py examples/workspace/_site tests/browser/artifacts
-      - name: Check both themes and evidence readability
-        working-directory: tests/browser
-        run: npm test -- ../../examples/workspace/_site artifacts
+          fetch-depth: 0
+          persist-credentials: false
+      - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - run: make check-workspace-tools
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: workspace-theme-screenshots
+          name: workspace-local-${{ matrix.runner }}
           path: tests/browser/artifacts
-          retention-days: 30
+  comparison:
+    needs: scope
+    if: github.event_name != 'pull_request' || needs.scope.outputs.workspace == 'true'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        case: ${{ fromJSON(needs.scope.outputs.cases) }}
+        runner: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["ubuntu-latest", "ubuntu-24.04-arm"]') }}
+    container:
+      image: ghcr.io/allenai/asta:${{ inputs.ref-name && format('{0}-tex', inputs.ref-name) || 'latest-tex' }}
+    env:
+      ASTA_WORKSPACE_RESOLVED_SHA: ${{ github.sha }}
+      ASTA_WORKSPACE_RESOLVED_REPOSITORY: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          uv tool install --force .
+          echo "$(uv tool dir --bin)" >> "$GITHUB_PATH"
+      - run: make workspace-compare WORKSPACE_CASE=${{ matrix.case }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: comparison-${{ matrix.case }}-${{ matrix.runner }}
+          path: tests/browser/artifacts/differential
+  dom:
+    needs: scope
+    if: github.event_name != 'pull_request' || needs.scope.outputs.workspace == 'true'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["ubuntu-latest", "ubuntu-24.04-arm"]') }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: make workspace-dom
+
+  workspace-ok:
+    # One stable result to require, including on PRs outside workspace ownership.
+    needs: [scope, python, tools, comparison, dom]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - run: make workspace-status
+        env:
+          WORKSPACE_NEEDS: ${{ toJSON(needs) }}
+          WORKSPACE_EVENT: ${{ github.event_name }}
