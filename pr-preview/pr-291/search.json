@@ -76,5 +76,19 @@
     "title": "Attention in sequence models",
     "section": "Keep the talk beside its sources",
     "text": "Keep the talk beside its sources\nWrite the talk, review and paper in the same repository.\nReview changes together, then share the rendered talk as a single HTML file.\nReview local changes with asta workspace what-changed; PR previews use the same comparison."
+  },
+  {
+    "objectID": "slides/attention/slides.html#read-the-original-paper",
+    "href": "slides/attention/slides.html#read-the-original-paper",
+    "title": "Attention in sequence models",
+    "section": "Read the original paper",
+    "text": "Read the original paper\nThe transformer was introduced in Attention Is All You Need."
+  },
+  {
+    "objectID": "slides/attention/slides.html#a-figure-carried-inside-the-slide",
+    "href": "slides/attention/slides.html#a-figure-carried-inside-the-slide",
+    "title": "Attention in sequence models",
+    "section": "A figure carried inside the slide",
+    "text": "A figure carried inside the slide\n\nQueries, keys and valuesThe figure is an inline data: image, so the deck needs no separate file for it."
   }
 ]

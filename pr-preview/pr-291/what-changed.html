@@ -1,9 +1,9 @@
-<!doctype html><html lang="en" data-wc-mode="dark"><head><meta name="robots" content="noindex, nofollow"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="generator" content="asta-what-changed"><title>What changed &middot; PR 291 · Pages 2c76774a1f36</title><link href="site_libs/quarto-html/tippy.css" rel="stylesheet">
+<!doctype html><html lang="en" data-wc-mode="dark"><head><meta name="robots" content="noindex, nofollow"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="generator" content="asta-what-changed"><title>What changed &middot; PR 291 · Pages 47d26b6bfdb1</title><link href="site_libs/quarto-html/tippy.css" rel="stylesheet">
 <link rel="stylesheet" href="site_libs/quarto-html/quarto-syntax-highlighting-8b4c91e038287a4550e99eaaa3ddcee6.css" class="quarto-color-scheme" id="quarto-text-highlighting-styles">
 <link rel="stylesheet" href="site_libs/quarto-html/quarto-syntax-highlighting-dark-6140b9a27eb93fecbc70cd2d01251415.css" class="quarto-color-scheme quarto-color-alternate" id="quarto-text-highlighting-styles">
 <link href="site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link rel="stylesheet" href="site_libs/bootstrap/bootstrap-2617d1b9b368ef97bc58bbe2cfb3bbd7.min.css" append-hash="true" class="quarto-color-scheme" id="quarto-bootstrap" data-mode="light">
-<link rel="stylesheet" href="site_libs/bootstrap/bootstrap-dark-93c0bd48314e0d8ea16fab734d9027f8.min.css" append-hash="true" class="quarto-color-scheme quarto-color-alternate" id="quarto-bootstrap" data-mode="dark">
+<link rel="stylesheet" href="site_libs/bootstrap/bootstrap-4bb35d43c7f0d252fd1d2350fe22612d.min.css" append-hash="true" class="quarto-color-scheme" id="quarto-bootstrap" data-mode="light">
+<link rel="stylesheet" href="site_libs/bootstrap/bootstrap-dark-6eb288e5ef3e11c7c810d27065861b1a.min.css" append-hash="true" class="quarto-color-scheme quarto-color-alternate" id="quarto-bootstrap" data-mode="dark">
 <link rel="stylesheet" href="site_libs/quarto-contrib/quarto-project/asta-theme/asta.css">
 <link rel="stylesheet" href="styles.css">
 <style>
@@ -328,16 +328,17 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
     color: var(--wc-changed); background: transparent; padding: .35em .9em;
     border: 1px solid var(--wc-border); border-radius: 6px; }
 .wc-scope .wc-toolbar button:hover { border-color: var(--wc-changed); }
-.wc-scope details.wc-fold { margin: .85rem 0; border: 1px dashed var(--wc-border);
-    border-radius: 6px; }
+/* Same expander bar as a deck's folded slides (deck-review.py .wc-expander). */
+.wc-scope details.wc-fold { margin: .85rem 0; }
 .wc-scope details.wc-fold > summary { cursor: pointer; list-style: none;
-    display: flex; align-items: baseline; gap: .55em; padding: .5em .85em;
-    color: var(--wc-muted); font-size: .85rem; user-select: none; }
+    display: flex; align-items: baseline; gap: .55em; padding: 4px 12px;
+    color: inherit; font-size: .9rem; user-select: none;
+    background: rgba(84,174,255,.12); border: 1px solid rgba(84,174,255,.35);
+    border-radius: 6px; }
 .wc-scope details.wc-fold > summary::-webkit-details-marker { display: none; }
-.wc-scope details.wc-fold > summary::before { content: "\25B8"; }
-.wc-scope details.wc-fold[open] > summary::before { content: "\25BE"; }
-.wc-scope details.wc-fold > summary:hover { color: var(--wc-changed); }
-.wc-scope details.wc-fold[open] > summary { border-bottom: 1px dashed var(--wc-border); }
+.wc-scope details.wc-fold > summary::before { content: "\2195"; }
+.wc-scope details.wc-fold > summary:hover { background: rgba(84,174,255,.25); }
+.wc-scope details.wc-fold[open] > summary { margin-bottom: 8px; }
 .wc-scope .wc-fold-body { padding: .25rem 1rem .35rem; }
 </style></head><body class="quarto-dark"><script>
 (() => {
@@ -371,8 +372,713 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 })();
 </script><div class="page-columns page-rows-contents page-layout-article wc-scope">
 <main class="content" id="quarto-document-content">
-<header class="diff-head"><h1>What changed</h1><p>PR 291 · Pages 2c76774a1f36 &middot; No rendered content changed</p><p class="legend">Legend: <ins>added</ins> &middot; <del>removed</del>. Page titles link to the full preview.</p></header>
-<p class="empty">This PR changes no rendered page content relative to the deployed site. (It may still change source files, config, or metadata.)</p>
+<header class="diff-head"><h1>What changed</h1><p>PR 291 · Pages 47d26b6bfdb1 &middot; 16 pages changed</p><p class="legend">Legend: <ins>added</ins> &middot; <del>removed</del>. Page titles link to the full preview.</p></header><nav class="toc"><a href="#p-demo-slides-attention-slides-html">Slides · Asta workspace example – Attention in sequence models <span class="tag removed">removed</span></a><a href="#p-demo-what-changed-decks-after-slides-attention-slides-html">Slides · Asta workspace example – Attention in sequence models <span class="tag removed">removed</span></a><a href="#p-demo-what-changed-decks-after-slides-attention-slides-marked-html">Slides · Asta workspace example – Attention in sequence models <span class="tag removed">removed</span></a><a href="#p-demo-what-changed-decks-before-slides-attention-slides-html">Slides · Asta workspace example – Attention in sequence models <span class="tag removed">removed</span></a><a href="#p-demo-appearance-html">Reading in Asta – Asta workspace example <span class="tag removed">removed</span></a><a href="#p-demo-index-html">Attention in sequence models – Asta workspace example <span class="tag removed">removed</span></a><a href="#p-demo-lit-review-index-html">A small literature review – Asta workspace example <span class="tag removed">removed</span></a><a href="#p-demo-site-libs-revealjs-plugin-notes-speaker-view-html">reveal.js - Speaker View <span class="tag removed">removed</span></a><a href="#p-demo-what-changed-decks-after-appearance-html">Reading in Asta – Asta workspace example <span class="tag removed">removed</span></a><a href="#p-demo-what-changed-decks-after-index-html">Attention in sequence models – Asta workspace example <span class="tag removed">removed</span></a><a href="#p-demo-what-changed-decks-after-lit-review-index-html">A small literature review – Asta workspace example <span class="tag removed">removed</span></a><a href="#p-demo-what-changed-decks-after-site-libs-revealjs-plugin-notes-speaker-view-html">reveal.js - Speaker View <span class="tag removed">removed</span></a><a href="#p-demo-what-changed-decks-before-appearance-html">Reading in Asta – Asta workspace example <span class="tag removed">removed</span></a><a href="#p-demo-what-changed-decks-before-index-html">Attention in sequence models – Asta workspace example <span class="tag removed">removed</span></a><a href="#p-demo-what-changed-decks-before-lit-review-index-html">A small literature review – Asta workspace example <span class="tag removed">removed</span></a><a href="#p-demo-what-changed-decks-before-site-libs-revealjs-plugin-notes-speaker-view-html">reveal.js - Speaker View <span class="tag removed">removed</span></a></nav>
+<section class="page-diff removed" id="p-demo-slides-attention-slides-html"><h2>Slides · Asta workspace example – Attention in sequence models <span class="tag removed">removed</span></h2><div class="deck-live deck-review" data-view="marked"><div class="dr-bar"><span class="dr-count">0 changed or new; 10 removed; 0 slides</span><span class="dr-seg" role="group" aria-label="Slide view"><button type="button" data-v="marked" aria-pressed="true">Changes marked</button><button type="button" data-v="clean" aria-pressed="false">Clean</button><button type="button" data-v="before" aria-pressed="false">Before / after</button></span></div><article class="dr-slide dr-removed"><h3>Slide 1: Attention in sequence models — removed</h3><div class="dr-pair"><figure data-view="marked clean before"><figcaption>Removed</figcaption><iframe loading="lazy" title="Removed slide" data-dr-slide-id="title-slide" data-src="what-changed-decks/before/demo/slides/attention/slides.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false#/title-slide"></iframe></figure></div></article><article class="dr-slide dr-removed"><h3>Slide 2: The question — removed</h3><div class="dr-pair"><figure data-view="marked clean before"><figcaption>Removed</figcaption><iframe loading="lazy" title="Removed slide" data-dr-slide-id="the-question" data-src="what-changed-decks/before/demo/slides/attention/slides.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false#/the-question"></iframe></figure></div></article><article class="dr-slide dr-removed"><h3>Slide 3: How can a sequence model connect distant tokens? — removed</h3><div class="dr-pair"><figure data-view="marked clean before"><figcaption>Removed</figcaption><iframe loading="lazy" title="Removed slide" data-dr-slide-id="how-can-a-sequence-model-connect-distant-tokens" data-src="what-changed-decks/before/demo/slides/attention/slides.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false#/how-can-a-sequence-model-connect-distant-tokens"></iframe></figure></div></article><article class="dr-slide dr-removed"><h3>Slide 4: The mechanism — removed</h3><div class="dr-pair"><figure data-view="marked clean before"><figcaption>Removed</figcaption><iframe loading="lazy" title="Removed slide" data-dr-slide-id="the-mechanism" data-src="what-changed-decks/before/demo/slides/attention/slides.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false#/the-mechanism"></iframe></figure></div></article><article class="dr-slide dr-removed"><h3>Slide 5: Attention weights the available context — removed</h3><div class="dr-pair"><figure data-view="marked clean before"><figcaption>Removed</figcaption><iframe loading="lazy" title="Removed slide" data-dr-slide-id="attention-weights-the-available-context" data-src="what-changed-decks/before/demo/slides/attention/slides.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false#/attention-weights-the-available-context"></iframe></figure></div></article><article class="dr-slide dr-removed"><h3>Slide 6: Follow the computation — removed</h3><div class="dr-pair"><figure data-view="marked clean before"><figcaption>Removed</figcaption><iframe loading="lazy" title="Removed slide" data-dr-slide-id="follow-the-computation" data-src="what-changed-decks/before/demo/slides/attention/slides.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false#/follow-the-computation"></iframe></figure></div></article><article class="dr-slide dr-removed"><h3>Slide 7: The workspace — removed</h3><div class="dr-pair"><figure data-view="marked clean before"><figcaption>Removed</figcaption><iframe loading="lazy" title="Removed slide" data-dr-slide-id="the-workspace" data-src="what-changed-decks/before/demo/slides/attention/slides.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false#/the-workspace"></iframe></figure></div></article><article class="dr-slide dr-removed"><h3>Slide 8: Keep the talk beside its sources — removed</h3><div class="dr-pair"><figure data-view="marked clean before"><figcaption>Removed</figcaption><iframe loading="lazy" title="Removed slide" data-dr-slide-id="keep-the-talk-beside-its-sources" data-src="what-changed-decks/before/demo/slides/attention/slides.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false#/keep-the-talk-beside-its-sources"></iframe></figure></div></article><article class="dr-slide dr-removed"><h3>Slide 9: Read the original paper — removed</h3><div class="dr-pair"><figure data-view="marked clean before"><figcaption>Removed</figcaption><iframe loading="lazy" title="Removed slide" data-dr-slide-id="read-the-original-paper" data-src="what-changed-decks/before/demo/slides/attention/slides.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false#/read-the-original-paper"></iframe></figure></div></article><article class="dr-slide dr-removed"><h3>Slide 10: A figure carried inside the slide — removed</h3><div class="dr-pair"><figure data-view="marked clean before"><figcaption>Removed</figcaption><iframe loading="lazy" title="Removed slide" data-dr-slide-id="a-figure-carried-inside-the-slide" data-src="what-changed-decks/before/demo/slides/attention/slides.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false#/a-figure-carried-inside-the-slide"></iframe></figure></div></article></div></section>
+<section class="page-diff removed" id="p-demo-what-changed-decks-after-slides-attention-slides-html"><h2>Slides · Asta workspace example – Attention in sequence models <span class="tag removed">removed</span></h2><div class="deck-live deck-review" data-view="marked"><div class="dr-bar"><span class="dr-count">0 changed or new; 10 removed; 0 slides</span><span class="dr-seg" role="group" aria-label="Slide view"><button type="button" data-v="marked" aria-pressed="true">Changes marked</button><button type="button" data-v="clean" aria-pressed="false">Clean</button><button type="button" data-v="before" aria-pressed="false">Before / after</button></span></div><article class="dr-slide dr-removed"><h3>Slide 1: Attention in sequence models — removed</h3><div class="dr-pair"><figure data-view="marked clean before"><figcaption>Removed</figcaption><iframe loading="lazy" title="Removed slide" data-dr-slide-id="title-slide" data-src="what-changed-decks/before/demo/what-changed-decks/after/slides/attention/slides.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false#/title-slide"></iframe></figure></div></article><article class="dr-slide dr-removed"><h3>Slide 2: The question — removed</h3><div class="dr-pair"><figure data-view="marked clean before"><figcaption>Removed</figcaption><iframe loading="lazy" title="Removed slide" data-dr-slide-id="the-question" data-src="what-changed-decks/before/demo/what-changed-decks/after/slides/attention/slides.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false#/the-question"></iframe></figure></div></article><article class="dr-slide dr-removed"><h3>Slide 3: How can a sequence model connect distant tokens? — removed</h3><div class="dr-pair"><figure data-view="marked clean before"><figcaption>Removed</figcaption><iframe loading="lazy" title="Removed slide" data-dr-slide-id="how-can-a-sequence-model-connect-distant-tokens" data-src="what-changed-decks/before/demo/what-changed-decks/after/slides/attention/slides.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false#/how-can-a-sequence-model-connect-distant-tokens"></iframe></figure></div></article><article class="dr-slide dr-removed"><h3>Slide 4: The mechanism — removed</h3><div class="dr-pair"><figure data-view="marked clean before"><figcaption>Removed</figcaption><iframe loading="lazy" title="Removed slide" data-dr-slide-id="the-mechanism" data-src="what-changed-decks/before/demo/what-changed-decks/after/slides/attention/slides.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false#/the-mechanism"></iframe></figure></div></article><article class="dr-slide dr-removed"><h3>Slide 5: Attention weights the available context — removed</h3><div class="dr-pair"><figure data-view="marked clean before"><figcaption>Removed</figcaption><iframe loading="lazy" title="Removed slide" data-dr-slide-id="attention-weights-the-available-context" data-src="what-changed-decks/before/demo/what-changed-decks/after/slides/attention/slides.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false#/attention-weights-the-available-context"></iframe></figure></div></article><article class="dr-slide dr-removed"><h3>Slide 6: Follow the computation — removed</h3><div class="dr-pair"><figure data-view="marked clean before"><figcaption>Removed</figcaption><iframe loading="lazy" title="Removed slide" data-dr-slide-id="follow-the-computation" data-src="what-changed-decks/before/demo/what-changed-decks/after/slides/attention/slides.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false#/follow-the-computation"></iframe></figure></div></article><article class="dr-slide dr-removed"><h3>Slide 7: The workspace — removed</h3><div class="dr-pair"><figure data-view="marked clean before"><figcaption>Removed</figcaption><iframe loading="lazy" title="Removed slide" data-dr-slide-id="the-workspace" data-src="what-changed-decks/before/demo/what-changed-decks/after/slides/attention/slides.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false#/the-workspace"></iframe></figure></div></article><article class="dr-slide dr-removed"><h3>Slide 8: Keep the talk beside its sources — removed</h3><div class="dr-pair"><figure data-view="marked clean before"><figcaption>Removed</figcaption><iframe loading="lazy" title="Removed slide" data-dr-slide-id="keep-the-talk-beside-its-sources" data-src="what-changed-decks/before/demo/what-changed-decks/after/slides/attention/slides.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false#/keep-the-talk-beside-its-sources"></iframe></figure></div></article><article class="dr-slide dr-removed"><h3>Slide 9: Read the original paper — removed</h3><div class="dr-pair"><figure data-view="marked clean before"><figcaption>Removed</figcaption><iframe loading="lazy" title="Removed slide" data-dr-slide-id="read-the-original-paper" data-src="what-changed-decks/before/demo/what-changed-decks/after/slides/attention/slides.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false#/read-the-original-paper"></iframe></figure></div></article><article class="dr-slide dr-removed"><h3>Slide 10: A figure carried inside the slide — removed</h3><div class="dr-pair"><figure data-view="marked clean before"><figcaption>Removed</figcaption><iframe loading="lazy" title="Removed slide" data-dr-slide-id="a-figure-carried-inside-the-slide" data-src="what-changed-decks/before/demo/what-changed-decks/after/slides/attention/slides.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false#/a-figure-carried-inside-the-slide"></iframe></figure></div></article></div></section>
+<section class="page-diff removed" id="p-demo-what-changed-decks-after-slides-attention-slides-marked-html"><h2>Slides · Asta workspace example – Attention in sequence models <span class="tag removed">removed</span></h2><div class="deck-live deck-review" data-view="marked"><div class="dr-bar"><span class="dr-count">0 changed or new; 10 removed; 0 slides</span><span class="dr-seg" role="group" aria-label="Slide view"><button type="button" data-v="marked" aria-pressed="true">Changes marked</button><button type="button" data-v="clean" aria-pressed="false">Clean</button><button type="button" data-v="before" aria-pressed="false">Before / after</button></span></div><article class="dr-slide dr-removed"><h3>Slide 1: Attention in sequence models — removed</h3><div class="dr-pair"><figure data-view="marked clean before"><figcaption>Removed</figcaption><iframe loading="lazy" title="Removed slide" data-dr-slide-id="title-slide" data-src="what-changed-decks/before/demo/what-changed-decks/after/slides/attention/slides.marked.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false#/title-slide"></iframe></figure></div></article><article class="dr-slide dr-removed"><h3>Slide 2: The question — removed</h3><div class="dr-pair"><figure data-view="marked clean before"><figcaption>Removed</figcaption><iframe loading="lazy" title="Removed slide" data-dr-slide-id="the-question" data-src="what-changed-decks/before/demo/what-changed-decks/after/slides/attention/slides.marked.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false#/the-question"></iframe></figure></div></article><article class="dr-slide dr-removed"><h3>Slide 3: How can a sequence model connect distant tokens? — removed</h3><div class="dr-pair"><figure data-view="marked clean before"><figcaption>Removed</figcaption><iframe loading="lazy" title="Removed slide" data-dr-slide-id="how-can-a-sequence-model-connect-distant-tokens" data-src="what-changed-decks/before/demo/what-changed-decks/after/slides/attention/slides.marked.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false#/how-can-a-sequence-model-connect-distant-tokens"></iframe></figure></div></article><article class="dr-slide dr-removed"><h3>Slide 4: The mechanism — removed</h3><div class="dr-pair"><figure data-view="marked clean before"><figcaption>Removed</figcaption><iframe loading="lazy" title="Removed slide" data-dr-slide-id="the-mechanism" data-src="what-changed-decks/before/demo/what-changed-decks/after/slides/attention/slides.marked.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false#/the-mechanism"></iframe></figure></div></article><article class="dr-slide dr-removed"><h3>Slide 5: Attention weights the available context — removed</h3><div class="dr-pair"><figure data-view="marked clean before"><figcaption>Removed</figcaption><iframe loading="lazy" title="Removed slide" data-dr-slide-id="attention-weights-the-available-context" data-src="what-changed-decks/before/demo/what-changed-decks/after/slides/attention/slides.marked.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false#/attention-weights-the-available-context"></iframe></figure></div></article><article class="dr-slide dr-removed"><h3>Slide 6: Follow the computation — removed</h3><div class="dr-pair"><figure data-view="marked clean before"><figcaption>Removed</figcaption><iframe loading="lazy" title="Removed slide" data-dr-slide-id="follow-the-computation" data-src="what-changed-decks/before/demo/what-changed-decks/after/slides/attention/slides.marked.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false#/follow-the-computation"></iframe></figure></div></article><article class="dr-slide dr-removed"><h3>Slide 7: The workspace — removed</h3><div class="dr-pair"><figure data-view="marked clean before"><figcaption>Removed</figcaption><iframe loading="lazy" title="Removed slide" data-dr-slide-id="the-workspace" data-src="what-changed-decks/before/demo/what-changed-decks/after/slides/attention/slides.marked.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false#/the-workspace"></iframe></figure></div></article><article class="dr-slide dr-removed"><h3>Slide 8: Keep the talk beside its sources — removed</h3><div class="dr-pair"><figure data-view="marked clean before"><figcaption>Removed</figcaption><iframe loading="lazy" title="Removed slide" data-dr-slide-id="keep-the-talk-beside-its-sources" data-src="what-changed-decks/before/demo/what-changed-decks/after/slides/attention/slides.marked.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false#/keep-the-talk-beside-its-sources"></iframe></figure></div></article><article class="dr-slide dr-removed"><h3>Slide 9: Read the original paper — removed</h3><div class="dr-pair"><figure data-view="marked clean before"><figcaption>Removed</figcaption><iframe loading="lazy" title="Removed slide" data-dr-slide-id="read-the-original-paper" data-src="what-changed-decks/before/demo/what-changed-decks/after/slides/attention/slides.marked.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false#/read-the-original-paper"></iframe></figure></div></article><article class="dr-slide dr-removed"><h3>Slide 10: A figure carried inside the slide — removed</h3><div class="dr-pair"><figure data-view="marked clean before"><figcaption>Removed</figcaption><iframe loading="lazy" title="Removed slide" data-dr-slide-id="a-figure-carried-inside-the-slide" data-src="what-changed-decks/before/demo/what-changed-decks/after/slides/attention/slides.marked.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false#/a-figure-carried-inside-the-slide"></iframe></figure></div></article></div></section>
+<section class="page-diff removed" id="p-demo-what-changed-decks-before-slides-attention-slides-html"><h2>Slides · Asta workspace example – Attention in sequence models <span class="tag removed">removed</span></h2><div class="deck-live deck-review" data-view="marked"><div class="dr-bar"><span class="dr-count">0 changed or new; 10 removed; 0 slides</span><span class="dr-seg" role="group" aria-label="Slide view"><button type="button" data-v="marked" aria-pressed="true">Changes marked</button><button type="button" data-v="clean" aria-pressed="false">Clean</button><button type="button" data-v="before" aria-pressed="false">Before / after</button></span></div><article class="dr-slide dr-removed"><h3>Slide 1: Attention in sequence models — removed</h3><div class="dr-pair"><figure data-view="marked clean before"><figcaption>Removed</figcaption><iframe loading="lazy" title="Removed slide" data-dr-slide-id="title-slide" data-src="what-changed-decks/before/demo/what-changed-decks/before/slides/attention/slides.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false#/title-slide"></iframe></figure></div></article><article class="dr-slide dr-removed"><h3>Slide 2: The question — removed</h3><div class="dr-pair"><figure data-view="marked clean before"><figcaption>Removed</figcaption><iframe loading="lazy" title="Removed slide" data-dr-slide-id="the-question" data-src="what-changed-decks/before/demo/what-changed-decks/before/slides/attention/slides.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false#/the-question"></iframe></figure></div></article><article class="dr-slide dr-removed"><h3>Slide 3: How can a sequence model connect distant tokens? — removed</h3><div class="dr-pair"><figure data-view="marked clean before"><figcaption>Removed</figcaption><iframe loading="lazy" title="Removed slide" data-dr-slide-id="how-can-a-sequence-model-connect-distant-tokens" data-src="what-changed-decks/before/demo/what-changed-decks/before/slides/attention/slides.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false#/how-can-a-sequence-model-connect-distant-tokens"></iframe></figure></div></article><article class="dr-slide dr-removed"><h3>Slide 4: The mechanism — removed</h3><div class="dr-pair"><figure data-view="marked clean before"><figcaption>Removed</figcaption><iframe loading="lazy" title="Removed slide" data-dr-slide-id="the-mechanism" data-src="what-changed-decks/before/demo/what-changed-decks/before/slides/attention/slides.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false#/the-mechanism"></iframe></figure></div></article><article class="dr-slide dr-removed"><h3>Slide 5: Attention weights the available context — removed</h3><div class="dr-pair"><figure data-view="marked clean before"><figcaption>Removed</figcaption><iframe loading="lazy" title="Removed slide" data-dr-slide-id="attention-weights-the-available-context" data-src="what-changed-decks/before/demo/what-changed-decks/before/slides/attention/slides.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false#/attention-weights-the-available-context"></iframe></figure></div></article><article class="dr-slide dr-removed"><h3>Slide 6: Follow the computation — removed</h3><div class="dr-pair"><figure data-view="marked clean before"><figcaption>Removed</figcaption><iframe loading="lazy" title="Removed slide" data-dr-slide-id="follow-the-computation" data-src="what-changed-decks/before/demo/what-changed-decks/before/slides/attention/slides.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false#/follow-the-computation"></iframe></figure></div></article><article class="dr-slide dr-removed"><h3>Slide 7: The workspace — removed</h3><div class="dr-pair"><figure data-view="marked clean before"><figcaption>Removed</figcaption><iframe loading="lazy" title="Removed slide" data-dr-slide-id="the-workspace" data-src="what-changed-decks/before/demo/what-changed-decks/before/slides/attention/slides.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false#/the-workspace"></iframe></figure></div></article><article class="dr-slide dr-removed"><h3>Slide 8: Keep the talk beside its sources — removed</h3><div class="dr-pair"><figure data-view="marked clean before"><figcaption>Removed</figcaption><iframe loading="lazy" title="Removed slide" data-dr-slide-id="keep-the-talk-beside-its-sources" data-src="what-changed-decks/before/demo/what-changed-decks/before/slides/attention/slides.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false#/keep-the-talk-beside-its-sources"></iframe></figure></div></article><article class="dr-slide dr-removed"><h3>Slide 9: Read the original paper — removed</h3><div class="dr-pair"><figure data-view="marked clean before"><figcaption>Removed</figcaption><iframe loading="lazy" title="Removed slide" data-dr-slide-id="read-the-original-paper" data-src="what-changed-decks/before/demo/what-changed-decks/before/slides/attention/slides.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false#/read-the-original-paper"></iframe></figure></div></article><article class="dr-slide dr-removed"><h3>Slide 10: A figure carried inside the slide — removed</h3><div class="dr-pair"><figure data-view="marked clean before"><figcaption>Removed</figcaption><iframe loading="lazy" title="Removed slide" data-dr-slide-id="a-figure-carried-inside-the-slide" data-src="what-changed-decks/before/demo/what-changed-decks/before/slides/attention/slides.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false#/a-figure-carried-inside-the-slide"></iframe></figure></div></article></div></section>
+<section class="page-diff removed" id="p-demo-appearance-html">
+<h2>Reading in Asta – Asta workspace example <span class="tag removed">removed</span></h2>
+<p class="legend"><code>demo/appearance.html</code></p>
+<div class="diff-body">
+
+
+<header class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">Reading in Asta</h1>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<p>The workspace is a place to read research notes, inspect supporting evidence, and review a paper as it develops. This page shows the shared reading surface in light and dark, including headings, links, tables, code and callouts.</p>
+<section class="level2">
+<h2 class="anchored">A familiar reading surface</h2>
+<p>Light mode uses a cream background with dark-teal text. Dark mode uses an extra-dark teal background with cream text. Both come from <a href="https://github.com/allenai/design/tree/main/asta">Asta’s design system</a>, and both use the same Manrope type and page layout. Changing the mode keeps the text in the same place, so you can keep reading where you left off.</p>
+<p>The page opens in dark mode on a fresh visit, regardless of your system setting. Use the light/dark toggle in the navigation to choose a mode yourself. Your choice persists as you move between pages or reload the site.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Keep your place
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>Scroll through this section. Its heading stays above the text until the next section takes over. The table of contents also marks the section you are reading, and its links let you return to a heading directly.</p>
+</div>
+</div>
+<section class="level3">
+<h3 class="anchored">Reading the components</h3>
+<p>Links use Asta’s teal on the light surface and green on the dark surface. Inline code such as <code>asta workspace sync</code> uses a monospace face. A separate code block keeps commands easy to scan:</p>
+<div class="sourceCode"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span><a href="#cb1-1" aria-hidden="true"></a><span class="ex">asta</span> workspace sync</span>
+<span><a href="#cb1-2" aria-hidden="true"></a><span class="fu">make</span> check</span>
+<span><a href="#cb1-3" aria-hidden="true"></a><span class="fu">make</span> preview</span></code></pre></div>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Part of the page</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Section heading</td>
+<td>Keep the current reading context in view</td>
+</tr>
+<tr class="even">
+<td>Table of contents</td>
+<td>Jump to another part of a long page</td>
+</tr>
+<tr class="odd">
+<td>Theme toggle</td>
+<td>Choose the light or dark reading surface</td>
+</tr>
+<tr class="even">
+<td>Evidence highlight</td>
+<td>Inspect the quote backing a research claim</td>
+</tr>
+</tbody>
+</table>
+<p>Read the <a href="demo/lit-review/index.html">sample literature review</a> to try an evidence highlight. Hover over its marked claim, or focus it with the keyboard, to see the source quote alongside its citation.</p>
+<p><a href="demo/lit-review/index.html" class="btn btn-primary">Read the sample review</a></p>
+</section>
+</section>
+<section class="level2">
+<h2 class="anchored">A project can choose its own appearance</h2>
+<p>The theme is a managed workspace asset. A project receives it from the same selected source as its shared build rules and evidence extension. A refresh updates those assets together instead of leaving a copied stylesheet behind.</p>
+<p>Existing projects adopt the Asta theme when their HTML theme still has the scaffold’s original <code>cosmo</code> value and their selected source supplies the new assets. A project with another theme keeps its choice. Older pinned sources keep their original appearance until the project selects a compatible release.</p>
+<section class="level3">
+<h3 class="anchored">Customize deliberately</h3>
+<p>For a different HTML theme, edit the project’s <code>_quarto.yml</code>. Keep any project-specific styles alongside it:</p>
+<div class="sourceCode"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span><a href="#cb2-1" aria-hidden="true"></a><span class="fu">format</span><span class="kw">:</span></span>
+<span><a href="#cb2-2" aria-hidden="true"></a><span class="at">  </span><span class="fu">html</span><span class="kw">:</span></span>
+<span><a href="#cb2-3" aria-hidden="true"></a><span class="at">    </span><span class="fu">theme</span><span class="kw">:</span><span class="at"> flatly</span></span>
+<span><a href="#cb2-4" aria-hidden="true"></a><span class="at">    </span><span class="fu">css</span><span class="kw">:</span><span class="at"> styles.css</span></span></code></pre></div>
+<p>To customize the Asta theme directly, commit a copy of <code>_extensions/asta-theme</code>. Managed refreshes preserve committed copies and local development symlinks. This keeps intentional project styling under the project’s own version control.</p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Share the rendered work
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>A workspace preview includes the same light/dark controls as the published site. Send a reader the preview URL so they can inspect the actual page, follow its links, and choose the reading surface they prefer.</p>
+</div>
+</div>
+<p>Every page in this workspace is rendered from the repository, so a link to the preview always shows the version under review.</p>
+</section>
+</section>
+<section class="level2">
+<h2 class="anchored">Links between pages</h2>
+<p>The <a href="demo/slides/attention/slides.html">attention slides</a> present the same question as a short talk. Supporting quotes live in <code>evidence.yml</code> under an id; the literature review’s first claim uses the id <code>transformer-attention</code>.</p>
+
+
+</section>
+
+</div>
+</section>
+<section class="page-diff removed" id="p-demo-index-html">
+<h2>Attention in sequence models – Asta workspace example <span class="tag removed">removed</span></h2>
+<p class="legend"><code>demo/index.html</code></p>
+<div class="diff-body">
+
+
+<header class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">Attention in sequence models</h1>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<p>A short project on how attention replaced recurrence in sequence models. It includes:</p>
+<ul>
+<li><a href="demo/lit-review/index.html">A literature review</a> of the work it builds on, citing the project’s bibliography.</li>
+<li><a href="demo/slides/attention/index.qmd">Presentation slides</a> for a short talk on the same question.</li>
+<li><a href="demo/paper/html/index.qmd">The paper</a>, written in LaTeX with co-authors in Overleaf.</li>
+</ul>
+<p>An example workspace for the Asta workspace skill, built and published from main; see its <a href="https://github.com/allenai/asta-plugins/tree/main/examples/workspace#readme">README</a> for the demo and how to start your own.</p>
+
+
+
+</div>
+</section>
+<section class="page-diff removed" id="p-demo-lit-review-index-html">
+<h2>A small literature review – Asta workspace example <span class="tag removed">removed</span></h2>
+<p class="legend"><code>demo/lit-review/index.html</code></p>
+<div class="diff-body">
+
+
+<header class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">A small literature review</h1>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<p>This literature review is the editable Quarto source. To get a PDF or LaTeX source, render it with Quarto (see the <a href="https://github.com/allenai/asta-plugins/blob/main/plugins/asta-tools/skills/workspace/assets/DEVELOPER.md#getting-a-latex-pdf">workspace guide</a>). This review cites the project-root <code>references.bib</code>. The separate <code>paper/main.tex</code> is edited directly and paired with Overleaf, so it keeps its own copy of the entries it cites.</p>
+<section class="level2">
+<h2 class="anchored">Example claims</h2>
+<p><span class="ev" tabindex="0" role="note" aria-description="“We propose a new simple network architecture, the Transformer, based solely on attention mechanisms” — citation vaswani2017attention (abstract)">Vaswani and colleagues proposed a Transformer architecture based solely on attention mechanisms<span class="ev-pop" role="note"><span class="ev-card"><span class="ev-pop-text ev-quote">“<em>We propose a new simple network architecture, the Transformer, based solely on attention mechanisms</em>”</span><span class="ev-pop-src">— <span class="citation">(<a href="#ref-vaswani2017attention" role="doc-biblioref">Vaswani et al. 2017</a>, abstract)</span></span></span></span></span> <span class="citation">(<a href="#ref-vaswani2017attention" role="doc-biblioref">Vaswani et al. 2017</a>)</span>. <span class="ev" tabindex="0" role="note" aria-description="“We introduce a new language representation model called BERT, which stands for Bidirectional Encoder Representations from Transformers.” — citation devlin2019bert (abstract)">BERT later applied the Transformer encoder to bidirectional language representation<span class="ev-pop" role="note"><span class="ev-card"><span class="ev-pop-text ev-quote">“<em>We introduce a new language representation model called BERT, which stands for Bidirectional Encoder Representations from Transformers.</em>”</span><span class="ev-pop-src">— <span class="citation">(<a href="#ref-devlin2019bert" role="doc-biblioref">Devlin et al. 2019</a>, abstract)</span></span></span></span></span> <span class="citation">(<a href="#ref-devlin2019bert" role="doc-biblioref">Devlin et al. 2019</a>)</span>. Each highlighted claim shows its source quote on hover or keyboard focus.</p>
+
+
+
+</section>
+
+<div class="default"><section class="quarto-appendix-contents" role="doc-bibliography"><h2 class="anchored quarto-appendix-heading">References</h2><div class="references csl-bib-body hanging-indent" role="list">
+<div class="csl-entry" role="listitem">
+Devlin, Jacob, Ming-Wei Chang, Kenton Lee, and Kristina Toutanova. 2019. <span>“<span>BERT</span>: Pre-Training of Deep Bidirectional Transformers for Language Understanding.”</span> <a href="https://arxiv.org/abs/1810.04805">https://arxiv.org/abs/1810.04805</a>.
+</div>
+<div class="csl-entry" role="listitem">
+Vaswani, Ashish, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N. Gomez, Lukasz Kaiser, and Illia Polosukhin. 2017. <span>“Attention Is All You Need.”</span> <a href="https://arxiv.org/abs/1706.03762">https://arxiv.org/abs/1706.03762</a>.
+</div>
+</div></section></div></div>
+</section>
+<section class="page-diff removed" id="p-demo-site-libs-revealjs-plugin-notes-speaker-view-html">
+<h2>reveal.js - Speaker View <span class="tag removed">removed</span></h2>
+<p class="legend"><code>demo/site_libs/revealjs/plugin/notes/speaker-view.html</code></p>
+<div class="diff-body">
+
+		<div>Loading speaker view...</div>
+
+		<div></div>
+		<div><span class="overlay-element label">Upcoming</span></div>
+		<div>
+			<div class="speaker-controls-time">
+				<h4 class="label">Time <span class="reset-button">Click to Reset</span></h4>
+				<div class="clock">
+					<span class="clock-value">0:00 AM</span>
+				</div>
+				<div class="timer">
+					<span class="hours-value">00</span><span class="minutes-value">:00</span><span class="seconds-value">:00</span>
+				</div>
+				<div class="clear"></div>
+
+				<h4 class="label pacing-title">Pacing – Time to finish current slide</h4>
+				<div class="pacing">
+					<span class="hours-value">00</span><span class="minutes-value">:00</span><span class="seconds-value">:00</span>
+				</div>
+			</div>
+
+			<div class="speaker-controls-notes hidden">
+				<h4 class="label">Notes</h4>
+				<div class="value"></div>
+			</div>
+		</div>
+		<div class="overlay-element interactive">
+			<span class="speaker-layout-label"></span>
+			
+		</div>
+
+		
+	</div>
+</section>
+<section class="page-diff removed" id="p-demo-what-changed-decks-after-appearance-html">
+<h2>Reading in Asta – Asta workspace example <span class="tag removed">removed</span></h2>
+<p class="legend"><code>demo/what-changed-decks/after/appearance.html</code></p>
+<div class="diff-body">
+
+
+<header class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">Reading in Asta</h1>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<p>The workspace is a place to read research notes, inspect supporting evidence, and review a paper as it develops. This page shows the shared reading surface in light and dark, including headings, links, tables, code and callouts.</p>
+<section class="level2">
+<h2 class="anchored">A familiar reading surface</h2>
+<p>Light mode uses a cream background with dark-teal text. Dark mode uses an extra-dark teal background with cream text. Both come from <a href="https://github.com/allenai/design/tree/main/asta">Asta’s design system</a>, and both use the same Manrope type and page layout. Changing the mode keeps the text in the same place, so you can keep reading where you left off.</p>
+<p>The page opens in dark mode on a fresh visit, regardless of your system setting. Use the light/dark toggle in the navigation to choose a mode yourself. Your choice persists as you move between pages or reload the site.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Keep your place
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>Scroll through this section. Its heading stays above the text until the next section takes over. The table of contents also marks the section you are reading, and its links let you return to a heading directly.</p>
+</div>
+</div>
+<section class="level3">
+<h3 class="anchored">Reading the components</h3>
+<p>Links use Asta’s teal on the light surface and green on the dark surface. Inline code such as <code>asta workspace sync</code> uses a monospace face. A separate code block keeps commands easy to scan:</p>
+<div class="sourceCode"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span><a href="#cb1-1" aria-hidden="true"></a><span class="ex">asta</span> workspace sync</span>
+<span><a href="#cb1-2" aria-hidden="true"></a><span class="fu">make</span> check</span>
+<span><a href="#cb1-3" aria-hidden="true"></a><span class="fu">make</span> preview</span></code></pre></div>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Part of the page</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Section heading</td>
+<td>Keep the current reading context in view</td>
+</tr>
+<tr class="even">
+<td>Table of contents</td>
+<td>Jump to another part of a long page</td>
+</tr>
+<tr class="odd">
+<td>Theme toggle</td>
+<td>Choose the light or dark reading surface</td>
+</tr>
+<tr class="even">
+<td>Evidence highlight</td>
+<td>Inspect the quote backing a research claim</td>
+</tr>
+</tbody>
+</table>
+<p>Read the <a href="demo/what-changed-decks/after/lit-review/index.html">sample literature review</a> to try an evidence highlight. Hover over its marked claim, or focus it with the keyboard, to see the source quote alongside its citation.</p>
+<p><a href="demo/what-changed-decks/after/lit-review/index.html" class="btn btn-primary">Read the sample review</a></p>
+</section>
+</section>
+<section class="level2">
+<h2 class="anchored">A project can choose its own appearance</h2>
+<p>The theme is a managed workspace asset. A project receives it from the same selected source as its shared build rules and evidence extension. A refresh updates those assets together instead of leaving a copied stylesheet behind.</p>
+<p>Existing projects adopt the Asta theme when their HTML theme still has the scaffold’s original <code>cosmo</code> value and their selected source supplies the new assets. A project with another theme keeps its choice. Older pinned sources keep their original appearance until the project selects a compatible release.</p>
+<section class="level3">
+<h3 class="anchored">Customize deliberately</h3>
+<p>For a different HTML theme, edit the project’s <code>_quarto.yml</code>. Keep any project-specific styles alongside it:</p>
+<div class="sourceCode"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span><a href="#cb2-1" aria-hidden="true"></a><span class="fu">format</span><span class="kw">:</span></span>
+<span><a href="#cb2-2" aria-hidden="true"></a><span class="at">  </span><span class="fu">html</span><span class="kw">:</span></span>
+<span><a href="#cb2-3" aria-hidden="true"></a><span class="at">    </span><span class="fu">theme</span><span class="kw">:</span><span class="at"> flatly</span></span>
+<span><a href="#cb2-4" aria-hidden="true"></a><span class="at">    </span><span class="fu">css</span><span class="kw">:</span><span class="at"> styles.css</span></span></code></pre></div>
+<p>To customize the Asta theme directly, commit a copy of <code>_extensions/asta-theme</code>. Managed refreshes preserve committed copies and local development symlinks. This keeps intentional project styling under the project’s own version control.</p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Share the rendered work
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>A workspace preview includes the same light/dark controls as the published site. Send a reader the preview URL so they can inspect the actual page, follow its links, and choose the reading surface they prefer.</p>
+</div>
+</div>
+<p>Every page in this workspace is rendered from the repository, so a link to the preview always shows the version under review.</p>
+</section>
+</section>
+<section class="level2">
+<h2 class="anchored">Links between pages</h2>
+<p>The <a href="demo/what-changed-decks/after/slides/attention/slides.html">attention slides</a> present the same question as a short talk. Supporting quotes live in <code>evidence.yml</code> under an id; the literature review’s first claim uses the id <code>transformer-attention</code>.</p>
+
+
+</section>
+
+</div>
+</section>
+<section class="page-diff removed" id="p-demo-what-changed-decks-after-index-html">
+<h2>Attention in sequence models – Asta workspace example <span class="tag removed">removed</span></h2>
+<p class="legend"><code>demo/what-changed-decks/after/index.html</code></p>
+<div class="diff-body">
+
+
+<header class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">Attention in sequence models</h1>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<p>A short project on how attention replaced recurrence in sequence models. It includes:</p>
+<ul>
+<li><a href="demo/what-changed-decks/after/lit-review/index.html">A literature review</a> of the work it builds on, citing the project’s bibliography.</li>
+<li><a href="demo/what-changed-decks/after/slides/attention/index.qmd">Presentation slides</a> for a short talk on the same question.</li>
+<li><a href="demo/what-changed-decks/after/paper/html/index.qmd">The paper</a>, written in LaTeX with co-authors in Overleaf.</li>
+</ul>
+<p>An example workspace for the Asta workspace skill, built and published from main; see its <a href="https://github.com/allenai/asta-plugins/tree/main/examples/workspace#readme">README</a> for the demo and how to start your own.</p>
+
+
+
+</div>
+</section>
+<section class="page-diff removed" id="p-demo-what-changed-decks-after-lit-review-index-html">
+<h2>A small literature review – Asta workspace example <span class="tag removed">removed</span></h2>
+<p class="legend"><code>demo/what-changed-decks/after/lit-review/index.html</code></p>
+<div class="diff-body">
+
+
+<header class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">A small literature review</h1>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<p>This literature review is the editable Quarto source. To get a PDF or LaTeX source, render it with Quarto (see the <a href="https://github.com/allenai/asta-plugins/blob/main/plugins/asta-tools/skills/workspace/assets/DEVELOPER.md#getting-a-latex-pdf">workspace guide</a>). This review cites the project-root <code>references.bib</code>. The separate <code>paper/main.tex</code> is edited directly and paired with Overleaf, so it keeps its own copy of the entries it cites.</p>
+<section class="level2">
+<h2 class="anchored">Example claims</h2>
+<p><span class="ev" tabindex="0" role="note" aria-description="“We propose a new simple network architecture, the Transformer, based solely on attention mechanisms” — citation vaswani2017attention (abstract)">Vaswani and colleagues proposed a Transformer architecture based solely on attention mechanisms<span class="ev-pop" role="note"><span class="ev-card"><span class="ev-pop-text ev-quote">“<em>We propose a new simple network architecture, the Transformer, based solely on attention mechanisms</em>”</span><span class="ev-pop-src">— <span class="citation">(<a href="#ref-vaswani2017attention" role="doc-biblioref">Vaswani et al. 2017</a>, abstract)</span></span></span></span></span> <span class="citation">(<a href="#ref-vaswani2017attention" role="doc-biblioref">Vaswani et al. 2017</a>)</span>. <span class="ev" tabindex="0" role="note" aria-description="“We introduce a new language representation model called BERT, which stands for Bidirectional Encoder Representations from Transformers.” — citation devlin2019bert (abstract)">BERT later applied the Transformer encoder to bidirectional language representation<span class="ev-pop" role="note"><span class="ev-card"><span class="ev-pop-text ev-quote">“<em>We introduce a new language representation model called BERT, which stands for Bidirectional Encoder Representations from Transformers.</em>”</span><span class="ev-pop-src">— <span class="citation">(<a href="#ref-devlin2019bert" role="doc-biblioref">Devlin et al. 2019</a>, abstract)</span></span></span></span></span> <span class="citation">(<a href="#ref-devlin2019bert" role="doc-biblioref">Devlin et al. 2019</a>)</span>. Each highlighted claim shows its source quote on hover or keyboard focus.</p>
+
+
+
+</section>
+
+<div class="default"><section class="quarto-appendix-contents" role="doc-bibliography"><h2 class="anchored quarto-appendix-heading">References</h2><div class="references csl-bib-body hanging-indent" role="list">
+<div class="csl-entry" role="listitem">
+Devlin, Jacob, Ming-Wei Chang, Kenton Lee, and Kristina Toutanova. 2019. <span>“<span>BERT</span>: Pre-Training of Deep Bidirectional Transformers for Language Understanding.”</span> <a href="https://arxiv.org/abs/1810.04805">https://arxiv.org/abs/1810.04805</a>.
+</div>
+<div class="csl-entry" role="listitem">
+Vaswani, Ashish, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N. Gomez, Lukasz Kaiser, and Illia Polosukhin. 2017. <span>“Attention Is All You Need.”</span> <a href="https://arxiv.org/abs/1706.03762">https://arxiv.org/abs/1706.03762</a>.
+</div>
+</div></section></div></div>
+</section>
+<section class="page-diff removed" id="p-demo-what-changed-decks-after-site-libs-revealjs-plugin-notes-speaker-view-html">
+<h2>reveal.js - Speaker View <span class="tag removed">removed</span></h2>
+<p class="legend"><code>demo/what-changed-decks/after/site_libs/revealjs/plugin/notes/speaker-view.html</code></p>
+<div class="diff-body">
+
+		<div>Loading speaker view...</div>
+
+		<div></div>
+		<div><span class="overlay-element label">Upcoming</span></div>
+		<div>
+			<div class="speaker-controls-time">
+				<h4 class="label">Time <span class="reset-button">Click to Reset</span></h4>
+				<div class="clock">
+					<span class="clock-value">0:00 AM</span>
+				</div>
+				<div class="timer">
+					<span class="hours-value">00</span><span class="minutes-value">:00</span><span class="seconds-value">:00</span>
+				</div>
+				<div class="clear"></div>
+
+				<h4 class="label pacing-title">Pacing – Time to finish current slide</h4>
+				<div class="pacing">
+					<span class="hours-value">00</span><span class="minutes-value">:00</span><span class="seconds-value">:00</span>
+				</div>
+			</div>
+
+			<div class="speaker-controls-notes hidden">
+				<h4 class="label">Notes</h4>
+				<div class="value"></div>
+			</div>
+		</div>
+		<div class="overlay-element interactive">
+			<span class="speaker-layout-label"></span>
+			
+		</div>
+
+		
+	</div>
+</section>
+<section class="page-diff removed" id="p-demo-what-changed-decks-before-appearance-html">
+<h2>Reading in Asta – Asta workspace example <span class="tag removed">removed</span></h2>
+<p class="legend"><code>demo/what-changed-decks/before/appearance.html</code></p>
+<div class="diff-body">
+
+
+<header class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">Reading in Asta</h1>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<p>The workspace is a place to read research notes, inspect supporting evidence, and review a paper as it develops. This page shows the shared reading surface in light and dark, including headings, links, tables, code and callouts.</p>
+<section class="level2">
+<h2 class="anchored">A familiar reading surface</h2>
+<p>Light mode uses a cream background with dark-teal text. Dark mode uses an extra-dark teal background with cream text. Both come from <a href="https://github.com/allenai/design/tree/main/asta">Asta’s design system</a>, and both use the same Manrope type and page layout. Changing the mode keeps the text in the same place, so you can keep reading where you left off.</p>
+<p>The page opens in dark mode on a fresh visit, regardless of your system setting. Use the light/dark toggle in the navigation to choose a mode yourself. Your choice persists as you move between pages or reload the site.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Keep your place
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>Scroll through this section. Its heading stays above the text until the next section takes over. The table of contents also marks the section you are reading, and its links let you return to a heading directly.</p>
+</div>
+</div>
+<section class="level3">
+<h3 class="anchored">Reading the components</h3>
+<p>Links use Asta’s teal on the light surface and green on the dark surface. Inline code such as <code>asta workspace sync</code> uses a monospace face. A separate code block keeps commands easy to scan:</p>
+<div class="sourceCode"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span><a href="#cb1-1" aria-hidden="true"></a><span class="ex">asta</span> workspace sync</span>
+<span><a href="#cb1-2" aria-hidden="true"></a><span class="fu">make</span> check</span>
+<span><a href="#cb1-3" aria-hidden="true"></a><span class="fu">make</span> preview</span></code></pre></div>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Part of the page</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Section heading</td>
+<td>Keep the current reading context in view</td>
+</tr>
+<tr class="even">
+<td>Table of contents</td>
+<td>Jump to another part of a long page</td>
+</tr>
+<tr class="odd">
+<td>Theme toggle</td>
+<td>Choose the light or dark reading surface</td>
+</tr>
+<tr class="even">
+<td>Evidence highlight</td>
+<td>Inspect the quote backing a research claim</td>
+</tr>
+</tbody>
+</table>
+<p>Read the <a href="demo/what-changed-decks/before/lit-review/index.html">sample literature review</a> to try an evidence highlight. Hover over its marked claim, or focus it with the keyboard, to see the source quote alongside its citation.</p>
+<p><a href="demo/what-changed-decks/before/lit-review/index.html" class="btn btn-primary">Read the sample review</a></p>
+</section>
+</section>
+<section class="level2">
+<h2 class="anchored">A project can choose its own appearance</h2>
+<p>The theme is a managed workspace asset. A project receives it from the same selected source as its shared build rules and evidence extension. A refresh updates those assets together instead of leaving a copied stylesheet behind.</p>
+<p>Existing projects adopt the Asta theme when their HTML theme still has the scaffold’s original <code>cosmo</code> value and their selected source supplies the new assets. A project with another theme keeps its choice. Older pinned sources keep their original appearance until the project selects a compatible release.</p>
+<section class="level3">
+<h3 class="anchored">Customize deliberately</h3>
+<p>For a different HTML theme, edit the project’s <code>_quarto.yml</code>. Keep any project-specific styles alongside it:</p>
+<div class="sourceCode"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span><a href="#cb2-1" aria-hidden="true"></a><span class="fu">format</span><span class="kw">:</span></span>
+<span><a href="#cb2-2" aria-hidden="true"></a><span class="at">  </span><span class="fu">html</span><span class="kw">:</span></span>
+<span><a href="#cb2-3" aria-hidden="true"></a><span class="at">    </span><span class="fu">theme</span><span class="kw">:</span><span class="at"> flatly</span></span>
+<span><a href="#cb2-4" aria-hidden="true"></a><span class="at">    </span><span class="fu">css</span><span class="kw">:</span><span class="at"> styles.css</span></span></code></pre></div>
+<p>To customize the Asta theme directly, commit a copy of <code>_extensions/asta-theme</code>. Managed refreshes preserve committed copies and local development symlinks. This keeps intentional project styling under the project’s own version control.</p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Share the rendered work
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>A workspace preview includes the same light/dark controls as the published site. Send a reader the preview URL so they can inspect the actual page, follow its links, and choose the reading surface they prefer.</p>
+</div>
+</div>
+<p>Every page in this workspace is rendered from the repository, so a link to the preview always shows the version under review.</p>
+</section>
+</section>
+<section class="level2">
+<h2 class="anchored">Links between pages</h2>
+<p>The <a href="demo/what-changed-decks/before/slides/attention/slides.html">attention slides</a> present the same question as a short talk. Supporting quotes live in <code>evidence.yml</code> under an id; the literature review’s first claim uses the id <code>transformer-attention</code>.</p>
+
+
+</section>
+
+</div>
+</section>
+<section class="page-diff removed" id="p-demo-what-changed-decks-before-index-html">
+<h2>Attention in sequence models – Asta workspace example <span class="tag removed">removed</span></h2>
+<p class="legend"><code>demo/what-changed-decks/before/index.html</code></p>
+<div class="diff-body">
+
+
+<header class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">Attention in sequence models</h1>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<p>A short project on how attention replaced recurrence in sequence models. It includes:</p>
+<ul>
+<li><a href="demo/what-changed-decks/before/lit-review/index.html">A literature review</a> of the work it builds on, citing the project’s bibliography.</li>
+<li><a href="demo/what-changed-decks/before/slides/attention/index.qmd">Presentation slides</a> for a short talk on the same question.</li>
+<li><a href="demo/what-changed-decks/before/paper/html/index.qmd">The paper</a>, written in LaTeX with co-authors in Overleaf.</li>
+</ul>
+<p>An example workspace for the Asta workspace skill, built and published from main; see its <a href="https://github.com/allenai/asta-plugins/tree/main/examples/workspace#readme">README</a> for the demo and how to start your own.</p>
+
+
+
+</div>
+</section>
+<section class="page-diff removed" id="p-demo-what-changed-decks-before-lit-review-index-html">
+<h2>A small literature review – Asta workspace example <span class="tag removed">removed</span></h2>
+<p class="legend"><code>demo/what-changed-decks/before/lit-review/index.html</code></p>
+<div class="diff-body">
+
+
+<header class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">A small literature review</h1>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<p>This literature review is the editable Quarto source. To get a PDF or LaTeX source, render it with Quarto (see the <a href="https://github.com/allenai/asta-plugins/blob/main/plugins/asta-tools/skills/workspace/assets/DEVELOPER.md#getting-a-latex-pdf">workspace guide</a>). This review cites the project-root <code>references.bib</code>. The separate <code>paper/main.tex</code> is edited directly and paired with Overleaf, so it keeps its own copy of the entries it cites.</p>
+<section class="level2">
+<h2 class="anchored">Example claim</h2>
+<p><span class="ev" tabindex="0" role="note" aria-description="“We propose a new simple network architecture, the Transformer, based solely on attention mechanisms” — citation vaswani2017attention (abstract)">Vaswani and colleagues proposed a Transformer architecture based on attention mechanisms<span class="ev-pop" role="note"><span class="ev-card"><span class="ev-pop-text ev-quote">“<em>We propose a new simple network architecture, the Transformer, based solely on attention mechanisms</em>”</span><span class="ev-pop-src">— <span class="citation">(<a href="#ref-vaswani2017attention" role="doc-biblioref">Vaswani et al. 2017</a>, abstract)</span></span></span></span></span> <span class="citation">(<a href="#ref-vaswani2017attention" role="doc-biblioref">Vaswani et al. 2017</a>)</span>. The highlighted claim exposes its source quote on hover or keyboard focus.</p>
+
+
+
+</section>
+
+<div class="default"><section class="quarto-appendix-contents" role="doc-bibliography"><h2 class="anchored quarto-appendix-heading">References</h2><div class="references csl-bib-body hanging-indent" role="list">
+<div class="csl-entry" role="listitem">
+Vaswani, Ashish, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N. Gomez, Lukasz Kaiser, and Illia Polosukhin. 2017. <span>“Attention Is All You Need.”</span> <a href="https://arxiv.org/abs/1706.03762">https://arxiv.org/abs/1706.03762</a>.
+</div>
+</div></section></div></div>
+</section>
+<section class="page-diff removed" id="p-demo-what-changed-decks-before-site-libs-revealjs-plugin-notes-speaker-view-html">
+<h2>reveal.js - Speaker View <span class="tag removed">removed</span></h2>
+<p class="legend"><code>demo/what-changed-decks/before/site_libs/revealjs/plugin/notes/speaker-view.html</code></p>
+<div class="diff-body">
+
+		<div>Loading speaker view...</div>
+
+		<div></div>
+		<div><span class="overlay-element label">Upcoming</span></div>
+		<div>
+			<div class="speaker-controls-time">
+				<h4 class="label">Time <span class="reset-button">Click to Reset</span></h4>
+				<div class="clock">
+					<span class="clock-value">0:00 AM</span>
+				</div>
+				<div class="timer">
+					<span class="hours-value">00</span><span class="minutes-value">:00</span><span class="seconds-value">:00</span>
+				</div>
+				<div class="clear"></div>
+
+				<h4 class="label pacing-title">Pacing – Time to finish current slide</h4>
+				<div class="pacing">
+					<span class="hours-value">00</span><span class="minutes-value">:00</span><span class="seconds-value">:00</span>
+				</div>
+			</div>
+
+			<div class="speaker-controls-notes hidden">
+				<h4 class="label">Notes</h4>
+				<div class="value"></div>
+			</div>
+		</div>
+		<div class="overlay-element interactive">
+			<span class="speaker-layout-label"></span>
+			
+		</div>
+
+		
+	</div>
+</section>
 </main>
 </div><script>
 (function () {
@@ -433,9 +1139,9 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   }
   function collapse(container, run) {
     var d = document.createElement("details");
-    d.className = "wc-fold";
+    d.className = "wc-fold wc-expander";
     var s = document.createElement("summary");
-    s.textContent = summaryText(run);
+    s.textContent = "Expand " + summaryText(run);
     var wrap = document.createElement("div");
     wrap.className = "wc-fold-body";
     container.insertBefore(d, run[0]);
@@ -550,4 +1256,66 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
     });
   });
 })();
+</script><style>
+.deck-live .dr-bar{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;margin:.5rem 0}
+.deck-live .dr-seg{margin-left:auto;display:inline-flex;border:1px solid rgba(127,127,127,.6);border-radius:8px;overflow:hidden}
+.deck-live .dr-seg button{font:inherit;background:none;color:inherit;border:0;padding:4px 12px;cursor:pointer;opacity:.7}
+.deck-live .dr-seg button[aria-pressed=true]{background:rgba(127,127,127,.3);font-weight:600;opacity:1}
+.deck-live .dr-pair{display:grid;grid-template-columns:minmax(0,1fr);gap:10px}
+.deck-live[data-view=before] .dr-pair{grid-template-columns:repeat(2,minmax(0,1fr))}
+.deck-live figure{margin:0;min-width:0}.deck-live figcaption{font-size:.8rem;opacity:.75}
+.deck-live[data-view=marked] figure:not([data-view~=marked]),
+.deck-live[data-view=clean] figure:not([data-view~=clean]),
+.deck-live[data-view=before] figure:not([data-view~=before]){display:none}
+.deck-live iframe{width:100%;aspect-ratio:16/9;border:1px solid #888;display:block}
+.deck-live h3{font-size:1rem}
+.wc-expander{margin:8px 0}
+.wc-expander>summary{list-style:none;cursor:pointer;font-size:.9rem;padding:4px 12px;background:rgba(84,174,255,.12);border:1px solid rgba(84,174,255,.35);border-radius:6px;color:inherit}
+.wc-expander>summary::-webkit-details-marker{display:none}
+.wc-expander>summary:hover{background:rgba(84,174,255,.25)}
+.wc-expander[open]>summary{margin-bottom:8px}
+</style><script>
+document.querySelectorAll('.deck-live').forEach(root => {
+ // Load only shown frames, near the viewport and two at a time: each frame
+ // parses the whole deck, so an opened fold must not start dozens at once.
+ const shown = f => f.closest('figure').offsetParent !== null;
+ const queue = []; let active = 0;
+ const start = f => {
+  active++; let done = false;
+  const finish = () => { if (!done) { done = true; active--; pump(); } };
+  f.addEventListener('load', finish, {once: true}); setTimeout(finish, 8000);
+  f.src = f.dataset.src; f.removeAttribute('data-src');
+ };
+ const near = 'IntersectionObserver' in window && new IntersectionObserver(entries => entries.forEach(e => {
+  if (e.isIntersecting && e.target.dataset.src) { near.unobserve(e.target); queue.push(e.target); }
+ }) || pump(), {rootMargin: '300px 0px'});
+ const pump = () => {
+  queue.sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top);
+  while (active < 2 && queue.length) {
+   const f = queue.shift();
+   if (!f.dataset.src) continue;
+   if (shown(f)) start(f); else near.observe(f);
+  }
+ };
+ const load = () => root.querySelectorAll('iframe[data-src]').forEach(f => {
+  if (!near) { if (shown(f)) { f.src = f.dataset.src; f.removeAttribute('data-src'); } return; }
+  near.observe(f);
+ });
+ root.querySelectorAll('.dr-seg button').forEach(b => b.addEventListener('click', () => {
+  root.dataset.view = b.dataset.v;
+  root.querySelectorAll('.dr-seg button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+  load();
+  // A frame that finished loading while hidden laid out at no size: fit it now.
+  root.querySelectorAll('iframe[src]').forEach(f => {
+   const reveal = f.contentWindow.Reveal;
+   if (shown(f) && reveal && reveal.isReady()) reveal.layout();
+  });
+ }));
+ root.querySelectorAll('details').forEach(details => details.addEventListener('toggle', () => {
+  const template = details.querySelector('template');
+  if (details.open && template) template.replaceWith(template.content.cloneNode(true));
+  load();
+ }));
+ load();
+});
 </script></body></html>
