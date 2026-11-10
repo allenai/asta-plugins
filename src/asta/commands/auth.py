@@ -51,6 +51,14 @@ def login(no_browser):
                 f"   Logged in as: [cyan]{user_info.get('email', 'unknown')}[/cyan]"
             )
 
+        if os.environ.get("ASTA_TOKEN"):
+            console.print(
+                "\n⚠️  [yellow]ASTA_TOKEN is set, and asta commands use it instead "
+                "of this login.[/yellow]\n"
+                "   To use the login, unset ASTA_TOKEN or run "
+                "[cyan]env -u ASTA_TOKEN asta …[/cyan]"
+            )
+
     except Exception as e:
         console.print(f"❌ [red]Authentication failed: {e}[/red]")
         raise click.Abort()
