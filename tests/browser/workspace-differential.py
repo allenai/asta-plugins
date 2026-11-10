@@ -201,7 +201,7 @@ def worker(project, full, record):
 
     def audit(event, args):
         if event == "shutil.copyfile":
-            source = Path(args[0]).absolute()
+            source = Path(os.path.realpath(args[0]))
             if source.is_relative_to(project):
                 copies.append(source.relative_to(project).as_posix())
         if event == "subprocess.Popen":
@@ -234,7 +234,8 @@ def check(artifacts):
     cases = selected_cases()
     artifacts.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="asta-differential-") as temp:
-        clone = Path(temp) / "repo"
+        # Resolved: macOS temp dirs live under /var, a symlink to /private/var.
+        clone = Path(temp).resolve() / "repo"
         subprocess.run(["git", "clone", "--shared", str(ROOT), str(clone)], check=True)
         project = clone / "examples/workspace"
         # One deterministic asset, referenced by an ordinary project page.
@@ -374,6 +375,6 @@ if __name__ == "__main__":
     if sys.argv[1] == "--list-cases":
         print(json.dumps(CASES))
     elif sys.argv[1] == "--worker":
-        worker(Path(sys.argv[2]), bool(int(sys.argv[3])), Path(sys.argv[4]))
+        worker(Path(sys.argv[2]).resolve(), bool(int(sys.argv[3])), Path(sys.argv[4]))
     else:
         check(Path(sys.argv[1]).resolve())

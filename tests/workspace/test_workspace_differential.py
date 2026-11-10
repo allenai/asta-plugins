@@ -1,13 +1,13 @@
 """Check the real-render matrix's edits and independent render expectations."""
 
 import importlib.util
-import shutil
 import sys
 from pathlib import Path
 
 import pytest
 
 from asta.commands.workspace_selection import select_pages
+from tests._workspace_helpers import copy_tracked
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tests/browser"))
@@ -39,7 +39,7 @@ spec.loader.exec_module(matrix)
 def test_edit_matrix_expected_selection(tmp_path, case):
     before, after = tmp_path / "before", tmp_path / "after"
     for directory in (before, after):
-        shutil.copytree(ROOT / "examples/workspace", directory)
+        copy_tracked(ROOT / "examples/workspace", directory)
         (directory / "differential.svg").write_text('<svg fill="#008080"/>')
         with (directory / "appearance.qmd").open("a") as stream:
             stream.write("\n![Asset](differential.svg)\n")

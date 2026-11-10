@@ -1,10 +1,48 @@
 """Shared workspace workflow and release-archive fixtures."""
 
 import io
+import os
+import shutil
+import subprocess
+import sys
 import tarfile
 from pathlib import Path
 
 from asta.commands import workspace as workspace_module
+
+
+def copy_tracked(source: Path, destination: Path) -> None:
+    """Copy only git-tracked files: a checkout's ignored caches can be gigabytes."""
+    listed = subprocess.run(
+        ["git", "ls-files", "-z"], cwd=source, check=True, capture_output=True
+    ).stdout.decode()
+    for name in filter(None, listed.split("\0")):
+        path = source / name
+        if not path.exists() and not path.is_symlink():
+            continue  # deleted in the working tree
+        target = destination / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(path, target, follow_symlinks=False)
+
+
+def system_tools_path(directory: Path) -> str:
+    """A PATH of system tools only, with a python3 new enough for the scripts.
+
+    A system python3 older than 3.10 (macOS ships 3.9) cannot run the workspace
+    scripts, so the interpreter running the tests stands in for it.
+    """
+    system = "/usr/bin:/bin"
+    probe = subprocess.run(
+        ["/usr/bin/env", f"PATH={system}", "python3", "-c"]
+        + ["import sys; sys.exit(sys.version_info < (3, 10))"],
+        capture_output=True,
+    )
+    if probe.returncode == 0:
+        return system
+    shim = directory / "python3-shim"
+    shim.mkdir()
+    (shim / "python3").symlink_to(os.path.realpath(sys.executable))
+    return f"{shim}:{system}"
 
 
 def project_with_ref(

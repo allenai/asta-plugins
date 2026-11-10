@@ -3,6 +3,7 @@
 import io
 import json
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -18,7 +19,7 @@ from click.testing import CliRunner
 
 from asta.cli import cli
 from asta.commands import workspace as workspace_module
-from tests._workspace_helpers import _archive, project_with_ref
+from tests._workspace_helpers import _archive, project_with_ref, system_tools_path
 
 pytestmark = pytest.mark.usefixtures("pinned_workspace")
 
@@ -428,7 +429,10 @@ def test_thin_makefile_requires_a_workflow_even_with_cached_rules(
         ["make", "preview"], cwd=project, text=True, capture_output=True
     )
     assert result.returncode != 0
-    assert "No rule to make target '.github/workflows/docs.yml'" in result.stderr
+    # GNU make 3.81 quotes the target as `name', later versions as 'name'.
+    assert re.search(
+        r"No rule to make target [`']\.github/workflows/docs\.yml'", result.stderr
+    )
     assert "stale-managed-preview" not in result.stdout
 
 
@@ -1634,7 +1638,7 @@ def test_ejected_rules_and_scripts_work_without_cli_or_cache(tmp_path) -> None:
             "preview-ready",
         ],
         cwd=tmp_path,
-        env={"PATH": "/usr/bin:/bin"},
+        env={"PATH": system_tools_path(tmp_path)},
         capture_output=True,
         text=True,
     )

@@ -277,6 +277,10 @@ def setup(tmp_path, monkeypatch, request):
     git(remote, "config", "maintenance.auto", "false")
     seed = tmp_path / "seed"
     git(tmp_path, "clone", str(remote), str(seed))
+    # The seed must be able to hold names that differ only in letter case or
+    # Unicode normalization, as Overleaf can, even on a volume that aliases them.
+    git(seed, "config", "core.ignorecase", "false")
+    git(seed, "config", "core.precomposeunicode", "false")
     (seed / "main.tex").write_text("hello\n")
     (seed / "old.tex").write_text("old\n")
     (seed / "references.bib").write_text("@misc{overleaf}\n")
@@ -311,9 +315,25 @@ def overleaf_edit(seed, name, text):
         git(seed, "rm", "-q", name)
     else:
         (seed / name).write_text(text)
-        git(seed, "add", name)
+        add_tracked(seed, name)
     git(seed, "commit", "-m", "edit")
     git(seed, "push", "-q", "origin", "master")
+
+
+def add_tracked(repo, name):
+    """Stage a file under exactly this name, as `git add` does on a volume that
+    keeps the name's letter case and ignores no file."""
+    blob = git(repo, "hash-object", "-w", "--", name)
+    git(repo, "update-index", "--add", "--cacheinfo", f"100644,{blob},{name}")
+
+
+def rename_tracked(repo, old, new):
+    """Rename in the index and working tree like `git mv`, which refuses to move
+    a file onto a name its volume treats as the same file."""
+    blob = git(repo, "rev-parse", f":{old}")
+    git(repo, "update-index", "--force-remove", "--", old)
+    (repo / old).unlink()
+    git(repo, "update-index", "--add", "--cacheinfo", f"100644,{blob},{new}")
 
 
 def commit_all(project):
@@ -589,7 +609,7 @@ def test_pull_rename_preserves_files_or_refuses_existing_alias(
     commit_all(project)
     paper = project / "paper"
     before = {p.name: p.read_bytes() for p in paper.iterdir()}
-    git(seed, "mv", old, new)
+    rename_tracked(seed, old, new)
     (seed / new).write_text("renamed remote source\n")
     (seed / "main.tex").write_text("collaborator edit\n")
     git(seed, "add", "--", new, "main.tex")
@@ -1285,7 +1305,7 @@ def test_pull_refuses_directory_case_collision(setup):
         path = seed / name
         path.parent.mkdir(exist_ok=True)
         path.write_text("figure\n")
-        git(seed, "add", name)
+        add_tracked(seed, name)
     git(seed, "commit", "-m", "figures")
     git(seed, "push", "-q", "origin", "master")
     result = run(project, "pull", URL)
@@ -2629,10 +2649,11 @@ def test_sync_refuses_reserved_filename_aliases(setup, command, name):
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text("*\n")
     if command == "pull":
-        git(seed, "add", name)
+        add_tracked(seed, name)
         git(seed, "commit", "-m", "reserved filename")
         git(seed, "push", "origin", "master")
     else:
+        add_tracked(project, f"paper/{name}")
         commit_all(project)
     before = git(seed, "ls-remote", "origin", "master")
     result = run(project, command, *([URL] if command == "pull" else []))

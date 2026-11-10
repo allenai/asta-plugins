@@ -1,11 +1,11 @@
 """Dependency edits must include all affected pages in either revision."""
 
-import shutil
 from pathlib import Path
 
 import pytest
 
 from asta.commands.workspace_selection import paper_affected, select_pages
+from tests._workspace_helpers import copy_tracked
 
 
 @pytest.fixture
@@ -177,9 +177,7 @@ def example(tmp_path):
     roots = []
     for side in ("before", "after"):
         root = tmp_path / side
-        shutil.copytree(
-            EXAMPLE, root, ignore=shutil.ignore_patterns("_site", ".quarto", "_freeze")
-        )
+        copy_tracked(EXAMPLE, root)
         roots.append(root)
     return roots
 
