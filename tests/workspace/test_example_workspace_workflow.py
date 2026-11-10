@@ -669,6 +669,8 @@ def test_empty_workspace_shard_never_falls_back_to_all_tests(
         [
             sys.executable,
             str(ROOT / "scripts/test-workspace.py"),
+            "tests/workspace",
+            "tests/workspace/tools",
             str(shard),
             str(count),
         ],
@@ -697,3 +699,44 @@ def test_release_reuses_all_checks_on_both_architectures():
         'make -C "$GITHUB_WORKSPACE" workspace-browser'
         in arm["with"]["artifact-command"]
     )
+
+
+def test_workspace_partition_includes_nested_tests_and_excludes_tools(
+    tmp_path, monkeypatch
+):
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "workspace_shard", ROOT / "scripts/test-workspace.py"
+    )
+    runner = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(runner)
+    for name in (
+        "tests/workspace/test_a.py",
+        "tests/workspace/nested/test_b.py",
+        "tests/workspace/tools/test_real.py",
+        "tests/test_other.py",
+    ):
+        path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("")
+    monkeypatch.chdir(tmp_path)
+    calls = []
+    monkeypatch.setattr(runner.subprocess, "call", lambda args: calls.append(args) or 0)
+    selected = []
+    for shard in range(3):
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            ["runner", "tests/workspace", "tests/workspace/tools", str(shard), "3"],
+        )
+        try:
+            runner.main()
+        except SystemExit as exc:
+            assert exc.code == 0
+    for call in calls:
+        selected.extend(call[4:])
+    assert sorted(selected) == [
+        "tests/workspace/nested/test_b.py",
+        "tests/workspace/test_a.py",
+    ]

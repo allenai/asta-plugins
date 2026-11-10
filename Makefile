@@ -174,7 +174,7 @@ test-plugins:
 
 test-workspace:
 	@for tool in make perl; do command -v $$tool >/dev/null || { echo "Missing required tool: $$tool" >&2; exit 1; }; done
-	uv run --extra test python scripts/test-workspace.py $(WORKSPACE_SHARD) $(WORKSPACE_SHARDS)
+	uv run --extra test python scripts/test-workspace.py tests/workspace tests/workspace/tools $(WORKSPACE_SHARD) $(WORKSPACE_SHARDS)
 
 check-workspace-tools: test-workspace-tools workspace-local
 
