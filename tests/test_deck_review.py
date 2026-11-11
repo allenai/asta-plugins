@@ -500,9 +500,186 @@ def test_live_report_marks_both_decks_without_browser(tmp_path):
     assert (
         'Hello <del class="dr-live">old</del> <ins class="dr-live">new</ins>' in marked
     )
-    assert "deck.marked.html?" in body
+    # Each frame is one slide's document, beside the deck.
+    assert "deck.frame-marked-1.html?" in body and "deck.marked.html?" not in body
+    frame = (decks / "after/deck.frame-marked-1.html").read_text()
+    assert (
+        'Hello <del class="dr-live">old</del> <ins class="dr-live">new</ins>' in frame
+    )
+    assert "Same" not in frame and frame.count("<section") == 2
     assert not list(new_root.rglob("*.png"))
     assert not (new_root / "what-changed-decks/after/what-changed-decks").exists()
+
+
+def _large_deck(words, count=40):
+    """A self-contained deck like Quarto's: fonts and scripts inline, images as data."""
+    import base64
+    import hashlib
+    from urllib.parse import quote
+
+    def blob(seed, size):
+        out, block = b"", seed.encode()
+        while len(out) < size:
+            block = hashlib.sha256(block).digest()
+            out += block
+        return out[:size]
+
+    fonts = base64.b64encode(blob("font", 600_000)).decode()
+    css = "@font-face{font-family:F;src:url(data:font/woff2;base64," + fonts + ")}"
+    head = (
+        f'<link href="data:text/css,{quote(css, safe="")}" rel="stylesheet">'
+        f"<script>{'var a=1;' * 15_000}</script>"
+    )
+    images = [blob(f"slide {i}", 60_000) for i in range(count)]
+    slides = [
+        f'<section id="s{i}"><h2>Slide {i} {words}</h2><p>Text of slide {i}.</p>'
+        f'<img src="data:image/png;base64,{base64.b64encode(image).decode()}">'
+        "</section>"
+        for i, image in enumerate(images)
+    ]
+    return _deck(slides, head), images, css
+
+
+def test_a_large_deck_gets_small_frames_not_a_copy_of_the_deck_each(tmp_path):
+    """Every slide of a big changed deck is its own small document.
+
+    A frame that is the whole self-contained deck (here 3 MB, like a real talk's
+    6 MB) must be fetched and parsed for each slide, so the page stays blank.
+    """
+    old_doc, _, _ = _large_deck("before")
+    new_doc, images, css = _large_deck("after")
+    old_root, new_root = tmp_path / "old", tmp_path / "new"
+    for root, doc in ((old_root, old_doc), (new_root, new_doc)):
+        root.mkdir()
+        (root / "deck.html").write_text(doc)
+    assert len(new_doc) > 3_000_000
+    old, new = what_changed.reveal_slides(old_doc), what_changed.reveal_slides(new_doc)
+    renderer = what_changed.DeckRenderer(
+        deck_review,
+        str(old_root),
+        str(new_root),
+        str(new_root / "what-changed-decks"),
+        "what-changed-decks",
+    )
+    body = renderer.review(
+        "deck.html", "deck.html", old, new, {i: i for i in range(len(new))}
+    )
+    decks = new_root / "what-changed-decks"
+    sources = re.findall(r'data-src="what-changed-decks/([^"?]+)\?', body)
+    for source in set(sources):
+        frame = (decks / source).read_text()
+        assert len(frame) < 100_000, (source, len(frame))
+    # Marked, clean, before and after for each of the 40 changed slides.
+    assert len(sources) == 4 * len(images)
+    assert len(set(sources)) == 3 * len(images)
+    # A frame keeps its slide's place and only that slide's content.
+    frame = (decks / "after/deck.frame-marked-8.html").read_text()
+    assert frame.count("<section") == len(images)
+    assert "Slide 7 " in frame and "Slide 6 " not in frame
+    assert '<ins class="dr-live">after</ins>' in frame
+    # Its big pieces are shared files with the original bytes, found from the frame.
+    shared = {
+        match[1]: (decks / "after" / match[0] / match[1]).resolve()
+        for match in re.findall(
+            r'(?:src|href)="((?:\.\./)+frame-assets)/([^"]+)"', frame
+        )
+    }
+    assert len(shared) == 3, shared
+    for name, path in shared.items():
+        assert path.parent == (decks / "frame-assets").resolve() and path.is_file()
+    contents = {name: path.read_bytes() for name, path in shared.items()}
+    assert css.encode() in contents.values()
+    assert images[7] in contents.values()
+    # The same fonts and scripts serve every frame, so the decks are not copied again.
+    assets = sum(path.stat().st_size for path in (decks / "frame-assets").iterdir())
+    frames = sum(path.stat().st_size for path in decks.rglob("deck.frame-*.html"))
+    assert assets + frames < len(new_doc) * 3
+
+
+def test_frames_keep_the_deck_wide_style_and_hidden_slides():
+    doc = _deck(
+        [
+            '<section id="a"><style>h2{color:red}</style><h2>A</h2></section>',
+            '<section id="b" data-visibility="hidden"><h2>B</h2></section>',
+            '<section id="c"><h2>C</h2></section>',
+        ]
+    )
+    slides = what_changed.reveal_slides(doc)
+    frame = deck_review.FrameDocs(doc, slides, deck_review.FrameAssets("x/")).render(2)
+    assert "<h2>C</h2>" in frame and "<h2>A</h2>" not in frame
+    # A slide's own style may restyle the kept slide; hidden stays hidden.
+    assert "<style>h2{color:red}</style>" in frame
+    assert '<section data-visibility="hidden"></section>' in frame
+
+
+def test_only_pieces_that_load_the_same_from_a_file_move_out_of_a_frame():
+    assets = deck_review.FrameAssets("x/")
+    big = "a" * deck_review.BIG_BLOCK
+    own_path = f"<script>document.currentScript.src;{big}</script>"
+    relative = f"<style>a{{background:url(img.png)}}{big}</style>"
+    typed = f'<script type="module">{big}</script>'
+    assert assets.move(own_path + relative + typed) == own_path + relative + typed
+    moved = assets.move(f"<style>p{{}}{big}</style><script>{big}</script>")
+    assert moved.count("x/") == 2 and len(assets.files) == 2
+    # A data stylesheet and a data image are decoded to their own bytes.
+    link = f'<link href="data:text/css,a%7B%7D{big}" rel="stylesheet">'
+    assert 'href="x/' in assets.move(link) and 'rel="stylesheet"' in assets.move(link)
+    assert ("a{}" + big).encode() in assets.files.values()
+    import base64
+
+    encoded = "A" * (deck_review.BIG_DATA + 4)
+    assert assets.move(f'<img src="data:image/png;base64,{encoded}">').startswith(
+        '<img src="x/'
+    )
+    assert base64.b64decode(encoded) in assets.files.values()
+
+
+def test_before_frame_of_an_unchanged_slide_shows_the_old_slide(tmp_path):
+    """Before is always the old deck's slide, even where the new deck shifts it."""
+
+    def deck(*slides):
+        return _deck([f"<section>{slide}</section>" for slide in slides])
+
+    note = "<aside class='notes'>{}</aside>"
+    old_doc = deck("<h2>A</h2>" + note.format("old note"), "<h2>B</h2>")
+    new_doc = deck("<h2>X</h2>", "<h2>A</h2>" + note.format("new note"), "<h2>B</h2>")
+    files, old, new = _static_files(tmp_path, old_doc, new_doc)
+    body, _, _, _, frames = deck_review.live_review(
+        "d/deck.html", old_doc, new_doc, old, new, {1: 0, 2: 1}, files, "b", "a"
+    )
+    # Slides with no id are found by position: A is slide 1 before, 2 after.
+    for title, anchor in (("A", "0"), ("B", "1")):
+        card = body.split(f"Slide {'2' if title == 'A' else '3'}: {title}")[1]
+        before = re.search(
+            rf'<figcaption>Before</figcaption><iframe[^>]*data-src="b\.frame-before-(\d+)[^"]*#/{anchor}"',
+            card,
+        )
+        assert before, (title, card[:600])
+        frame = frames["before", f"d/deck.frame-before-{before.group(1)}.html"]
+        # The old document's frame, whose kept slide is the one the hash names.
+        assert f"<h2>{title}</h2>" in frame and "<h2>X</h2>" not in frame
+        assert ("old note" in frame) == (title == "A") and "new note" not in frame
+
+
+def test_emptied_slides_keep_the_section_metadata_the_theme_reads():
+    doc = _deck(
+        [
+            '<section id="a" data-asta-section="1" data-asta-section-name="Intro"'
+            ' data-background-image="x.png" class="big"><h2>A</h2></section>',
+            '<section id="b" data-asta-section="2" data-asta-section-name="Method">'
+            "<h2>B</h2></section>",
+        ]
+    )
+    slides = what_changed.reveal_slides(doc)
+    frame = deck_review.FrameDocs(doc, slides, deck_review.FrameAssets("x/")).render(1)
+    assert "<h2>B</h2>" in frame and "<h2>A</h2>" not in frame
+    # The section headline lists every section, so the emptied slide names its own.
+    assert (
+        '<section data-asta-section="1" data-asta-section-name="Intro"></section>'
+        in frame
+    )
+    # Nothing that draws the emptied slide: no background, id or class.
+    assert "x.png" not in frame and 'class="big"' not in frame
 
 
 def test_live_report_of_an_unchanged_deck_is_none(tmp_path):
@@ -617,8 +794,10 @@ def test_live_frames_open_the_deck_full_page_not_embedded(tmp_path):
     body, *_ = deck_review.live_review(
         "d/deck.html", old_doc, new_doc, old, new, {0: 0}, files, "b", "a"
     )
+    # A frame is the slide's own document, opened full page at its slide.
     assert (
-        'data-src="a?view=slide&amp;scrollActivationWidth=0&amp;fragments=false' in body
+        'data-src="a.frame-marked-1?view=slide&amp;scrollActivationWidth=0&amp;fragments=false'
+        in body
         and "embedded" not in body
     )
 
@@ -633,7 +812,7 @@ def test_live_frames_open_at_their_own_slide(tmp_path):
     )
     new_doc = _deck(['<section id="one"><h2>One</h2></section>', EDITED])
     files, old, new = _static_files(tmp_path, old_doc, new_doc)
-    body, old_marked, new_marked, _ = deck_review.live_review(
+    body, old_marked, new_marked, *_ = deck_review.live_review(
         "d/deck.html", old_doc, new_doc, old, new, {0: 0, 1: 1}, files, "b", "a"
     )
     assert 'data-dr-slide-id="two"' in body

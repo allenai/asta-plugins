@@ -23,7 +23,7 @@ from collections.abc import Mapping
 from contextlib import contextmanager, redirect_stdout
 from pathlib import Path
 from urllib.error import URLError
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 from urllib.request import urlopen
 
 import click
@@ -1621,6 +1621,12 @@ def _paper_previews(project: Path, base: str, site: Path) -> None:
             capture_output=True,
             text=True,
         )
+        # The script exits 0 when it falls back to the paper without a marked
+        # diff (e.g. the diff does not compile); say so, naming the paper.
+        for line in (built.stdout + built.stderr).splitlines():
+            if line.startswith("::warning"):
+                reason = unquote(line.partition("::")[2].partition("::")[2])
+                click.echo(f"Warning: {directory}: {reason}", err=True)
         if built.returncode != 0:
             out = root / directory
             out.mkdir(parents=True, exist_ok=True)

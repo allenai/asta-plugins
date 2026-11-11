@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- What changed shows each slide of a deck from its own small page (about 120 KB for a talk whose whole deck is 6 MB) with the deck's fonts, styles and scripts shared by all slides, so a deck that is new or changes many slides no longer leaves most slide frames blank while each loads the whole deck. Slides still show live, marked in place, with selectable text.
 - Use `asta workspace what-changed [ref]` locally and in PR previews, including built-site baselines and lazy, pinned browser provisioning for deck comparisons. Shared Make rules retain only the render contract.
 - Preserve evidence popovers and resolve inline citation links in comparison pages.
 - `asta workspace what-changed` creates Quarto's Sass cache database before its two concurrent renders start, so a cold start no longer fails with "database is locked".

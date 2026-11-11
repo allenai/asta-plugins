@@ -1,11 +1,28 @@
-"""Browser-free live slide review: static input comparison and marked deck frames."""
+"""Browser-free live slide review: static input comparison and marked deck frames.
 
+Each slide in the report is an iframe, and a self-contained Reveal deck is one
+big document: for a real 58-slide talk, 6.2 MB, of which 3.7 MB is the same
+fonts, styles and scripts in every frame. Loading that whole deck to show one
+slide left a deck that is new, or changes many slides, blank for minutes.
+
+So a frame is not the deck but a *frame document*: the deck with every other
+slide emptied to a placeholder section (positions, slide numbers and ``#/``
+anchors stay as in the deck) and with its large inline pieces (stylesheets,
+scripts, fonts, images) moved to files shared by all frames, which the browser
+fetches and parses once. A frame then costs the one slide plus a few KB, so many
+frames load within seconds. The frame is still a live Reveal deck, so the slide
+shows in place, sharp, with selectable text. The full marked decks are still
+published for opening on their own.
+"""
+
+import hashlib
 import html
 import os
 import posixpath
 import re
+from base64 import b64decode
 from html.parser import HTMLParser
-from urllib.parse import quote, unquote, urlsplit
+from urllib.parse import quote, unquote, unquote_to_bytes, urlsplit
 
 LIVE_RE = re.compile(
     r"<(?:script|iframe|canvas|video|audio|object|embed)\b|data-background-(?:iframe|video)",
@@ -393,6 +410,178 @@ def marked_deck(doc, slides, marks, tag, struck=None):
     return doc
 
 
+FRAME_ASSETS = "frame-assets"
+# Pieces under these sizes stay inline: a request costs more than they weigh.
+BIG_BLOCK = 8192
+BIG_DATA = 2048
+
+_LINK_RE = re.compile(r"<link\b[^>]*>", re.I)
+_HREF_RE = re.compile(
+    r"""\bhref\s*=\s*(["'])(data:text/css[^"']*?),(.*?)\1""", re.I | re.S
+)
+_STYLE_RE = re.compile(r"<style\b([^>]*)>(.*?)</style\s*>", re.I | re.S)
+_SCRIPT_RE = re.compile(r"<script\b([^>]*)>(.*?)</script\s*>", re.I | re.S)
+_PLAIN_RE = re.compile(
+    r"""\s*(?:type\s*=\s*["']?text/(?:css|javascript)["']?\s*)?""", re.I
+)
+_DATA_RE = re.compile(
+    r"data:(image/(?:png|jpeg|gif|webp|avif|svg\+xml)|font/(?:woff2?|ttf|otf));base64,"
+    rf"([A-Za-z0-9+/=]{{{BIG_DATA},}})"
+)
+_DECK_WIDE_RE = re.compile(
+    r"<style\b.*?</style\s*>|<script\b.*?</script\s*>|<link\b[^>]*>", re.S | re.I
+)
+_EXTENSION = {
+    "image/svg+xml": ".svg",
+    "image/jpeg": ".jpg",
+    "font/woff": ".woff",
+    "font/woff2": ".woff2",
+}
+
+
+def frame_path(path, kind, index):
+    """Where the frame document for slide ``index`` of a deck is published."""
+    root, ext = posixpath.splitext(path)
+    return f"{root}.frame-{kind}-{index + 1}{ext}"
+
+
+class FrameAssets:
+    """Large inline pieces of decks, moved to files every frame document shares.
+
+    ``prefix`` is the relative URL from the frame documents to the files, which
+    are kept in ``files`` by content-derived name. Only pieces that load the same
+    from a file are moved: stylesheets without relative ``url()``/``@import``,
+    plain scripts that do not read their own address, and base64 images/fonts.
+    """
+
+    def __init__(self, prefix):
+        self.prefix = prefix
+        self.files = {}
+
+    def _store(self, data, ext):
+        name = hashlib.sha256(data).hexdigest()[:24] + ext
+        self.files[name] = data
+        return self.prefix + name
+
+    def _link(self, tag):
+        match = _HREF_RE.search(tag)
+        if not match or len(match.group(3)) < BIG_BLOCK:
+            return tag
+        payload = html.unescape(match.group(3))
+        try:
+            if ";base64" in match.group(2).lower():
+                data = b64decode(payload, validate=True)
+            else:
+                data = unquote_to_bytes(payload)
+        except ValueError:
+            return tag
+        url = self._store(data, ".css")
+        return tag[: match.start()] + f'href="{url}"' + tag[match.end() :]
+
+    def _style(self, match):
+        if (
+            _PLAIN_RE.fullmatch(match.group(1)) is None
+            or len(match.group(2)) < BIG_BLOCK
+        ):
+            return match.group(0)
+        # A stylesheet that names other files by relative URL would look in the
+        # wrong directory once it moves.
+        if any(
+            not ref.startswith("data:")
+            for ref in ResourceRefs(match.group(2), True).refs
+        ):
+            return match.group(0)
+        url = self._store(match.group(2).encode(), ".css")
+        return f'<link rel="stylesheet" href="{url}">'
+
+    def _script(self, match):
+        code = match.group(2)
+        if (
+            _PLAIN_RE.fullmatch(match.group(1)) is None
+            or len(code) < BIG_BLOCK
+            or "currentScript" in code
+        ):
+            return match.group(0)
+        return f'<script src="{self._store(code.encode(), ".js")}"></script>'
+
+    def _data(self, match):
+        mime = match.group(1)
+        try:
+            data = b64decode(match.group(2), validate=True)
+        except ValueError:
+            return match.group(0)
+        return self._store(data, _EXTENSION.get(mime, "." + mime.split("/")[1]))
+
+    def move(self, text):
+        """``text`` with its large pieces replaced by links to shared files."""
+        if len(text) < BIG_DATA:
+            return text
+        text = _LINK_RE.sub(lambda m: self._link(m.group(0)), text)
+        text = _STYLE_RE.sub(self._style, text)
+        text = _SCRIPT_RE.sub(self._script, text)
+        return _DATA_RE.sub(self._data, text)
+
+
+class FrameDocs:
+    """Frame documents of one deck: ``doc`` with one slide kept, the rest emptied.
+
+    ``slides`` are SlideParser's slides of ``doc``. The HTML around the slides is
+    prepared once, so a frame costs only its own slide. An emptied slide keeps its
+    place (so numbers and anchors hold) and any style, script or link in it,
+    since those can restyle the slide that is kept.
+    """
+
+    def __init__(self, doc, slides, assets):
+        self.doc, self.slides, self.assets = doc, slides, assets
+        self.gaps, end = [], 0
+        for slide in slides:
+            start, stop = slide["span"]
+            self.gaps.append(doc[end:start])
+            end = stop
+        self.gaps.append(doc[end:])
+        head = re.search(r"</head\s*>", self.gaps[0], re.I)
+        if head:
+            self.gaps[0] = (
+                self.gaps[0][: head.start()]
+                + LIVE_MARK_CSS
+                + self.gaps[0][head.start() :]
+            )
+        self.gaps = [assets.move(gap) for gap in self.gaps]
+        self.holders = [self._holder(doc[slice(*slide["span"])]) for slide in slides]
+
+    def _holder(self, text):
+        # What the deck and its theme read from every slide stays: whether a slide
+        # is hidden or uncounted, and its section (asta-slides.js builds the
+        # section headline from every slide's data-asta-section*). Anything that
+        # draws or sizes the slide (id, class, background) does not.
+        opening = re.match(r"<section\b[^>]*>", text, re.I)
+        kept = re.findall(
+            r"""\bdata-(?:visibility|asta-[\w-]+)\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)""",
+            opening.group(0) if opening else "",
+            re.I,
+        )
+        return (
+            "<section"
+            + "".join(" " + attribute for attribute in kept)
+            + ">"
+            + self.assets.move("".join(_DECK_WIDE_RE.findall(text)))
+            + "</section>"
+        )
+
+    def text(self, index):
+        return self.doc[slice(*self.slides[index]["span"])]
+
+    def render(self, index, text=None):
+        """The frame document for slide ``index``, optionally with its markup ``text``."""
+        kept = self.assets.move(self.text(index) if text is None else text)
+        parts = []
+        for i, gap in enumerate(self.gaps[:-1]):
+            parts.append(gap)
+            parts.append(kept if i == index else self.holders[i])
+        parts.append(self.gaps[-1])
+        return "".join(parts)
+
+
 def classify(old, new, pairs, same_image=None, same_text=None, same_interactions=None):
     """Rows in deck order as (kind, new_index, old_index), and removed old indices.
 
@@ -440,12 +629,19 @@ def live_rows(old, new, pairs, same_static):
 
 
 def live_review(deck, old_doc, new_doc, old, new, pairs, files, old_url, new_url):
-    """Browser-free live cards and marked deck documents; no persistent state."""
+    """Browser-free live cards, marked deck documents and the frame documents.
+
+    Returns ``(body, before, after, marked, frames)``: the report HTML; the old
+    and new decks and the new deck with changes marked, each for opening whole;
+    and ``frames``, ``{(side, path): document}`` with ``side`` "before" or
+    "after" (relative to that side's copy of the site) or "shared", for the files
+    every frame document links to (``path`` relative to the frame assets).
+    """
     rows, removed = live_rows(
         old, new, pairs, lambda a, b: files.same_static(deck, a, b)
     )
     if not removed and all(kind == "unchanged" for kind, _, _ in rows):
-        return None, old_doc, new_doc, None
+        return None, old_doc, new_doc, None, {}
     deleted, inserted, struck = {}, {}, {}
     for kind, n, o in rows:
         if o is not None:
@@ -456,13 +652,33 @@ def live_review(deck, old_doc, new_doc, old, new, pairs, files, old_url, new_url
     for o in removed:
         deleted[o] = set(range(len(slide_words(old[o]["raw"]))))
     cards, folded = [], []
-    marked_url = marked_path(new_url)
+    # From a frame document at <root>/<side>/<deck> up to <root>/<FRAME_ASSETS>.
+    assets = FrameAssets("../" * (deck.count("/") + 1) + FRAME_ASSETS + "/")
+    docs = {
+        "before": FrameDocs(old_doc, old, assets),
+        "after": FrameDocs(new_doc, new, assets),
+    }
+    frames = {}
 
-    def frame(url, slide, side, view):
+    def frame_src(kind, index):
+        """Publish the frame document of a slide in a view; its URL."""
+        side = "before" if kind == "before" else "after"
+        name = frame_path(deck, kind, index)
+        if (side, name) not in frames:
+            if kind == "marked":
+                text = mark_words(
+                    docs[side].text(index), inserted[index], "ins", struck.get(index)
+                )
+                frames[side, name] = docs[side].render(index, text)
+            else:
+                frames[side, name] = docs[side].render(index)
+        return frame_path(old_url if side == "before" else new_url, kind, index)
+
+    def frame(src, slide, side, view):
         anchor = quote(slide.get("anchor") or slide.get("id") or "", safe="/")
         # Reveal's narrow-screen scroll view ignores slide hashes; query config
         # outranks the deck's. Navigation is off so a frame stays on its slide.
-        src = html.escape(f"{url}?{FRAME_CONFIG}#/{anchor}", quote=True)
+        src = html.escape(f"{src}?{FRAME_CONFIG}#/{anchor}", quote=True)
         slide_id = html.escape(slide.get("id") or slide.get("anchor") or "", quote=True)
         return (
             f'<figure data-view="{view}"><figcaption>{side}</figcaption>'
@@ -475,13 +691,22 @@ def live_review(deck, old_doc, new_doc, old, new, pairs, files, old_url, new_url
         slide = new[n] if n is not None else old[o]
         label = "changed in look" if kind == "look" else kind
         if n is None:
-            body = frame(old_url, old[o], "Removed", "marked clean before")
+            body = frame(
+                frame_src("before", o), old[o], "Removed", "marked clean before"
+            )
         else:
-            body = frame(marked_url, new[n], "Changes marked", "marked")
-            body += frame(new_url, new[n], "Clean", "clean")
+            clean = frame_src("clean", n)
+            # A slide with no word changed has no marks, so Changes marked is its
+            # clean frame. Before is always the old deck's own slide: its place,
+            # number, anchor and notes can differ from the new deck's.
+            marks = inserted.get(n) or struck.get(n)
+            marked = frame_src("marked", n) if marks else clean
+            before = frame_src("before", o) if o is not None else clean
+            body = frame(marked, new[n], "Changes marked", "marked")
+            body += frame(clean, new[n], "Clean", "clean")
             if o is not None:
-                body += frame(old_url, old[o], "Before", "before")
-            body += frame(new_url, new[n], "After", "before")
+                body += frame(before, old[o], "Before", "before")
+            body += frame(clean, new[n], "After", "before")
         return (
             f'<article class="dr-slide dr-{kind}"><h3>Slide {number}: '
             f"{html.escape(slide_title(slide))} — {label}</h3>"
@@ -516,11 +741,14 @@ def live_review(deck, old_doc, new_doc, old, new, pairs, files, old_url, new_url
         f'<span class="dr-count">{count} changed or new; {len(removed)} removed; '
         f"{len(new)} slides</span>" + VIEW_SWITCH + "</div>" + "".join(cards) + "</div>"
     )
+    for name, data in assets.files.items():
+        frames["shared", name] = data
     return (
         body,
         marked_deck(old_doc, old, {}, "del"),
         marked_deck(new_doc, new, {}, "ins"),
         marked_deck(new_doc, new, inserted, "ins", struck),
+        frames,
     )
 
 
@@ -561,8 +789,9 @@ LIVE_STYLE = """<style>
 
 LIVE_SCRIPT = """<script>
 document.querySelectorAll('.deck-live').forEach(root => {
- // Load only shown frames, near the viewport and two at a time: each frame
- // parses the whole deck, so an opened fold must not start dozens at once.
+ // Load only shown frames, near the viewport and a few at a time, so that an
+ // opened fold does not start dozens at once. A frame is one slide's small
+ // document, so a few at a time keep the slides in view ahead of the scroll.
  const shown = f => f.closest('figure').offsetParent !== null;
  const queue = []; let active = 0;
  const start = f => {
@@ -576,7 +805,7 @@ document.querySelectorAll('.deck-live').forEach(root => {
  }) || pump(), {rootMargin: '300px 0px'});
  const pump = () => {
   queue.sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top);
-  while (active < 2 && queue.length) {
+  while (active < 4 && queue.length) {
    const f = queue.shift();
    if (!f.dataset.src) continue;
    if (shown(f)) start(f); else near.observe(f);

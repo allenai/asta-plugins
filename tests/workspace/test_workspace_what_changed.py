@@ -1760,6 +1760,33 @@ def test_local_paper_diff_built_when_tex_is_available(tmp_path, monkeypatch):
     }
 
 
+def test_local_paper_diff_that_falls_back_says_which_paper_and_why(
+    tmp_path, monkeypatch, capsys
+):
+    """A paper whose marked diff does not compile must not look like it has one."""
+    workspace = workspace_module
+    project = tmp_path / "project"
+    _fake_paper_scripts(project)
+    (project / "scripts/paper-preview.sh").write_text(
+        'out="_site/paper-previews/$2"; mkdir -p "$out"\n'
+        'printf \'{"changed":true,"diff":false}\\n\' > "$out/preview.json"\n'
+        "echo '::warning::Could not build latexdiff PDF; the current paper PDF remains available'\n"
+    )
+    site = project / "_site"
+    site.mkdir()
+    monkeypatch.setattr(workspace.shutil, "which", lambda name: f"/usr/bin/{name}")
+
+    workspace._paper_previews(project, "abc123", site)
+
+    warnings = [
+        line for line in capsys.readouterr().err.splitlines() if "latexdiff" in line
+    ]
+    assert warnings == [
+        "Warning: paper: Could not build latexdiff PDF; "
+        "the current paper PDF remains available"
+    ]
+
+
 def test_working_tree_snapshot_moves_head_to_uncommitted_edit(tmp_path):
     workspace = workspace_module
     project = tmp_path / "project"
