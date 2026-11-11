@@ -4,7 +4,7 @@ A2A interactive runner.
 
 import click
 
-from asta.literature.a2a_artifact import parse_artifact
+from asta.literature.a2a_artifact import parse_artifacts
 from asta.literature.models import LiteratureSearchResult
 from asta.utils.a2a_interactive import (
     A2ASkillSpec,
@@ -74,9 +74,13 @@ def interactive(
         timeout=timeout,
         server=server,
         api_key=api_key,
-        message_data={"query": query, "operation_mode": mode},
-        artifact_to_result=lambda artifact, ctx_thread_id, narrative: parse_artifact(
-            artifact,
+        message_data={
+            "query": query,
+            "operation_mode": mode,
+            "result": {"preset": "full"},
+        },
+        artifacts_to_result=lambda artifacts, ctx_thread_id, narrative: parse_artifacts(
+            artifacts,
             query=query,
             thread_id=ctx_thread_id,
             narrative=narrative,

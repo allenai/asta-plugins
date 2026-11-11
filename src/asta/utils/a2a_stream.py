@@ -19,7 +19,7 @@ import httpx
 from asta.utils.headers import identity_headers
 
 A2A_VERSION = "1.0"
-DEFAULT_RPC_PATH = "/api/3/a2a"
+DEFAULT_RPC_PATH = "/api/4/a2a"
 
 # A2A v1.0 task lifecycle states that are terminal (no further events follow).
 TERMINAL_STATES: frozenset[str] = frozenset(
@@ -161,7 +161,7 @@ def _build_rpc_body(
     message: dict[str, Any] = {
         "messageId": uuid4().hex,
         "role": "ROLE_USER",
-        "parts": [{"data": {"data": message_data}}],
+        "parts": [{"data": message_data}],
     }
     if context_id:
         # Standard A2A continuation mechanism: the prior Task's context_id is

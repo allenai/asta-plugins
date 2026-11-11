@@ -12,6 +12,8 @@ from asta.literature.models import (
     RelevantSnippet,
     Snippet,
 )
+from asta.literature.v4_papers import v4_paper_to_paper
+from tests._v4_fixtures import v4_paper, v4_sparse_paper
 
 
 class TestAuthor:
@@ -36,43 +38,25 @@ class TestPaper:
 
     def test_paper_minimal(self):
         """Test paper with minimal required fields"""
-        paper = Paper(corpusId=123, title="Test Paper", relevanceScore=0.9)
+        paper = Paper(corpusId=123, title="Test Paper")
         assert paper.corpusId == 123
         assert paper.title == "Test Paper"
-        assert paper.relevanceScore == 0.9
+        assert paper.relevanceScore is None
         assert paper.authors == []
         assert paper.snippets == []
 
-    def test_paper_snake_case_fields(self):
-        """Test paper creation with snake_case field names (API format)"""
-        data = {
-            "corpus_id": 12345,
-            "title": "Test Paper",
-            "relevance_score": 0.95,
-            "publication_date": "2024-01-15",
-            "citation_count": 42,
-        }
-        paper = Paper(**data)
-        assert paper.corpusId == 12345
-        assert paper.relevanceScore == 0.95
-        assert paper.publicationDate == "2024-01-15"
-        assert paper.citationCount == 42
+    def test_find_output_round_trips_v4_papers(self):
+        """``find`` dumps the adapted v4 papers and validates them back; papers
+        with no score, authors, abstract or citing corpus id survive the trip."""
+        papers = [v4_paper_to_paper(v4_paper()), v4_paper_to_paper(v4_sparse_paper())]
+        dumped = [paper.model_dump(mode="json") for paper in papers]
 
-    def test_paper_string_authors_conversion(self):
-        """Test automatic conversion of string authors to Author objects"""
-        data = {
-            "corpus_id": 12345,
-            "title": "Test Paper",
-            "relevance_score": 0.95,
-            "authors": ["Alice Smith", "Bob Jones", "Charlie Brown"],
-        }
-        paper = Paper(**data)
-        assert len(paper.authors) == 3
-        assert isinstance(paper.authors[0], Author)
-        assert paper.authors[0].name == "Alice Smith"
-        assert paper.authors[0].id == ""
-        assert paper.authors[1].name == "Bob Jones"
-        assert paper.authors[2].name == "Charlie Brown"
+        result = LiteratureSearchResult(query="q", results=dumped)
+
+        assert result.results == papers
+        assert result.results[1].relevanceScore is None
+        assert result.results[1].authors == []
+        assert result.results[0].citationContexts[1].sourceCorpusId is None
 
     def test_paper_complete(self):
         """Test paper with all fields"""

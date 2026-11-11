@@ -2,7 +2,7 @@
 
 Generic runner-level e2e (single-turn, multi-turn, failed-terminal, HTTP error)
 lives in ``test_a2a_interactive.py``. Here we only verify that the paper-finder
-skill wires its own callbacks (``parse_artifact``, ``_build_summary``, the Click
+skill wires its own callbacks (``parse_artifacts``, ``_build_summary``, the Click
 shell) on top correctly.
 """
 
@@ -21,6 +21,7 @@ from tests._a2a_fixtures import (
     terminal_event,
     working_step_event,
 )
+from tests._v4_fixtures import v4_paper, v4_search_result
 
 
 @pytest.fixture
@@ -37,50 +38,41 @@ def _stub_resolver_env(monkeypatch):
 
 def test_e2e_paper_finder_writes_literature_search_result(runner, tmp_path):
     """Smoke that the paper-finder skill plumbing is wired correctly: Click
-    parses the args, the runner streams, ``parse_artifact`` translates the
-    paper-finder-shaped artifact into a ``LiteratureSearchResult``, and the
-    JSON ends up on disk with the right fields."""
+    parses the args, the runner streams the bare skill input to ``/api/4/a2a``,
+    ``parse_artifacts`` translates the v4 artifact into a
+    ``LiteratureSearchResult``, and the JSON ends up on disk."""
     out = tmp_path / "results.json"
-    paper_finder_artifact = {
-        "schemaVersion": "1",
-        "subtype": "paper-finder-search-result",
-        "entities": {
-            "ent_001": {
-                "id": "ent_001",
-                "type": "PAPER",
-                "displayLabel": "Foo",
-                "s2Metadata": {
-                    "title": "Foo: A Paper",
-                    "year": 2024,
-                    "venue": "NeurIPS",
-                    "corpusId": "12345",
-                    "authors": [{"name": "Alice", "authorId": "a1"}],
-                },
-                "url": "https://s2/12345",
-                "relevanceScore": 0.91,
-            }
-        },
-    }
     events = [
         initial_task_event(),
         working_step_event("Searching"),
-        artifact_update_event(paper_finder_artifact),
+        artifact_update_event(v4_search_result([v4_paper()])),
         terminal_event("TASK_STATE_COMPLETED", "Found 1 paper."),
     ]
-    with FakeA2AServer(events=events):
+    with FakeA2AServer(events=events) as server:
         result = runner.invoke(
             cli,
             ["literature", "interactive", "transformer survey", "-o", str(out)],
         )
 
     assert result.exit_code == 0, result.output
+    assert server.urls == ["http://test-server/api/4/a2a"]
+    assert server.requests[0]["params"]["message"]["parts"] == [
+        {
+            "data": {
+                "query": "transformer survey",
+                "operation_mode": "infer",
+                "result": {"preset": "full"},
+            }
+        }
+    ]
     data = json.loads(out.read_text())
     assert data["query"] == "transformer survey"
     assert data["thread_id"] == "thrd:abc"
     assert data["narrative"] == "Found 1 paper."
-    # parse_artifact translated the wire artifact into the LiteratureSearchResult shape.
-    assert data["results"][0]["corpusId"] == 12345
-    assert data["results"][0]["title"] == "Foo: A Paper"
+    [paper] = data["results"]
+    assert paper["corpusId"] == 13756489
+    assert paper["title"] == "Attention Is All You Need"
+    assert paper["citationContexts"][0]["sourceCorpusId"] == 999
 
 
 def test_build_summary_shape_and_narrative_handling():
