@@ -26,6 +26,14 @@ from asta.papers.client import SemanticScholarClient
     help="Date or year filter (e.g., 2020, 2020-2024, 2024-01-01:2024-12-31, 2020-)",
 )
 @click.option(
+    "--fields-of-study",
+    default=None,
+    help=(
+        "Comma-separated fields of study to restrict results to "
+        '(e.g., "Computer Science,Medicine")'
+    ),
+)
+@click.option(
     "--format",
     "output_format",
     type=click.Choice(["json", "text"]),
@@ -37,6 +45,7 @@ def search(
     fields: str,
     limit: int,
     date: str | None,
+    fields_of_study: str | None,
     output_format: str,
 ):
     """Search for papers by keyword.
@@ -48,6 +57,8 @@ def search(
         asta papers search "RLHF" --date 2023- --limit 10
 
         asta papers search "neural networks" --fields title,year,abstract
+
+        asta papers search "protein folding" --fields-of-study "Computer Science"
     """
     try:
         client = SemanticScholarClient()
@@ -58,6 +69,7 @@ def search(
             fields=fields,
             limit=limit,
             publication_date_or_year=publication_date_or_year,
+            fields_of_study=fields_of_study,
         )
 
         if output_format == "json":
