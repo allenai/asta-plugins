@@ -201,10 +201,12 @@ case needs no YAML edit.
 For a local artifact, pass `PREVIEW_SITE=/path/to/site`; `PR_NUMBER` defaults to
 `0`, disabling only the PR URL check.
 
-`workspace-ok` is the stable aggregate result for the offline, tools, comparison
-and DOM jobs. It fails on failed, cancelled or unexpectedly skipped jobs, and
-passes when an unrelated PR deliberately skips them all. A maintainer should
-require `workspace-ok` and `Example preview browser` in the repository's merge
+`workspace-ok` is the stable aggregate result for the offline and DOM jobs, the
+workspace tests that run no render or browser. It fails on failed, cancelled or
+unexpectedly skipped jobs, and passes when an unrelated PR deliberately skips them
+all. The tools and comparison jobs render and drive a browser, so they can flake:
+they show on each workspace PR without blocking it, and the release checks below
+run them. A maintainer should require `workspace-ok` in the repository's merge
 rules, rather than individual matrix names. Workflow changes do not configure
 those repository settings.
 

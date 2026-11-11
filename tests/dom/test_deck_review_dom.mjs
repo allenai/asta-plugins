@@ -73,7 +73,7 @@ test("each view loads only its own frames, opened at the changed slide", () => {
   const { document } = page();
   assert.match(document.querySelector(".dr-count").textContent, /^1 changed or new; 0 removed; 4 slides/);
   assert.deepEqual(loaded(document), ["marked"]);
-  assert.match(document.querySelector("iframe[src]").getAttribute("src"), /^a\.marked\.html\?.*#\/s3$/);
+  assert.match(document.querySelector("iframe[src]").getAttribute("src"), /^a\.frame-marked-3\.html\?.*#\/s3$/);
   const steps = [["clean", ["marked", "clean"]], ["before", ["marked", "clean", "before", "before"]]];
   for (const [view, expected] of steps) {
     document.querySelector(`.dr-seg button[data-v="${view}"]`).click();
@@ -117,17 +117,19 @@ test("folded unchanged slides load no deck until expanded", () => {
 });
 
 
-test("viewport loader starts at most two frames and advances when one loads", () => {
+test("viewport loader starts at most four frames and advances when one loads", () => {
   const { document, window, observer } = page(true);
-  const fold = document.querySelector("details.wc-expander");
-  Object.defineProperty(fold, "open", { get() { return this.hasAttribute("open"); } });
-  fold.setAttribute("open", "");
-  fold.dispatchEvent(new window.Event("toggle"));
+  for (const fold of document.querySelectorAll("details.wc-expander")) {
+    Object.defineProperty(fold, "open", { get() { return this.hasAttribute("open"); } });
+    fold.setAttribute("open", "");
+    fold.dispatchEvent(new window.Event("toggle"));
+  }
+  document.querySelector('.dr-seg button[data-v="before"]').click();
   assert.equal(loaded(document).length, 0, "observation alone does not load decks");
   const visible = [...observer.targets].filter(f => f.closest("figure").offsetParent !== null);
-  assert.equal(visible.length, 3);
+  assert.equal(visible.length, 8);
   observer.callback(visible.map(target => ({target, isIntersecting: true})));
-  assert.equal(loaded(document).length, 2, "only two loads in flight");
+  assert.equal(loaded(document).length, 4, "only four loads in flight");
   document.querySelector("iframe[src]").dispatchEvent(new window.Event("load"));
-  assert.equal(loaded(document).length, 3, "the next frame starts after a load");
+  assert.equal(loaded(document).length, 5, "the next frame starts after a load");
 });

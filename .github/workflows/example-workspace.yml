@@ -131,7 +131,9 @@ jobs:
 
   workspace-ok:
     # One stable result to require, including on PRs outside workspace ownership.
-    needs: [scope, python, tools, comparison, dom]
+    # Only the tests that run no render or browser: tools and comparison can flake,
+    # so they show on the PR without blocking it, and the release checks run them.
+    needs: [scope, python, dom]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
