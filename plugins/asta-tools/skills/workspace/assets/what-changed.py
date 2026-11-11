@@ -777,6 +777,9 @@ def list_pages(root, out_path=None, paper_dirs=(), reserved_local_output=False):
     pages = {}
     excluded = os.path.realpath(out_path) if out_path else None
     for dirpath, dirs, files in os.walk(root):
+        if os.path.abspath(dirpath) == os.path.abspath(root):
+            # Quarto's support files (e.g. reveal.js's speaker view) are not pages.
+            dirs[:] = [name for name in dirs if name != "site_libs"]
         if reserved_local_output and os.path.abspath(dirpath) == os.path.abspath(root):
             # Local comparisons retain their rendered assets here. They are
             # supporting output, never another set of source pages to compare.
@@ -1798,7 +1801,7 @@ class DeckRenderer:
                 return stream.read()
 
         url = quote(rel, safe="/")
-        body, before, after, marked = self.module.live_review(
+        body, before, after, marked, frames = self.module.live_review(
             rel,
             read(self.old_root),
             read(self.new_root),
@@ -1849,6 +1852,15 @@ class DeckRenderer:
                 os.makedirs(os.path.dirname(path), exist_ok=True)
                 with open(path, "w", encoding="utf-8") as stream:
                     stream.write(doc)
+        # One slide per frame: the frame documents, and the files they all share.
+        for (side, name), doc in frames.items():
+            if side == "shared":
+                path = os.path.join(self.img_root, self.module.FRAME_ASSETS, name)
+            else:
+                path = os.path.join(self.img_root, side, name)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "wb") as stream:
+                stream.write(doc if isinstance(doc, bytes) else doc.encode("utf-8"))
         self.used = True
         return body
 

@@ -122,5 +122,104 @@ def check(site, artifacts):
             server.server_close()
 
 
+def large_deck(original, slides, count=60):
+    """``original`` with ``count`` more slides, each with a large inline image."""
+    import base64
+
+    # Distinct images, as in a real talk: the browser cannot share one decode.
+    def slide(i):
+        pad = f"<!-- {i} " + "x" * 150_000 + " -->"
+        svg = (
+            '<svg xmlns="http://www.w3.org/2000/svg" width="300" height="100">'
+            f'<rect width="300" height="100" fill="#{(i * 4099) % 0xFFFFFF:06x}"/>{pad}</svg>'
+        )
+        data = base64.b64encode(svg.encode()).decode()
+        return (
+            f'<section id="big-{i}"><h2>Large deck slide {i}</h2>'
+            f'<p>Text on slide {i}.</p><img src="data:image/svg+xml;base64,{data}">'
+            "</section>"
+        )
+
+    start = slides[0]["span"][0]
+    return original[:start] + "".join(slide(i) for i in range(count)) + original[start:]
+
+
+def check_large_deck(site, artifacts):
+    """A deck added whole: every slide shows within seconds of scrolling to it."""
+    import time
+
+    from playwright.sync_api import sync_playwright
+
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        for side in ("old", "new"):
+            copy_site(site, root / side)
+        deck = Path("slides/attention/slides.html")
+        original = (root / "new" / deck).read_text()
+        slides = changed.reveal_slides(original)
+        big = large_deck(original, slides)
+        assert len(big) > 9_000_000
+        (root / "old" / deck).unlink()
+        (root / "new" / deck).write_text(big)
+        out = root / "new/what-changed.html"
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(ASSETS / "what-changed.py"),
+                "--old",
+                str(root / "old"),
+                "--new",
+                str(root / "new"),
+                "--out",
+                str(out),
+                "--render-decks",
+                str(root / "new/what-changed-decks"),
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        assert "slides as text" not in result.stderr, result.stderr
+        # Whatever the page loads for a frame is a small document, not the deck.
+        frames = (root / "new/what-changed-decks/after").rglob("*.frame-*.html")
+        sizes = [path.stat().st_size for path in frames]
+        assert len(sizes) >= 60 and max(sizes) < 400_000, max(sizes)
+        server = _serve(str(root / "new"))
+        try:
+            with sync_playwright() as pw:
+                browser = pw.chromium.launch()
+                page = browser.new_page(viewport={"width": 1440, "height": 1000})
+                page.goto(
+                    f"http://127.0.0.1:{server.server_address[1]}/what-changed.html"
+                )
+                page.locator(".deck-review").wait_for()
+                cards = page.locator(".dr-new .dr-pair figure:visible iframe").all()
+                assert len(cards) >= 60, len(cards)
+                started = time.monotonic()
+                for frame in cards:
+                    frame.scroll_into_view_if_needed(timeout=5000)
+                    # Its own slide, sharp and live, a few seconds after scrolling to it.
+                    page.wait_for_function(
+                        "f => { const w = f.contentWindow; return !!w && !!w.Reveal"
+                        " && w.Reveal.isReady()"
+                        " && w.Reveal.getCurrentSlide().id === f.dataset.drSlideId; }",
+                        arg=frame.element_handle(),
+                        timeout=10000,
+                    )
+                    # The page still answers while frames load.
+                    began = time.monotonic()
+                    page.evaluate("() => document.body.clientHeight")
+                    assert time.monotonic() - began < 2
+                print(
+                    f"All {len(cards)} frames ready in {time.monotonic() - started:.1f} s"
+                )
+                page.screenshot(path=str(artifacts / "deck-review-large.png"))
+                browser.close()
+        finally:
+            server.shutdown()
+            server.server_close()
+
+
 if __name__ == "__main__":
     check(Path(sys.argv[1]).resolve(), Path(sys.argv[2]).resolve())
+    check_large_deck(Path(sys.argv[1]).resolve(), Path(sys.argv[2]).resolve())

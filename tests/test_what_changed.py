@@ -1177,6 +1177,15 @@ def test_retained_render_is_excluded_from_page_and_theme_discovery(tmp_path):
     ]
 
 
+def test_quartos_support_files_are_not_pages_of_the_site(tmp_path):
+    """reveal.js's speaker view appears with the first deck; it is not a new page."""
+    (tmp_path / "index.html").write_text("<main>The site</main>")
+    speaker = tmp_path / "site_libs/revealjs/plugin/notes"
+    speaker.mkdir(parents=True)
+    (speaker / "speaker-view.html").write_text("<html>speaker notes</html>")
+    assert list(WHAT_CHANGED.list_pages(tmp_path)) == ["index.html"]
+
+
 def test_nonlocal_comparison_preserves_pages_with_local_reserved_names(tmp_path):
     old, new = tmp_path / "old", tmp_path / "new"
     old.mkdir()
