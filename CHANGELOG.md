@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- `asta literature find` runs on Paper Finder's tasks API v4: it starts a
+  quick (`standard`) search, polls for its result until `--timeout`, and waits
+  out a full queue. Each paper now has its relevance summary and criteria,
+  snippets, citation contexts, publication date and journal. A paper without
+  a relevance score or authors no longer fails the whole search. Papers Semantic
+  Scholar hasn't cleared to show come without their abstract and snippets
+  (`legalToShow` is false).
+
+- `asta literature interactive` talks to Paper Finder's A2A endpoint v4
+  (`/api/4/a2a`) and returns every paper of every artifact the search produces.
+  Papers now carry citation contexts, publication date, journal and
+  `legalToShow`, like `find`.
+
 - What changed shows each slide of a deck from its own small page (about 120 KB for a talk whose whole deck is 6 MB) with the deck's fonts, styles and scripts shared by all slides, so a deck that is new or changes many slides no longer leaves most slide frames blank while each loads the whole deck. Slides still show live, marked in place, with selectable text.
 - Use `asta workspace what-changed [ref]` locally and in PR previews, including built-site baselines and lazy, pinned browser provisioning for deck comparisons. Shared Make rules retain only the render contract.
 - Preserve evidence popovers and resolve inline citation links in comparison pages.

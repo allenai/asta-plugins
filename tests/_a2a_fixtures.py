@@ -20,6 +20,8 @@ from types import TracebackType
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from tests._v4_fixtures import v4_search_result
+
 DEFAULT_THREAD_ID = "thrd:abc"
 DEFAULT_TASK_ID = "task-1"
 
@@ -36,8 +38,8 @@ class FakeA2AServer:
             ``A2AStreamError`` raised by the client.
 
     After ``__exit__`` the captured request bodies are available on
-    ``self.requests`` (one entry per ``.stream()`` call made within the
-    context manager).
+    ``self.requests`` and their URLs on ``self.urls`` (one entry per
+    ``.stream()`` call made within the context manager).
     """
 
     def __init__(
@@ -51,6 +53,7 @@ class FakeA2AServer:
         self._status = status
         self._body = body
         self.requests: list[dict[str, Any]] = []
+        self.urls: list[str] = []
         self._patcher: Any = None
 
     def __enter__(self) -> FakeA2AServer:
@@ -61,7 +64,8 @@ class FakeA2AServer:
         )
         client = MagicMock()
 
-        def stream(*_args: Any, **kwargs: Any) -> _FakeStreamResponse:
+        def stream(_method: str, url: str, **kwargs: Any) -> _FakeStreamResponse:
+            self.urls.append(url)
             self.requests.append(kwargs.get("json"))
             return response
 
@@ -96,7 +100,9 @@ def happy_events(
     return [
         initial_task_event(thread_id=thread_id),
         working_step_event("Searching"),
-        artifact_update_event(artifact_data or _MIN_ARTIFACT, thread_id=thread_id),
+        artifact_update_event(
+            artifact_data or v4_search_result([]), thread_id=thread_id
+        ),
         terminal_event("TASK_STATE_COMPLETED", narrative, thread_id=thread_id),
     ]
 
@@ -155,17 +161,29 @@ def working_step_event(
 
 
 def artifact_update_event(
-    artifact_data: dict[str, Any], thread_id: str = DEFAULT_THREAD_ID
+    artifact_data: dict[str, Any],
+    thread_id: str = DEFAULT_THREAD_ID,
+    *,
+    append: bool = False,
 ) -> dict[str, Any]:
+    """One A2A artifact per v4 artifact, under the v4 artifact's id."""
     return _envelope(
         "artifactUpdate",
         {
             "taskId": DEFAULT_TASK_ID,
             "contextId": thread_id,
+            "append": append,
             "artifact": {
-                "artifactId": DEFAULT_TASK_ID,
-                "name": "Result",
-                "parts": [{"data": artifact_data}],
+                "artifactId": artifact_data["id"],
+                "name": artifact_data["name"],
+                "metadata": {"type": artifact_data["kind"]},
+                "parts": [
+                    {
+                        "data": artifact_data,
+                        "mediaType": "application/vnd.ai2.lit-understanding."
+                        f"{artifact_data['kind']}.v4+json",
+                    }
+                ],
             },
         },
     )
@@ -188,9 +206,6 @@ def terminal_event(
 
 
 # --- Internals ---------------------------------------------------------------
-
-
-_MIN_ARTIFACT: dict[str, Any] = {"schemaVersion": "1", "entities": {}}
 
 
 def _envelope(kind: str, payload: dict[str, Any]) -> dict[str, Any]:

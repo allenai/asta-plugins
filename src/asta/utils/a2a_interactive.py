@@ -2,7 +2,7 @@
 ``--thread-dir`` state + streaming + output writing.
 
 A skill module on top of this is ~50 lines: a Click command with skill-specific
-options, an :class:`A2ASkillSpec`, and two callbacks (artifact → result,
+options, an :class:`A2ASkillSpec`, and two callbacks (artifacts → result,
 optional summary builder). Wire-format details live in
 :mod:`asta.utils.a2a_stream`.
 """
@@ -56,13 +56,13 @@ class A2ASkillSpec:
 
 @dataclass(frozen=True, slots=True)
 class TurnResult:
-    artifact: dict[str, Any]
+    artifacts: list[dict[str, Any]]
     thread_id: str | None
     narrative: str | None
 
 
-# (artifact_dict, thread_id, narrative) → result with ``.model_dump`` or a plain dict.
-ArtifactToResult = Callable[[dict[str, Any], str | None, str | None], Any]
+# (artifact data parts, thread_id, narrative) → result with ``.model_dump`` or a plain dict.
+ArtifactsToResult = Callable[[list[dict[str, Any]], str | None, str | None], Any]
 
 # (result_obj, narrative) → per-turn ``summary`` blob recorded under ``DIR/index.json``.
 BuildSummary = Callable[[Any, str | None], dict[str, Any]]
@@ -128,7 +128,7 @@ def run_a2a_session(
     server: str | None,
     api_key: str | None,
     message_data: dict[str, Any],
-    artifact_to_result: ArtifactToResult,
+    artifacts_to_result: ArtifactsToResult,
     build_summary: BuildSummary | None = None,
 ) -> None:
     """Resolve server/auth, prep ``--thread-dir``, stream the turn, write output, update index.
@@ -158,9 +158,9 @@ def run_a2a_session(
             )
         )
 
-        # 3. Translate the wire artifact into the skill's result type.
-        result_obj = artifact_to_result(
-            stream_result.artifact,
+        # 3. Translate the wire artifacts into the skill's result type.
+        result_obj = artifacts_to_result(
+            stream_result.artifacts,
             stream_result.thread_id,
             stream_result.narrative,
         )
@@ -259,7 +259,7 @@ async def _run_streaming_turn(
     """Drives a single turn; prints step-progress to stderr; enforces the
     ``COMPLETED`` + artifact-present terminal policy (else raises)."""
     resolved_thread_id: str | None = thread_id
-    artifact_dict: dict[str, Any] | None = None
+    artifact_parts: dict[str, list[dict[str, Any]]] = {}
     narrative: str | None = None
     terminal_state: str | None = None
     thread_id_announced = False
@@ -290,7 +290,11 @@ async def _run_streaming_turn(
                     print(f"{marker} {desc}", file=sys.stderr, flush=True)
             elif event.kind == "artifact_update":
                 if (payload := artifact_data_of(event)) is not None:
-                    artifact_dict = payload
+                    artifact_id = event.raw["artifact"]["artifactId"]
+                    if event.raw.get("append"):
+                        artifact_parts.setdefault(artifact_id, []).append(payload)
+                    else:
+                        artifact_parts[artifact_id] = [payload]
     except A2AStreamError as e:
         raise click.ClickException(str(e)) from e
 
@@ -302,11 +306,11 @@ async def _run_streaming_turn(
         raise click.ClickException(
             f"Search ended in state '{terminal_state}': {narrative or ''}"
         )
-    if artifact_dict is None:
+    if not artifact_parts:
         raise click.ClickException("Search completed but no artifact was returned.")
 
     return TurnResult(
-        artifact=artifact_dict,
+        artifacts=[part for parts in artifact_parts.values() for part in parts],
         thread_id=resolved_thread_id,
         narrative=narrative,
     )

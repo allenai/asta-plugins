@@ -66,9 +66,7 @@ any prior conversation. Use that for ad-hoc single queries; for any multi-turn
 session, always pass `--thread-dir`.
 
 Output deltas vs `find`: the `interactive` JSON adds `thread_id` and `narrative`
-(the agent's terminal response text). It does not currently populate
-`citationContexts` or `publicationDate` per paper; for those, use `find` or the
-`asta papers` commands.
+(the agent's terminal response text). Each paper has the same fields in both.
 
 ## Tools Available
 
@@ -95,7 +93,7 @@ Bash(command="asta documents add file://.asta/documents/literature/find/literatu
 
 Browse results with jq:
 ```bash
-jq '[.results | sort_by(-.relevanceScore) | .[0:10][] | {title, year, venue, corpusId, score: .relevanceScore, summary: .relevanceJudgement.relevanceSummary}]' <filename>
+jq '[.results | sort_by(-(.relevanceScore // 0)) | .[0:10][] | {title, year, venue, corpusId, score: .relevanceScore, summary: .relevanceJudgement.relevanceSummary}]' <filename>
 ```
 
 Go through all highly relevant papers, extracting relevance criteria, snippets, and citation contexts from each.
@@ -130,31 +128,36 @@ The output is a `LiteratureSearchResult` with the following structure:
 **Each paper in `results[]`:**
 - `corpusId`: int - Semantic Scholar corpus ID
 - `title`: string - paper title
-- `abstract`: string | null - paper abstract
+- `abstract`: string | null - paper abstract (null when `legalToShow` is false)
 - `year`: int | null - publication year
-- `authors`: array of {name: string, id: string}
+- `publicationDate`: string | null - ISO date
+- `authors`: array of {name: string, id: string} (may be empty)
 - `venue`: string | null - publication venue
-- `url`: string | null - Semantic Scholar URL
-- `citationCount`: int | null - number of citations
-- `relevanceScore`: float - 0-1 (higher = more relevant to query)
-- `relevanceJudgement`: object with:
+- `journal`: {name, volume, pages} | null
+- `url`: string - Semantic Scholar URL
+- `citationCount`: int - number of citations
+- `relevanceScore`: float | null - 0-1, the score papers are ranked by (higher = more relevant to query); null when the paper has none
+- `relevanceJudgement`: object, or null when the paper wasn't judged, with:
   - `relevance`: int - overall relevance score
   - `relevanceSummary`: string - AI explanation of relevance
   - `relevanceCriteriaJudgements`: array of per-concept judgements with:
     - `name`: string - concept name
     - `relevance`: int - relevance for this concept
     - `relevantSnippets`: array of supporting text excerpts
-- `snippets`: array of text excerpts from paper body (if open access):
+    - `numOfOmittedRelevanceSnippetsDueLegal`: int - excerpts withheld
+- `snippets`: array of text excerpts from the paper (empty when `legalToShow` is false):
   - `text`: string - excerpt text
-  - `sectionTitle`: string - section name
+  - `sectionTitle`: string | null - section name
 - `citationContexts`: array of citation contexts:
   - `text`: string - how other papers cite this work
-  - `sourceCorpusId`: int - corpus ID of citing paper
+  - `sourceCorpusId`: int | null - corpus ID of citing paper
+- `legalToShow`: bool - false when Paper Finder withheld the paper's own text (abstract, snippets). The server has already removed it, so there is nothing left to filter
+- `numOfOmittedCitationContextsDueLegal`: int - citation contexts withheld because the citing paper may not be shown
 
 Example access patterns:
 ```bash
 # Top 10 papers by relevance
-jq '[.results | sort_by(-.relevanceScore) | .[0:10][] | {title, year, score: .relevanceScore}]' <filename>
+jq '[.results | sort_by(-(.relevanceScore // 0)) | .[0:10][] | {title, year, score: .relevanceScore}]' <filename>
 
 # Papers with relevance summary
 jq '.results[] | {title, summary: .relevanceJudgement.relevanceSummary}' <filename>

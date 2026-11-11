@@ -1,11 +1,14 @@
 """Tests for the Asta core API client."""
 
 import json
+import urllib.error
+from email.message import Message
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from asta.literature import AstaPaperFinder
+from tests._v4_fixtures import v4_paper, v4_search_result, v4_sparse_paper
 
 
 def mock_response(data):
@@ -13,6 +16,15 @@ def mock_response(data):
     response = MagicMock()
     response.read.return_value = json.dumps(data).encode()
     return response
+
+
+def http_error(status, body, retry_after=None):
+    headers = Message()
+    if retry_after:
+        headers["Retry-After"] = retry_after
+    error = urllib.error.HTTPError("https://test.api", status, "", headers, None)
+    error.read = MagicMock(return_value=json.dumps(body).encode())
+    return error
 
 
 @pytest.fixture
@@ -23,7 +35,7 @@ def mock_urlopen():
 
 
 class TestAstaPaperFinder:
-    """Tests for AstaPaperFinder API client using headless endpoint."""
+    """Tests for AstaPaperFinder API client on the v4 tasks API."""
 
     def test_init_with_explicit_params(self):
         """Test that client initializes with explicit parameters."""
@@ -72,121 +84,145 @@ class TestAstaPaperFinder:
                 ):
                     AstaPaperFinder()
 
-    def test_find_papers_success(self, mock_urlopen):
-        """Test successful paper search."""
-        mock_urlopen.return_value = mock_response(
-            {
-                "response_text": "Found 2 papers",
-                "papers": [
-                    {
-                        "corpusId": 12345,
-                        "title": "Test Paper",
-                        "abstract": "Test abstract",
-                        "authors": [{"name": "Alice", "authorId": "1"}],
-                        "venue": "NeurIPS",
-                        "year": 2024,
-                        "relevanceScore": 0.95,
-                    },
-                    {
-                        "corpusId": 67890,
-                        "title": "Another Paper",
-                        "abstract": "Another abstract",
-                        "authors": [{"name": "Bob", "authorId": "2"}],
-                        "venue": "ICML",
-                        "year": 2023,
-                        "relevanceScore": 0.85,
-                    },
-                ],
-                "error": None,
-            }
+    def test_find_papers_starts_task_and_polls_until_completed(self, mock_urlopen):
+        mock_urlopen.side_effect = [
+            mock_response({"taskId": "task-1", "contextId": "thrd-1"}),
+            mock_response({"status": "submitted"}),
+            mock_response({"status": "working"}),
+            mock_response(
+                {
+                    "status": "completed",
+                    "responseText": "Found 2 papers",
+                    "artifacts": [v4_search_result([v4_paper(), v4_sparse_paper()])],
+                }
+            ),
+        ]
+
+        finder = AstaPaperFinder(
+            base_url="https://gw/api/paper-finder", access_token="t"
         )
+        with patch("asta.literature.client.time.sleep") as sleep:
+            result = finder.find_papers("test query", timeout=60, operation_mode="fast")
 
-        finder = AstaPaperFinder(base_url="https://test.api", access_token="test-token")
-        result = finder.find_papers("test query", timeout=10)
-
+        requests = [call.args[0] for call in mock_urlopen.call_args_list]
+        assert [(r.get_method(), r.full_url) for r in requests] == [
+            ("POST", "https://gw/api/paper-finder/api/4/tasks"),
+            *[
+                (
+                    "GET",
+                    "https://gw/api/paper-finder/api/4/tasks/task-1/result?preset=full",
+                )
+            ]
+            * 3,
+        ]
+        assert json.loads(requests[0].data) == {
+            "query": "test query",
+            "operation_mode": "fast",
+            "worker_profile": "standard",
+            "caller": {"surface": "headless"},
+        }
+        assert sleep.call_count == 2
         assert result["status"] == "completed"
         assert result["paper_count"] == 2
-        assert result["query"] == "test query"
-        assert len(result["widget"]["results"]) == 2
-        assert result["widget"]["results"][0]["corpusId"] == 12345
+        assert result["widget"]["response_text"] == "Found 2 papers"
+        assert [p["corpusId"] for p in result["widget"]["results"]] == [
+            13756489,
+            52967399,
+        ]
+        assert result["widget"]["results"][1]["relevanceScore"] is None
         assert "file_path" not in result
 
     def test_find_papers_with_file_output(self, mock_urlopen, tmp_path):
-        """Test find_papers with file output."""
-        mock_urlopen.return_value = mock_response(
-            {
-                "response_text": "Found 1 paper",
-                "papers": [
-                    {
-                        "corpusId": 12345,
-                        "title": "Test Paper",
-                        "authors": [{"name": "Alice", "authorId": "1"}],
-                        "venue": "NeurIPS",
-                        "year": 2024,
-                        "relevanceScore": 0.95,
-                    }
-                ],
-                "error": None,
-            }
-        )
+        mock_urlopen.side_effect = [
+            mock_response({"taskId": "task-1"}),
+            mock_response(
+                {"status": "completed", "artifacts": [v4_search_result([v4_paper()])]}
+            ),
+        ]
 
-        finder = AstaPaperFinder(base_url="https://test.api", access_token="test-token")
+        finder = AstaPaperFinder(base_url="https://test.api", access_token="t")
         output_file = tmp_path / "results.json"
-        result = finder.find_papers("test query", timeout=10, save_to_file=output_file)
+        result = finder.find_papers("test query", save_to_file=output_file)
 
-        assert result["paper_count"] == 1
         assert result["file_path"] == str(output_file)
-
-        assert output_file.exists()
-        with open(output_file) as f:
-            data = json.load(f)
+        data = json.loads(output_file.read_text())
         assert data["paper_count"] == 1
-        assert data["status"] == "completed"
+        assert data["widget"]["results"][0]["title"] == "Attention Is All You Need"
 
-    def test_find_papers_with_error(self, mock_urlopen):
-        """Test find_papers when API returns an error."""
-        mock_urlopen.return_value = mock_response(
-            {
-                "response_text": "",
-                "papers": [],
-                "error": {"message": "Search failed", "type": "search_error"},
-            }
-        )
+    def test_find_papers_failed_task_raises_its_error(self, mock_urlopen):
+        mock_urlopen.side_effect = [
+            mock_response({"taskId": "task-1"}),
+            mock_response(
+                {
+                    "status": "failed",
+                    "error": {
+                        "type": "task_failed",
+                        "message": "The query was refused",
+                        "code": "refused",
+                    },
+                }
+            ),
+        ]
 
-        finder = AstaPaperFinder(base_url="https://test.api", access_token="test-token")
-        with pytest.raises(Exception, match="Paper search failed"):
+        finder = AstaPaperFinder(base_url="https://test.api", access_token="t")
+        with pytest.raises(
+            Exception, match=r"Paper search failed: The query was refused \(refused\)"
+        ):
+            finder.find_papers("test query")
+
+    def test_find_papers_waits_out_a_full_queue(self, mock_urlopen):
+        mock_urlopen.side_effect = [
+            http_error(503, {"detail": "Paper Finder is busy"}, retry_after="7"),
+            mock_response({"taskId": "task-1"}),
+            mock_response({"status": "completed", "artifacts": []}),
+        ]
+
+        finder = AstaPaperFinder(base_url="https://test.api", access_token="t")
+        with patch("asta.literature.client.time.sleep") as sleep:
+            result = finder.find_papers("test query", timeout=60)
+
+        sleep.assert_called_once_with(7)
+        assert result["paper_count"] == 0
+
+    def test_find_papers_full_queue_past_the_deadline_raises(self, mock_urlopen):
+        mock_urlopen.side_effect = [
+            http_error(503, {"detail": "Paper Finder is busy"}, retry_after="30"),
+        ]
+
+        finder = AstaPaperFinder(base_url="https://test.api", access_token="t")
+        with pytest.raises(Exception, match="API request failed: Paper Finder is busy"):
             finder.find_papers("test query", timeout=10)
 
-    def test_find_papers_with_operation_modes(self, mock_urlopen):
-        """Test find_papers with different operation modes."""
-        mock_urlopen.return_value = mock_response(
-            {
-                "response_text": "Found papers",
-                "papers": [{"corpusId": 123, "title": "Test", "relevanceScore": 0.9}],
-                "error": None,
-            }
-        )
+    def test_find_papers_unknown_task_raises(self, mock_urlopen):
+        mock_urlopen.side_effect = [
+            mock_response({"taskId": "task-1"}),
+            http_error(404, {"detail": "Task task-1 not found"}),
+        ]
 
-        finder = AstaPaperFinder(base_url="https://test.api", access_token="test-token")
-
-        # Test each operation mode
-        for mode in ["infer", "fast", "diligent"]:
-            result = finder.find_papers("test query", operation_mode=mode)
-            assert result["status"] == "completed"
-
-    def test_find_papers_http_error(self, mock_urlopen):
-        """Test find_papers with HTTP error."""
-        import urllib.error
-
-        error = urllib.error.HTTPError("https://test.com", 400, "Bad Request", {}, None)
-        error.read = MagicMock(
-            return_value=json.dumps({"detail": "Invalid query"}).encode()
-        )
-        mock_urlopen.side_effect = error
-
-        finder = AstaPaperFinder(base_url="https://test.api", access_token="test-token")
-        with pytest.raises(Exception, match="API request failed: Invalid query"):
+        finder = AstaPaperFinder(base_url="https://test.api", access_token="t")
+        with pytest.raises(
+            Exception, match="API request failed: Task task-1 not found"
+        ):
             finder.find_papers("test query")
+
+    def test_find_papers_times_out_naming_the_task(self, mock_urlopen):
+        mock_urlopen.side_effect = [
+            mock_response({"taskId": "task-1"}),
+            mock_response({"status": "working"}),
+            mock_response({"status": "working"}),
+        ]
+        clock = iter([0.0, 0.0, 9.0])
+
+        finder = AstaPaperFinder(base_url="https://test.api", access_token="t")
+        with (
+            patch("asta.literature.client.time.monotonic", side_effect=clock),
+            patch("asta.literature.client.time.sleep"),
+            pytest.raises(
+                TimeoutError,
+                match="Paper search task task-1 did not finish within 10s",
+            ),
+        ):
+            finder.find_papers("test query", timeout=10)
 
 
 if __name__ == "__main__":
