@@ -886,11 +886,17 @@ def test_workspace_status_requires_successful_valid_scope(scope_result, workspac
     )
 
 
-def test_workspace_stable_gate_covers_every_workspace_job():
+def test_workspace_stable_gate_covers_the_jobs_that_cannot_flake():
     jobs = load("example-workspace")["jobs"]
     gate = jobs["workspace-ok"]
     assert gate["if"] == "always()"
-    assert set(gate["needs"]) == set(jobs) - {"workspace-ok"}
+    # A new job must be placed on purpose: required, or advisory on PRs.
+    required, advisory = {"scope", "python", "dom"}, {"tools", "comparison"}
+    assert set(jobs) - {"workspace-ok"} == required | advisory
+    assert set(gate["needs"]) == required
+    # The advisory jobs still gate a release: the release checks run this workflow.
+    release = load("workspace-release-checks")["jobs"]["checks"]
+    assert release["uses"] == "./.github/workflows/example-workspace.yml"
     step = gate["steps"][-1]
     assert step["run"] == "make workspace-status"
     assert step["env"]["WORKSPACE_NEEDS"] == "${{ toJSON(needs) }}"
