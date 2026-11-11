@@ -23,9 +23,13 @@ from asta.utils.a2a_interactive import (
 from tests._a2a_fixtures import (
     DEFAULT_THREAD_ID,
     FakeA2AServer,
+    artifact_update_event,
     failed_events,
     happy_events,
+    initial_task_event,
+    terminal_event,
 )
+from tests._v4_fixtures import v4_search_result
 
 SPEC = A2ASkillSpec(config_key="test_skill", env_var="ASTA_TEST_SKILL_A2A_URL")
 
@@ -42,12 +46,12 @@ def _stub_resolver_env(monkeypatch):
 # --- End-to-end -------------------------------------------------------------
 
 
-def _identity_artifact_to_result(artifact, thread_id, narrative):
-    """Stub callback — passes the wire artifact + metadata through as a dict."""
+def _identity_artifacts_to_result(artifacts, thread_id, narrative):
+    """Stub callback — passes the wire artifacts' ids + metadata through as a dict."""
     return {
         "thread_id": thread_id,
         "narrative": narrative,
-        "schema": artifact.get("schemaVersion"),
+        "artifacts": [a["id"] for a in artifacts],
     }
 
 
@@ -63,15 +67,51 @@ def test_e2e_single_turn_writes_result(tmp_path):
             server=None,
             api_key=None,
             message_data={"q": "hello"},
-            artifact_to_result=_identity_artifact_to_result,
+            artifacts_to_result=_identity_artifacts_to_result,
         )
 
     data = json.loads(out.read_text())
     assert data == {
         "thread_id": DEFAULT_THREAD_ID,
         "narrative": "Found 1 paper.",
-        "schema": "1",
+        "artifacts": ["sr-1"],
     }
+
+
+def test_e2e_collects_every_artifact_and_honors_append(tmp_path):
+    """Artifacts are kept per ``artifactId`` in arrival order: a repeat without
+    ``append`` replaces that artifact, one with ``append`` adds to it."""
+    first = v4_search_result([], artifact_id="sr-1")
+    replaced = {**v4_search_result([], artifact_id="sr-2"), "name": "replaced"}
+    appended = {**v4_search_result([], artifact_id="sr-2"), "name": "appended"}
+    events = [
+        initial_task_event(),
+        artifact_update_event(first),
+        artifact_update_event(v4_search_result([], artifact_id="sr-2")),
+        artifact_update_event(replaced),
+        artifact_update_event(appended, append=True),
+        terminal_event("TASK_STATE_COMPLETED", "Done."),
+    ]
+    out = tmp_path / "result.json"
+    with FakeA2AServer(events=events):
+        run_a2a_session(
+            SPEC,
+            output=str(out),
+            thread_dir=None,
+            timeout=30,
+            server=None,
+            api_key=None,
+            message_data={"q": "hello"},
+            artifacts_to_result=lambda artifacts, _thread_id, _narrative: [
+                (a["id"], a["name"]) for a in artifacts
+            ],
+        )
+
+    assert json.loads(out.read_text()) == [
+        ["sr-1", "Papers on transformers"],
+        ["sr-2", "replaced"],
+        ["sr-2", "appended"],
+    ]
 
 
 def test_e2e_multi_turn_thread_dir_resumes_via_context_id(tmp_path):
@@ -91,7 +131,7 @@ def test_e2e_multi_turn_thread_dir_resumes_via_context_id(tmp_path):
                 server=None,
                 api_key=None,
                 message_data={"q": query},
-                artifact_to_result=_identity_artifact_to_result,
+                artifacts_to_result=_identity_artifacts_to_result,
                 build_summary=lambda result, narr: {"q": query, "narr": narr},
             )
         return server
@@ -126,7 +166,7 @@ def test_e2e_failed_terminal_raises_click_exception(tmp_path):
                 server=None,
                 api_key=None,
                 message_data={"q": "x"},
-                artifact_to_result=_identity_artifact_to_result,
+                artifacts_to_result=_identity_artifacts_to_result,
             )
 
 
@@ -142,7 +182,7 @@ def test_e2e_http_error_raises_click_exception(tmp_path):
                 server=None,
                 api_key=None,
                 message_data={"q": "x"},
-                artifact_to_result=_identity_artifact_to_result,
+                artifacts_to_result=_identity_artifacts_to_result,
             )
 
 

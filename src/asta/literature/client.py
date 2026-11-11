@@ -10,13 +10,24 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+from asta.literature.v4_papers import papers_of
 from asta.utils.auth_helper import get_access_token
 from asta.utils.config import get_api_config, get_config_path
 from asta.utils.headers import identity_headers
 
+POLL_INTERVAL_SECONDS = 2
+REQUEST_TIMEOUT_SECONDS = 60
+FINAL_STATUSES = ("completed", "failed")
+
+
+class PaperFinderAPIError(Exception):
+    def __init__(self, message: str, retry_after: int | None = None):
+        super().__init__(message)
+        self.retry_after = retry_after
+
 
 class AstaPaperFinder:
-    """Client for Asta Paper Finder API using headless endpoint"""
+    """Client for Asta Paper Finder's tasks API (v4)"""
 
     def __init__(self, base_url: str | None = None, access_token: str | None = None):
         # Load base URL from config if not provided
@@ -55,7 +66,7 @@ class AstaPaperFinder:
             url, data=body, headers=self.headers, method=method
         )
         try:
-            response = urllib.request.urlopen(req)
+            response = urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT_SECONDS)
             return json.loads(response.read())
         except urllib.error.HTTPError as e:
             error_body = e.read().decode("utf-8")
@@ -64,7 +75,11 @@ class AstaPaperFinder:
                 error_msg = error_data.get("detail", str(e))
             except json.JSONDecodeError:
                 error_msg = error_body or str(e)
-            raise Exception(f"API request failed: {error_msg}") from e
+            retry_after = e.headers.get("Retry-After")
+            raise PaperFinderAPIError(
+                f"API request failed: {error_msg}",
+                retry_after=int(retry_after) if retry_after else None,
+            ) from e
 
     def find_papers(
         self,
@@ -72,45 +87,49 @@ class AstaPaperFinder:
         timeout: int = 300,
         save_to_file: Path | None = None,
         operation_mode: str = "infer",
-        include_full_metadata: bool = True,
     ) -> dict[str, Any]:
-        """Execute a one-shot paper search using the headless endpoint.
+        """Run a one-shot paper search as a Paper Finder v4 task and wait for it.
 
         Args:
             query: Search query
-            timeout: Maximum time to wait for results (seconds)
+            timeout: Seconds to wait for the task to finish, polling included
             save_to_file: Optional path to save results. If None, no file is saved.
             operation_mode: Search strategy - 'infer', 'fast', or 'diligent' (default: 'infer')
-            include_full_metadata: Whether to return full paper details (default: True)
 
         Returns:
             Complete search results with papers
+
+        Raises:
+            TimeoutError: The task did not finish within ``timeout``.
         """
-        url = f"{self.base_url}/api/3/headless/paper-search"
+        deadline = time.monotonic() + timeout
+        task_id = self._start_task(
+            {
+                "query": query,
+                "operation_mode": operation_mode,
+                "worker_profile": "standard",
+                "caller": {"surface": "headless"},
+            },
+            deadline,
+        )
+        result = self._await_result(task_id, timeout, deadline)
 
-        request_body = {
-            "query": query,
-            "operation_mode": operation_mode,
-            "include_full_metadata": include_full_metadata,
-            "timeout_seconds": timeout,
-        }
-
-        # Make the synchronous request
-        result = self._request(url, method="POST", data=request_body)
-
-        # Check for errors
-        if "error" in result and result["error"]:
+        if result["status"] == "failed":
             error = result["error"]
-            raise Exception(f"Paper search failed: {error}")
+            raise Exception(
+                f"Paper search failed: {error['message']} ({error['code']})"
+            )
 
-        papers = result.get("papers", [])
+        papers = [
+            paper.model_dump(mode="json") for paper in papers_of(result["artifacts"])
+        ]
 
         # Build search data in format compatible with existing models
         search_data = {
             "query": query,
             "widget": {
                 "results": papers,
-                "response_text": result.get("response_text", ""),
+                "response_text": result.get("responseText", ""),
             },
             "status": "completed",
             "timestamp": time.time(),
@@ -124,3 +143,31 @@ class AstaPaperFinder:
             search_data["file_path"] = str(save_to_file)
 
         return search_data
+
+    def _start_task(self, request_body: dict[str, Any], deadline: float) -> str:
+        """POST the task, waiting out ``Retry-After`` while Paper Finder's queue is full."""
+        while True:
+            try:
+                return self._request(
+                    f"{self.base_url}/api/4/tasks", method="POST", data=request_body
+                )["taskId"]
+            except PaperFinderAPIError as e:
+                if e.retry_after is None or time.monotonic() + e.retry_after > deadline:
+                    raise
+                time.sleep(e.retry_after)
+
+    def _await_result(
+        self, task_id: str, timeout: int, deadline: float
+    ) -> dict[str, Any]:
+        # Built from the task id, not the 202's Location header: through the
+        # gateway, Location lacks the gateway's /api/paper-finder prefix.
+        url = f"{self.base_url}/api/4/tasks/{task_id}/result?preset=full"
+        while True:
+            result = self._request(url)
+            if result["status"] in FINAL_STATUSES:
+                return result
+            if time.monotonic() + POLL_INTERVAL_SECONDS > deadline:
+                raise TimeoutError(
+                    f"Paper search task {task_id} did not finish within {timeout}s"
+                )
+            time.sleep(POLL_INTERVAL_SECONDS)
