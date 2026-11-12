@@ -103,6 +103,7 @@ def project(
     (tmp_path / ".gitignore").write_text("_site/\n.asta/cache/\n")
     (tmp_path / "scripts").mkdir()
     shutil.copy(ASSETS / "what-changed.py", tmp_path / "scripts/what-changed.py")
+    shutil.copy(ASSETS / "diff-engine.py", tmp_path / "scripts/diff-engine.py")
     (tmp_path / "index.qmd").write_text("The baseline finding holds.\n")
     git(tmp_path, "init", "-q")
     git(tmp_path, "add", ".")

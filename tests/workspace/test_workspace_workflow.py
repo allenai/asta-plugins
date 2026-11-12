@@ -1769,7 +1769,11 @@ def test_what_changed_reads_full_baseline_for_site_in_subfolder(
         "plugins/asta-tools/skills/workspace/assets/what-changed.py",
         site / "scripts/what-changed.py",
     )
-    git("add", "examples/workspace/scripts/what-changed.py")
+    shutil.copy(
+        "plugins/asta-tools/skills/workspace/assets/diff-engine.py",
+        site / "scripts/diff-engine.py",
+    )
+    git("add", "examples/workspace/scripts")
     git("commit", "-m", "Site in a subfolder")
     (site / "_site").mkdir()
     (site / "_site/index.html").write_text(
