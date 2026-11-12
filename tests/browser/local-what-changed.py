@@ -108,7 +108,6 @@ def shown_scales(page):
 def check_frames_fit_after_view_switch(browser, url):
     """Frames that finish loading while their view is hidden fit when it is shown."""
     for view, other in (("clean", "before"), ("before", "clean")):
-        figures = f"[...document.querySelectorAll('.deck-live figure[data-view~={view}] iframe[src]')]"
 
         def open_page():
             page = browser.new_page(viewport={"width": 1440, "height": 1000})
@@ -125,36 +124,38 @@ def check_frames_fit_after_view_switch(browser, url):
         scales = [scale for _, scale in shown_scales(reference_page)]
         assert scales and min(scales) > 0.21, (view, scales)
         fitted = scales[0]
-        # Switch away once the view's first frame is mid-load. A frame's load
-        # event marks it loaded: the page cannot read a sandboxed frame's state.
+        # Hold each slide frame's document until the view is switched away, so
+        # that its frames are mid-load when hidden. The page cannot read a
+        # sandboxed frame's state, and a lazy frame given a src may not have
+        # begun loading; a held request is a frame that has.
         page = open_page()
-        page.evaluate(
-            """([view, other]) => {
-              document.addEventListener(
-                'load', e => { if (e.target.dataset) e.target.dataset.loaded = '1'; }, true);
-              const frames = () => [...document.querySelectorAll(
-                `.deck-live figure[data-view~=${view}] iframe[src]`)];
-              const midLoad = f => f.closest('figure').offsetParent && !f.dataset.loaded;
-              const poll = setInterval(() => {
-                if (!frames().some(midLoad)) return;
-                clearInterval(poll);
-                document.querySelector(`.dr-seg button[data-v="${other}"]`).click();
-              }, 1);
-            }""",
-            [view, other],
-        )
+        held = []
+        released = False
+
+        def hold(route):
+            request = route.request
+            frame = request.is_navigation_request() and request.frame != page.main_frame
+            if frame and not released:
+                held.append(route)
+            else:
+                route.continue_()
+
+        page.route("**/*", hold)
         switch(page, view)
-        # Every frame that began loading finishes while its view is hidden.
-        page.wait_for_function(
-            f"() => document.querySelector('.deck-live').dataset.view === '{other}'"
-            f" && {figures}.length > 0"
-        )
-        for frame in page.locator(
-            f".deck-live figure[data-view~={view}] iframe[src]"
-        ).all():
-            frame.element_handle().content_frame().wait_for_function(
-                READY_JS, timeout=30000
-            )
+        deadline = time.monotonic() + 20
+        while not held:
+            assert time.monotonic() < deadline, f"no {view} frame began loading"
+            page.wait_for_timeout(50)
+        switch(page, other)
+        released = True
+        mid_load = [route.request.frame for route in held]
+        for route in held:
+            route.continue_()
+        page.unroute("**/*", hold)
+        # Every frame that began loading finishes while its view is hidden. A
+        # hidden cross-origin frame runs no animation frames, so poll on a timer.
+        for frame in mid_load:
+            frame.wait_for_function(READY_JS, polling=100, timeout=30000)
         switch(page, view)
         shown = shown_scales(page)
         assert shown, f"no frames shown in {view}"
