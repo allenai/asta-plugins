@@ -8,6 +8,7 @@ import tempfile
 import time
 from pathlib import Path
 
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
 from site_server import _serve
 
@@ -80,6 +81,14 @@ def deploy_main(site):
 
 
 READY_JS = "() => !!window.Reveal && Reveal.isReady()"
+SLIDE_BOX_JS = (
+    "() => { const r = Reveal.getCurrentSlide().getBoundingClientRect();"
+    " return [r.top, r.bottom, r.height, innerHeight]; }"
+)
+SLIDE_FITS_JS = (
+    f"() => {{ const [top, bottom, height, viewport] = ({SLIDE_BOX_JS})();"
+    " return height > 0 && top >= -1 && bottom <= viewport + 1; }"
+)
 
 
 def shown_scales(page):
@@ -255,13 +264,12 @@ def check(project, artifacts):
                         arg=frame.get_attribute("data-dr-slide-id"),
                     )
                     # The current slide must sit inside the frame, not below it.
-                    box = child.evaluate(
-                        "() => { const r = Reveal.getCurrentSlide()"
-                        ".getBoundingClientRect(); return [r.top, r.bottom, r.height,"
-                        " innerHeight]; }"
-                    )
-                    top, bottom, height, viewport = box
-                    assert height > 0 and top >= -1 and bottom <= viewport + 1, box
+                    # A frame's new size reaches its Reveal at the frame's next
+                    # resize event, so wait for the fit before failing.
+                    try:
+                        child.wait_for_function(SLIDE_FITS_JS, timeout=5000)
+                    except PlaywrightTimeoutError:
+                        raise AssertionError(child.evaluate(SLIDE_BOX_JS)) from None
                     # A frame stays on its slide: keys don't navigate, builds all show.
                     child.press("body", "ArrowRight")
                     assert child.evaluate(
