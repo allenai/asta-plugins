@@ -1223,6 +1223,72 @@ def test_comparison_preview_has_no_directory_listing(
         server.server_close()
 
 
+@pytest.mark.parametrize("method", ["GET", "HEAD"])
+def test_comparison_preview_allows_cross_origin_reads_of_fonts_only(
+    tmp_path: Path, method: str
+) -> None:
+    for name in ("deck.html", "data.json", "style.css", "font.woff2.html"):
+        (tmp_path / name).write_text("x")
+    for name in ("a.woff2", "a.woff", "a.ttf", "a.otf", "A.WOFF2", "real.woff2"):
+        (tmp_path / name).write_bytes(b"font")
+    # Staging keeps symlinks: a font-looking name for data must not get the header.
+    (tmp_path / "alias.woff2").symlink_to("data.json")
+    (tmp_path / "dir.woff2").mkdir()
+    (tmp_path / "dir.woff2" / "index.html").write_text("x")
+    server = workspace_module.comparison_server(tmp_path, 0)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{server.server_address[1]}/"
+    try:
+        for name in (
+            "a.woff2",
+            "a.woff",
+            "a.ttf",
+            "a.otf",
+            "A.WOFF2",
+            "a.woff2?v=1",
+            "real%2ewoff2",
+            "real.woff2?v=1",
+        ):
+            response = urlopen(Request(base + name, method=method))
+            assert response.headers["Access-Control-Allow-Origin"] == "*", name
+        for name in (
+            "deck.html",
+            "data.json",
+            "style.css",
+            "font.woff2.html",
+            "deck.html?x=.woff2",
+            "data.json?v=1",
+            "style.css?v=1",
+            "alias.woff2",
+            "alias.woff2?v=1",
+            "dir.woff2/",
+        ):
+            response = urlopen(Request(base + name, method=method))
+            assert response.headers["Access-Control-Allow-Origin"] is None, name
+        for name in ("missing.woff2", "missing.woff2?v=1", "a.woff2/"):
+            with pytest.raises(HTTPError) as error:
+                urlopen(Request(base + name, method=method))
+            assert error.value.code == 404, name
+            assert error.value.headers["Access-Control-Allow-Origin"] is None, name
+        # A conditional request for an unchanged font is a 304 and still allowed.
+        modified = urlopen(Request(base + "a.woff2", method=method)).headers[
+            "Last-Modified"
+        ]
+        with pytest.raises(HTTPError) as error:
+            urlopen(
+                Request(
+                    base + "a.woff2",
+                    headers={"If-Modified-Since": modified},
+                    method=method,
+                )
+            )
+        assert error.value.code == 304
+        assert error.value.headers["Access-Control-Allow-Origin"] == "*"
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
 def test_comparison_cache_stays_private_throughout_copy(
     project: Path, monkeypatch
 ) -> None:

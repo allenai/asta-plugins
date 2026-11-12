@@ -2124,6 +2124,7 @@ def compare_workspace(ref: str, project: Path, *, full: bool = False) -> None:
     click.echo(f"View it with `asta workspace preview --what-changed`, at {url}")
 
 
+FONT_SUFFIXES = (".woff2", ".woff", ".ttf", ".otf")
 PREVIEW_PORT = 4848
 # A separate port, so the comparison can be viewed while the live preview runs.
 WHAT_CHANGED_PORT = 4849
@@ -2145,7 +2146,11 @@ def comparison_server(directory: Path, port: int) -> http.server.ThreadingHTTPSe
     forwarded_host = None
 
     class SiteHandler(http.server.SimpleHTTPRequestHandler):
+        serves_font = False
+        response_code = 0
+
         def send_head(self):
+            self.serves_font = False
             try:
                 host = urlsplit("//" + self.headers.get("Host", "").lower())
                 valid_host = (
@@ -2187,7 +2192,24 @@ def comparison_server(directory: Path, port: int) -> http.server.ThreadingHTTPSe
             if path.exists() and not path.is_dir() and not path.is_file():
                 self.send_error(404, "Not a site file")
                 return None
+            # Decided from the file actually served: translated and resolved
+            # above, so a symlink named like a font but pointing at data is not.
+            self.serves_font = path.is_file() and path.suffix.lower() in FONT_SUFFIXES
             return super().send_head()
+
+        def send_response(self, code, message=None):
+            self.response_code = code
+            super().send_response(code, message)
+
+        def end_headers(self):
+            # A slide frame is sandboxed (an opaque origin, so Origin: null), and
+            # the browser fetches its font files in CORS mode. Allow that for a
+            # successful response carrying a font file only, never pages, data or
+            # errors, so no other website can read a local preview's content
+            # through this server.
+            if self.serves_font and self.response_code in (200, 304):
+                self.send_header("Access-Control-Allow-Origin", "*")
+            super().end_headers()
 
         def list_directory(self, path):
             self.send_error(404, "Directory listing is disabled")

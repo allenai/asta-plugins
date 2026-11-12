@@ -5,6 +5,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
@@ -78,25 +79,30 @@ def deploy_main(site):
     print("Validated shared main publication with live marked decks")
 
 
-SHOWN_SCALES_JS = """async () => {
-  const shown = () => [...document.querySelectorAll('.deck-live iframe[src]')]
-    .filter(f => f.closest('figure').offsetParent);
-  const deadline = Date.now() + 20000;
-  while (!shown().length) {
-    if (Date.now() > deadline) throw new Error('no frame started loading');
-    await new Promise(r => setTimeout(r, 50));
-  }
-  const frames = shown();
-  while (!frames.every(f => f.contentWindow.Reveal && f.contentWindow.Reveal.isReady())) {
-    if (Date.now() > deadline) throw new Error('shown frames never became ready');
-    await new Promise(r => setTimeout(r, 50));
-  }
-  await new Promise(r => setTimeout(r, 500));
-  return frames.map(f => [
-    f.closest('figure').dataset.view + ' ' + f.title + ' ' + f.dataset.drSlideId,
-    f.contentWindow.Reveal.getScale(),
-  ]);
-}"""
+READY_JS = "() => !!window.Reveal && Reveal.isReady()"
+
+
+def shown_scales(page):
+    """Each shown frame's key and Reveal scale, read through Playwright: the
+    frames are sandboxed, so the page itself cannot reach into them."""
+    page.wait_for_function(
+        "() => [...document.querySelectorAll('.deck-live iframe[src]')]"
+        ".some(f => f.closest('figure').offsetParent)",
+        timeout=20000,
+    )
+    frames = page.locator(".deck-live iframe[src]:visible").all()
+    scales = []
+    for frame in frames:
+        child = frame.element_handle().content_frame()
+        child.wait_for_function(READY_JS, timeout=20000)
+    time.sleep(0.5)
+    for frame in frames:
+        child = frame.element_handle().content_frame()
+        key = frame.evaluate(
+            "f => f.closest('figure').dataset.view + ' ' + f.title + ' ' + f.dataset.drSlideId"
+        )
+        scales.append((key, child.evaluate("() => Reveal.getScale()")))
+    return scales
 
 
 def check_frames_fit_after_view_switch(browser, url):
@@ -116,19 +122,19 @@ def check_frames_fit_after_view_switch(browser, url):
         # What a frame loaded in view measures; the minimum scale is Reveal's floor.
         reference_page = open_page()
         switch(reference_page, view)
-        scales = [scale for _, scale in reference_page.evaluate(SHOWN_SCALES_JS)]
+        scales = [scale for _, scale in shown_scales(reference_page)]
         assert scales and min(scales) > 0.21, (view, scales)
         fitted = scales[0]
-        # Switch away once the view's first frame is mid-load. A lazy frame never
-        # shown stays at about:blank, so only navigated frames count.
+        # Switch away once the view's first frame is mid-load. A frame's load
+        # event marks it loaded: the page cannot read a sandboxed frame's state.
         page = open_page()
         page.evaluate(
             """([view, other]) => {
+              document.addEventListener(
+                'load', e => { if (e.target.dataset) e.target.dataset.loaded = '1'; }, true);
               const frames = () => [...document.querySelectorAll(
                 `.deck-live figure[data-view~=${view}] iframe[src]`)];
-              const midLoad = f => f.closest('figure').offsetParent
-                && f.contentWindow.location.href !== 'about:blank'
-                && !(f.contentWindow.Reveal && f.contentWindow.Reveal.isReady());
+              const midLoad = f => f.closest('figure').offsetParent && !f.dataset.loaded;
               const poll = setInterval(() => {
                 if (!frames().some(midLoad)) return;
                 clearInterval(poll);
@@ -138,18 +144,19 @@ def check_frames_fit_after_view_switch(browser, url):
             [view, other],
         )
         switch(page, view)
-        navigated = (
-            f"{figures}.filter(f => f.contentWindow.location.href !== 'about:blank')"
-        )
         # Every frame that began loading finishes while its view is hidden.
         page.wait_for_function(
             f"() => document.querySelector('.deck-live').dataset.view === '{other}'"
-            f" && {navigated}.length > 0 && {navigated}.every("
-            "f => f.contentWindow.Reveal && f.contentWindow.Reveal.isReady())",
-            timeout=30000,
+            f" && {figures}.length > 0"
         )
+        for frame in page.locator(
+            f".deck-live figure[data-view~={view}] iframe[src]"
+        ).all():
+            frame.element_handle().content_frame().wait_for_function(
+                READY_JS, timeout=30000
+            )
         switch(page, view)
-        shown = page.evaluate(SHOWN_SCALES_JS)
+        shown = shown_scales(page)
         assert shown, f"no frames shown in {view}"
         for key, scale in shown:
             assert abs(scale - fitted) < 0.01, (view, key, scale, fitted)
@@ -234,12 +241,9 @@ def check(project, artifacts):
                 marked_seen = set()
                 for frame in frames:
                     frame.scroll_into_view_if_needed()
-                    page.wait_for_function(
-                        "f => !!f.contentWindow.Reveal && f.contentWindow.Reveal.isReady()",
-                        arg=frame.element_handle(),
-                    )
                     child = frame.element_handle().content_frame()
                     assert child is not None
+                    child.wait_for_function(READY_JS)
                     # Exercise the narrow frame that activates Reveal's scroll view
                     # by default, and verify identity rather than numeric position.
                     frame.evaluate(
@@ -286,11 +290,10 @@ def check(project, artifacts):
             assert frames, "no unchanged slides after opening the folds"
             for frame in frames:
                 frame.scroll_into_view_if_needed(timeout=5000)
-                page.wait_for_function(
-                    "f => { const w = f.contentWindow; return !!w && !!w.Reveal"
-                    " && w.Reveal.isReady()"
-                    " && w.Reveal.getCurrentSlide().id === f.dataset.drSlideId; }",
-                    arg=frame.element_handle(),
+                frame.element_handle().content_frame().wait_for_function(
+                    "id => !!window.Reveal && Reveal.isReady()"
+                    " && Reveal.getCurrentSlide().id === id",
+                    arg=frame.get_attribute("data-dr-slide-id"),
                     timeout=5000,
                 )
             # The page borrows the site's theme, as the PR preview does.
