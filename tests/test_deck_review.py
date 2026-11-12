@@ -661,6 +661,21 @@ def test_before_frame_of_an_unchanged_slide_shows_the_old_slide(tmp_path):
         assert ("old note" in frame) == (title == "A") and "new note" not in frame
 
 
+def test_slide_frames_are_sandboxed_to_scripts_only(tmp_path):
+    # A deck's own scripts must not reach the report: no same-origin, navigation,
+    # popups or forms, so that a frame runs in an opaque origin.
+    doc = _deck(["<section><h2>A</h2></section>", "<section><h2>B</h2></section>"])
+    new_doc = _deck(["<section><h2>A</h2></section>", "<section><h2>C</h2></section>"])
+    files, old, new = _static_files(tmp_path, doc, new_doc)
+    body, _, _, _, _ = deck_review.live_review(
+        "d/deck.html", doc, new_doc, old, new, {0: 0, 1: 1}, files, "b", "a"
+    )
+    tags = re.findall(r"<iframe\b[^>]*>", body)
+    assert tags
+    for tag in tags:
+        assert re.findall(r'\bsandbox="([^"]*)"', tag) == ["allow-scripts"], tag
+
+
 def test_emptied_slides_keep_the_section_metadata_the_theme_reads():
     doc = _deck(
         [

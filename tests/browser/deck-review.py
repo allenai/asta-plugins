@@ -1,6 +1,7 @@
 """Exercise the real rendered-slide diff using the built example deck."""
 
 import importlib.util
+import re
 import shutil
 import subprocess
 import sys
@@ -105,9 +106,9 @@ def check(site, artifacts):
                     assert frames, view
                     for frame in frames:
                         frame.scroll_into_view_if_needed()
-                        page.wait_for_function(
-                            "f => !!f.contentWindow.Reveal && f.contentWindow.Reveal.isReady()",
-                            arg=frame.element_handle(),
+                        # Frames are sandboxed: read them through Playwright.
+                        frame.element_handle().content_frame().wait_for_function(
+                            "() => !!window.Reveal && Reveal.isReady()"
                         )
                 assert (
                     page.locator("iframe")
@@ -199,11 +200,10 @@ def check_large_deck(site, artifacts):
                 for frame in cards:
                     frame.scroll_into_view_if_needed(timeout=5000)
                     # Its own slide, sharp and live, a few seconds after scrolling to it.
-                    page.wait_for_function(
-                        "f => { const w = f.contentWindow; return !!w && !!w.Reveal"
-                        " && w.Reveal.isReady()"
-                        " && w.Reveal.getCurrentSlide().id === f.dataset.drSlideId; }",
-                        arg=frame.element_handle(),
+                    frame.element_handle().content_frame().wait_for_function(
+                        "id => !!window.Reveal && Reveal.isReady()"
+                        " && Reveal.getCurrentSlide().id === id",
+                        arg=frame.get_attribute("data-dr-slide-id"),
                         timeout=10000,
                     )
                     # The page still answers while frames load.
@@ -220,6 +220,89 @@ def check_large_deck(site, artifacts):
             server.server_close()
 
 
+def check_external_font(site, artifacts):
+    """A deck font loaded from a file (embed-resources: false) works in a frame."""
+    from playwright.sync_api import sync_playwright
+
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        for side in ("old", "new"):
+            copy_site(site, root / side)
+            shutil.copy(
+                ASSETS / "_extensions/asta-theme/fonts/Manrope.woff2",
+                root / side / "review-font.woff2",
+            )
+        deck = Path("slides/attention/slides.html")
+        original = (root / "old" / deck).read_text()
+        slides = changed.reveal_slides(original)
+        face = (
+            '<style>@font-face{font-family:"Review Font";'
+            'src:url(/review-font.woff2) format("woff2")}'
+            '.reveal .slides section h2{font-family:"Review Font",serif}</style>'
+        )
+        head = re.search(r"</head\s*>", original, re.I)
+        with_font = original[: head.start()] + face + original[head.start() :]
+        (root / "old" / deck).write_text(with_font)
+        after = with_font.replace(
+            slides[1]["body"], slides[1]["body"].replace("</h", " revised</h", 1), 1
+        )
+        assert after != with_font
+        (root / "new" / deck).write_text(after)
+        out = root / "new/what-changed.html"
+        subprocess.run(
+            [
+                sys.executable,
+                str(ASSETS / "what-changed.py"),
+                "--old",
+                str(root / "old"),
+                "--new",
+                str(root / "new"),
+                "--out",
+                str(out),
+                "--render-decks",
+                str(root / "new/what-changed-decks"),
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        server = _serve(str(root / "new"))
+        try:
+            with sync_playwright() as pw:
+                browser = pw.chromium.launch()
+                page = browser.new_page(viewport={"width": 1440, "height": 1000})
+                page.goto(
+                    f"http://127.0.0.1:{server.server_address[1]}/what-changed.html"
+                )
+                page.locator(".deck-review").wait_for()
+                frames = page.locator(".dr-slide iframe:visible").all()
+                assert frames
+                for frame in frames:
+                    assert frame.get_attribute("sandbox") == "allow-scripts"
+                    frame.scroll_into_view_if_needed()
+                    inner = frame.element_handle().content_frame()
+                    inner.wait_for_function("() => !!window.Reveal && Reveal.isReady()")
+                    # A face that failed to load (no CORS header for Origin: null)
+                    # still passes document.fonts.check(): load it, read its status.
+                    status = inner.evaluate(
+                        """async () => {
+                            const faces = [...document.fonts].filter(
+                                f => f.family.replace(/"/g, "") === "Review Font");
+                            await Promise.allSettled(faces.map(f => f.load()));
+                            return faces.map(f => f.status);
+                        }"""
+                    )
+                    assert status == ["loaded"], status
+                    assert inner.evaluate(
+                        "() => document.fonts.check('16px \"Review Font\"')"
+                    )
+                browser.close()
+        finally:
+            server.shutdown()
+            server.server_close()
+
+
 if __name__ == "__main__":
     check(Path(sys.argv[1]).resolve(), Path(sys.argv[2]).resolve())
     check_large_deck(Path(sys.argv[1]).resolve(), Path(sys.argv[2]).resolve())
+    check_external_font(Path(sys.argv[1]).resolve(), Path(sys.argv[2]).resolve())

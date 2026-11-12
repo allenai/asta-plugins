@@ -46,11 +46,21 @@ function page(withObserver = false) {
       return root && views.includes(root.getAttribute("data-view")) ? document.body : null;
     },
   });
-  // linkedom frames have no window: stand in for a loaded, ready Reveal, counting layouts.
+  // linkedom frames have no window: stand in for a sandboxed frame, which only takes
+  // messages. Reaching into it (Reveal, document) throws, as it does cross-origin.
   Object.defineProperty(window.HTMLElement.prototype, "contentWindow", {
     configurable: true,
     get() {
-      return { Reveal: { isReady: () => true, layout: () => { this.layouts = (this.layouts || 0) + 1; } } };
+      const fail = () => { throw new Error("a sandboxed frame is opaque"); };
+      return new Proxy({}, {
+        get: (_, key) => key === "postMessage"
+          ? (message, origin) => {
+              this.messages = (this.messages || []).concat([message]);
+              this.layouts = (this.layouts || 0) + (JSON.parse(message).method === "layout" ? 1 : 0);
+              assert.equal(origin, "*", "an opaque origin is only reachable with '*'");
+            }
+          : fail(),
+      });
     },
   });
   let observer;
@@ -97,6 +107,7 @@ test("showing a view lays out its loaded frames, and only those", () => {
   click("marked");
   assert.equal(marked.layouts, 1, "a frame shown again is laid out at its size");
   assert.equal(frame("clean").layouts, 1);
+  assert.deepEqual(marked.messages, ['{"method":"layout"}'], "Reveal's own message, nothing else");
 });
 
 test("folded unchanged slides load no deck until expanded", () => {

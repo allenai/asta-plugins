@@ -13,6 +13,11 @@ fetches and parses once. A frame then costs the one slide plus a few KB, so many
 frames load within seconds. The frame is still a live Reveal deck, so the slide
 shows in place, sharp, with selectable text. The full marked decks are still
 published for opening on their own.
+
+Slides run sandboxed, with no access to the page that shows them: each frame is
+``sandbox="allow-scripts"`` and nothing more, so a deck's own scripts run in an
+opaque origin and cannot reach the report's DOM, storage or origin. The viewer
+therefore never reaches into a frame; it only posts it Reveal's ``layout`` message.
 """
 
 import hashlib
@@ -682,8 +687,8 @@ def live_review(deck, old_doc, new_doc, old, new, pairs, files, old_url, new_url
         slide_id = html.escape(slide.get("id") or slide.get("anchor") or "", quote=True)
         return (
             f'<figure data-view="{view}"><figcaption>{side}</figcaption>'
-            f'<iframe loading="lazy" title="{side} slide" data-dr-slide-id="{slide_id}" '
-            f'data-src="{src}"></iframe></figure>'
+            f'<iframe loading="lazy" sandbox="allow-scripts" title="{side} slide" '
+            f'data-dr-slide-id="{slide_id}" data-src="{src}"></iframe></figure>'
         )
 
     def card(kind, n, o):
@@ -819,10 +824,10 @@ document.querySelectorAll('.deck-live').forEach(root => {
   root.dataset.view = b.dataset.v;
   root.querySelectorAll('.dr-seg button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
   load();
-  // A frame that finished loading while hidden laid out at no size: fit it now.
+  // A frame that finished loading while hidden laid out at no size: ask its
+  // Reveal to fit it now. Frames are sandboxed, so only a message reaches them.
   root.querySelectorAll('iframe[src]').forEach(f => {
-   const reveal = f.contentWindow.Reveal;
-   if (shown(f) && reveal && reveal.isReady()) reveal.layout();
+   if (shown(f) && f.contentWindow) f.contentWindow.postMessage('{"method":"layout"}', '*');
   });
  }));
  root.querySelectorAll('details').forEach(details => details.addEventListener('toggle', () => {
