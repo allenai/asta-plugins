@@ -43,7 +43,9 @@ VIEWER_SCRIPTS = ("paper-discovery.py", "paper-viewer.py")
 DIFF_SCRIPT = "what-changed.py"
 # Optional beside DIFF_SCRIPT: publishes marked live decks without browser dependencies.
 DECK_SCRIPT = "deck-review.py"
-SCRIPTS = CHECK_SCRIPTS + VIEWER_SCRIPTS + (DIFF_SCRIPT, DECK_SCRIPT)
+# The diff engine DIFF_SCRIPT loads from its own directory.
+ENGINE_SCRIPT = "diff-engine.py"
+SCRIPTS = CHECK_SCRIPTS + VIEWER_SCRIPTS + (DIFF_SCRIPT, DECK_SCRIPT, ENGINE_SCRIPT)
 MANAGED_SCRIPTS_MARKER = b"ASTA_WORKSPACE_MANAGED_SCRIPTS := 1"
 WORKFLOW_LINE = re.compile(
     r"^\s*uses:\s*(?P<quote>['\"]?)"
