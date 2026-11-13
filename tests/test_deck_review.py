@@ -485,8 +485,8 @@ def test_live_report_marks_both_decks_without_browser(tmp_path):
     # No build controls: every build is shown and navigation is off in each frame.
     assert "data-step" not in body and "fragments=false" in body
     assert "keyboard=false" in body and "touch=false" in body
-    for view in ("Changes marked", "Clean", "Before / after"):
-        assert view in body
+    # What changed's page has one header and one control: the deck's own bar is not drawn.
+    assert "dr-bar" not in body and "dr-seg" not in body
     decks = new_root / "what-changed-decks"
     assert (
         'dr-live">'
@@ -832,6 +832,9 @@ def test_live_frames_open_the_deck_full_page_not_embedded(tmp_path):
         in body
         and "embedded" not in body
     )
+    # Reveal's own floor on a slide's scale (.2) would cut a slide off in a frame
+    # narrower than a fifth of its width: the frame lifts it.
+    assert "&amp;minScale=0.05" in body
 
 
 def test_live_frames_open_at_their_own_slide(tmp_path):
@@ -895,6 +898,21 @@ def _static_files(tmp_path, old_doc, new_doc, files=None, new_files=None):
         what_changed.reveal_slides(old_doc),
         what_changed.reveal_slides(new_doc),
     )
+
+
+def test_the_decks_own_bar_is_drawn_unless_the_page_has_its_own_control(tmp_path):
+    doc = _deck([SLIDE])
+    edited = doc.replace("One", "Uno")
+    files, old, new = _static_files(tmp_path, doc, edited)
+    args = ("d/deck.html", doc, edited, old, new, {0: 0}, files, "b", "a")
+    body, *_ = deck_review.live_review(*args)
+    for view in ("Changes marked", "Clean", "Before / after"):
+        assert f">{view}</button>" in body
+    assert 'class="dr-count"' in body
+    bare, *_ = deck_review.live_review(*args, bar=False)
+    assert "dr-bar" not in bare and "dr-seg" not in bare and "dr-count" not in bare
+    # Either way the page's own control can set the view.
+    assert "root.wcView = setView" in deck_review.LIVE_SCRIPT
 
 
 def test_live_review_has_no_screenshot_implementation():
@@ -1192,6 +1210,22 @@ def test_before_after_frames_the_old_slide_red_and_the_new_slide_green(tmp_path)
     assert "figure.dr-new iframe{border-color:var(--wc-ins-line" in style
     assert "figure.dr-old figcaption{color:var(--wc-del-line" in style
     assert "figure.dr-new figcaption{color:var(--wc-ins-line" in style
+    # Before / after sets old beside new, and old above new when the deck itself is
+    # too narrow for two readable frames, whatever page holds it.
+    assert (
+        "[data-view=before] .dr-pair{grid-template-columns:repeat(2,minmax(0,1fr))}"
+        in style
+    )
+    assert ".deck-live{container:deck-live / inline-size}" in style
+    assert (
+        "@container deck-live (max-width: 649px)"
+        "{.deck-live[data-view=before] .dr-pair{grid-template-columns:minmax(0,1fr)}}"
+        in style
+    )
+    # and each slide is fitted again by Reveal's own message, not by reaching in
+    script = deck_review.LIVE_SCRIPT
+    assert """postMessage('{"method":"layout"}', '*')""" in script
+    assert "contentWindow.Reveal" not in script
 
 
 def test_a_run_of_unchanged_slides_is_one_strip_named_in_slides(tmp_path):

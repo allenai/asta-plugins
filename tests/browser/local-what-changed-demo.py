@@ -69,7 +69,9 @@ def check_frames(page, missing):
             fold.evaluate("node => node.open = true")
         # Finish on the default marked view for the evidence check and screenshot.
         for view in ("before", "clean", "marked"):
-            review.locator(f'.dr-seg button[data-v="{view}"]').click()
+            review.locator(
+                "xpath=ancestor::section[contains(@class, 'page-diff')]"
+            ).locator(f'.wc-head [data-wc-view="{view}"]').click()
             for i, el in enumerate(review.locator("iframe:visible").all(), 1):
                 label = f"deck {review_number}, {view}, slide frame {i}"
                 el.scroll_into_view_if_needed()

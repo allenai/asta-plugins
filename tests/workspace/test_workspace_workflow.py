@@ -1897,3 +1897,145 @@ def test_dispatched_preview_uses_pr_directory_and_arm_never_publishes(
         env["PR_NUMBER"]
         == "${{ github.event.pull_request.number || inputs.preview-pr }}"
     )
+
+
+def _what_changed_step() -> str:
+    workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+    return next(
+        s["run"]
+        for s in workflow["jobs"]["build"]["steps"]
+        if s.get("name") == "Generate What changed"
+    )
+
+
+def test_what_changed_step_passes_both_sources() -> None:
+    script = _what_changed_step()
+
+    assert '--before-source "$before_source" --after-source "$PWD"' in script
+    assert '"${source_args[@]}"' in script
+    # The old source is the site directory at the commit the baseline names.
+    assert "^Deploy push \\([0-9a-f]\\{40\\}\\) " in script
+    assert 'git archive "$source_sha" | tar -x -C "$before_source"' in script
+    assert "refs/remotes/origin/gh-pages" in script.split("git log -1")[1]
+
+
+def _run_what_changed_with_sources(
+    tmp_path: Path, deploys: list[str], *, old_sha: str | None = None
+) -> tuple[subprocess.CompletedProcess, dict[str, str]]:
+    """Run the step in a site directory (site/) of a project whose gh-pages
+    history is `deploys` (oldest first; "{old}" stands for the project's first
+    commit). Returns the result and what the stand-in `asta` was given."""
+    git_env = {
+        **os.environ,
+        "GIT_CONFIG_COUNT": "2",
+        "GIT_CONFIG_KEY_0": "commit.gpgsign",
+        "GIT_CONFIG_VALUE_0": "false",
+        "GIT_CONFIG_KEY_1": "tag.gpgsign",
+        "GIT_CONFIG_VALUE_1": "false",
+    }
+
+    def git(cwd: Path, *args: str) -> str:
+        return subprocess.run(
+            ["git", *args],
+            cwd=cwd,
+            env=git_env,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+
+    remote = tmp_path / "remote.git"
+    project = tmp_path / "project"
+    pages = tmp_path / "pages"
+    git(tmp_path, "init", "--bare", str(remote))
+    git(tmp_path, "init", "-b", "main", str(project))
+    git(project, "config", "user.name", "Test")
+    git(project, "config", "user.email", "test@example.invalid")
+    site = project / "site"
+    (site / "_site").mkdir(parents=True)
+    (site / "index.qmd").write_text("old source\n")
+    git(project, "add", ".")
+    git(project, "commit", "-m", "First")
+    first = old_sha or git(project, "rev-parse", "HEAD")
+    (site / "index.qmd").write_text("new source\n")
+    git(project, "commit", "-am", "The PR")
+    (site / "_site/index.html").write_text("<html><body>new</body></html>")
+    git(project, "remote", "add", "origin", str(remote))
+
+    git(tmp_path, "init", "-b", "gh-pages", str(pages))
+    git(pages, "config", "user.name", "Test")
+    git(pages, "config", "user.email", "test@example.invalid")
+    (pages / "index.html").write_text("<html><body>old</body></html>")
+    git(pages, "add", ".")
+    for message in deploys:
+        git(pages, "commit", "--allow-empty", "-m", message.replace("{old}", first))
+    git(pages, "remote", "add", "origin", str(remote))
+    git(pages, "push", "origin", "gh-pages")
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    record = tmp_path / "record"
+    record.mkdir()
+    asta = bin_dir / "asta"
+    asta.write_text(
+        "#!/bin/sh\n"
+        f'printf "%s\\n" "$@" > {record}/args\n'
+        "while [ $# -gt 0 ]; do\n"
+        '  case "$1" in\n'
+        f'    --before-source) cp "$2/index.qmd" {record}/before ;;\n'
+        f'    --after-source) cp "$2/index.qmd" {record}/after ;;\n'
+        "  esac\n"
+        "  shift\n"
+        "done\n"
+    )
+    asta.chmod(0o755)
+    result = subprocess.run(
+        ["bash", "-e", "-o", "pipefail", "-c", _what_changed_step()],
+        cwd=site,
+        env={**git_env, "PATH": f"{bin_dir}:{os.environ['PATH']}", "PR_NUMBER": "9"},
+        capture_output=True,
+        text=True,
+    )
+    return result, {p.name: p.read_text() for p in record.iterdir()}
+
+
+def test_what_changed_compares_sources_at_the_commit_the_baseline_names(
+    tmp_path: Path,
+) -> None:
+    result, seen = _run_what_changed_with_sources(
+        tmp_path,
+        # A PR preview deployed after main must not be taken for main's source.
+        ["Deploy push {old} (run 1)", "Deploy pull_request " + "b" * 40 + " (run 2)"],
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "::warning::" not in result.stdout
+    assert "--before-source" in seen["args"] and "--after-source" in seen["args"]
+    assert seen["before"] == "old source\n"
+    assert seen["after"] == "new source\n"
+
+
+@pytest.mark.parametrize(
+    "deploys,old_sha,warning",
+    [
+        (["Baseline"], None, "names no main commit"),
+        (["Deploy push (run 1)"], None, "names no main commit"),
+        # A manual deploy might be a PR preview; its commit is not known to be main's.
+        (["Deploy workflow_dispatch {old} (run 1)"], None, "names no main commit"),
+        (
+            ["Deploy push {old} (run 1)"],
+            "c" * 40,
+            "Could not read the deployed site's source",
+        ),
+    ],
+)
+def test_what_changed_keeps_three_views_when_the_old_source_is_unreadable(
+    tmp_path: Path, deploys: list[str], old_sha: str | None, warning: str
+) -> None:
+    result, seen = _run_what_changed_with_sources(tmp_path, deploys, old_sha=old_sha)
+
+    assert result.returncode == 0, result.stderr
+    assert "::warning::" in result.stdout and warning in result.stdout
+    assert "--before-site" in seen["args"]
+    assert "source" not in seen["args"]
+    assert "before" not in seen and "after" not in seen

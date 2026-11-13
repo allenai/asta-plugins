@@ -148,3 +148,58 @@ test("leaving the whole window returns to the same place in the paper, with scro
   assert.equal(env.scrolls.every(y => y === 1200), true, "every correction goes to the same place");
   assert.equal(root.style.overflowAnchor, "", "anchoring is back once the PDF has settled");
 });
+
+test("the paper's header is its title and file, then Changes marked · Clean, then the whole-window button", () => {
+  const { document } = report();
+  const head = document.querySelector("section.page-diff > .wc-head");
+  assert.deepEqual([...head.querySelector(".wc-head-left").children].map(e => e.className), ["wc-title", "wc-file"]);
+  assert.equal(head.querySelector(".wc-title").textContent, "Paper");
+  assert.equal(head.querySelector(".wc-file").textContent, "paper/main.tex");
+  const right = head.querySelector(".wc-head-right");
+  assert.deepEqual([...right.children].map(e => e.className), ["wc-views", "wc-expand"]);
+  assert.deepEqual([...right.querySelectorAll(".wc-views button")].map(b => b.textContent), ["Changes marked", "Clean"]);
+  // The viewer's own bar follows the header, and is drawn only in the whole window.
+  assert.equal(head.nextElementSibling.className, "paper-view");
+});
+
+test("the header's switch drives the viewer's two modes, and the viewer's own switch moves the header's", () => {
+  const { document } = report();
+  const data = () => document.querySelector(".paper-view object").getAttribute("data");
+  const pressed = sel => [...document.querySelectorAll(sel)].map(b => b.getAttribute("aria-pressed"));
+  const [marked, clean] = document.querySelectorAll(".wc-head .wc-views button");
+  clean.click();
+  assert.equal(data(), "paper-previews/paper/main.pdf#navpanes=0&view=FitH");
+  assert.deepEqual(pressed(".wc-head .wc-views button"), ["false", "true"]);
+  assert.deepEqual(pressed(".paper-modes button"), ["false", "true"]);
+  marked.click();
+  assert.equal(data(), "paper-previews/paper/what-changed.pdf#navpanes=0&view=FitH");
+  assert.deepEqual(pressed(".wc-head .wc-views button"), ["true", "false"]);
+  // In the whole window the viewer's own switch is the one used; the header follows.
+  document.querySelector('.paper-modes [data-pdf$="main.pdf"]').click();
+  assert.deepEqual(pressed(".wc-head .wc-views button"), ["false", "true"]);
+});
+
+test("the header's button gives the paper the whole window and follows it back; the viewer's own bar leaves it", () => {
+  const { document, press, settle, env } = report();
+  const view = document.querySelector(".paper-view");
+  const button = document.querySelector(".wc-head .wc-expand");
+  button.click();
+  assert.equal(view.classList.contains("paper-full"), true);
+  assert.equal(button.getAttribute("aria-pressed"), "true");
+  // Focus is on the viewer's own bar, which shows now, so that Esc reaches the page.
+  assert.equal(env.focused.at(-1)[0], document.querySelector(".paper-expand"));
+  document.querySelector(".paper-expand").click();
+  settle();
+  assert.equal(view.classList.contains("paper-full"), false);
+  assert.equal(button.getAttribute("aria-pressed"), "false");
+  assert.equal(env.focused.at(-1)[0], button, "back in the page, the header's button has the focus");
+  button.click();
+  press("Escape");
+  settle();
+  assert.equal(view.classList.contains("paper-full"), false);
+});
+
+test("the viewer's own bar is hidden except in the whole window", () => {
+  const css = [...parseHTML(generatedPage).document.querySelectorAll("style")].map(s => s.textContent).join("\n");
+  assert.match(css, /\.wc-scope \.paper-view:not\(\.paper-full\) \.paper-bar \{ display: none; \}/);
+});

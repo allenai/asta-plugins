@@ -211,6 +211,17 @@ Run `asta workspace what-changed [ref]`, for example a tag marking the version y
 
 The page is written to `.asta/cache/what-changed/what-changed.html`, a command-owned rendered-site copy so links resolve, replaced on each successful comparison. When a live `_site/` exists, the command also links it to the snapshot (`_site/what-changed-snapshot`) and writes a redirect at `_site/what-changed.html`, replacing any project page of that name until the next render. A failed comparison preserves the previous page.
 
+#### Reading a changed page
+
+Each changed page, slide deck and paper has one header, kept at the top of the window while its section scrolls by: the page's title (linking to it), its file, and one control. The control has the same views for every page and deck, the three diffs first (Source where there is one, Changes marked, Before / after) and then Clean, the one view that is no diff, with Changes marked pressed on load:
+
+- **Source**: the page's own `.qmd`, `.md` or `.ipynb` at both commits, old line above new, for reading each edit as it was written: its Markdown, citation keys, a cell's code and options, a link's address.
+- **Changes marked** (the default): the page with what changed marked.
+- **Before / after**: the old and new page side by side, each framed thin red or green.
+- **Clean**: the new version as readers will see it, with no marks. Clean and Before / after show each version as published, not rebuilt from the marks (an author's own `<ins>` and `<del>` stay as written), at the cost of carrying both versions in the page.
+
+A paper's header holds Changes marked and Clean (the two PDFs) and the button that gives the paper the whole window. A page or deck whose rendered content is unchanged but whose source changed (a comment, a code-chunk option such as `#| warning: false`, front matter the page doesn't print) is kept: the overview and its header each say "only its source changed" as a plain detail (after the file in the header, like the other pages' counts in the overview), never as a tag, and its Source view shows the change. A source change counts by the rule of `git diff --ignore-blank-lines --ignore-space-at-eol`: not when the two differ only in blank lines or in whitespace at the ends of lines; any other spacing counts, inside a line or in indentation, since in code it can matter. A page made by script (an interactive or Plotly page) is kept the same way: its Source view, and its rendered side only as the card that links to the page; its scripts are never carried. Source is offered by `asta workspace what-changed <ref>`, which has the project's files at both commits; a comparison of two built sites has them only when `--before-source` and `--after-source` name them.
+
 #### Render inputs and trust
 
 Use a trusted ref: its Makefile and render-time code execute locally, and checkout can run Git hooks or LFS filters. `make render` must finish its build in the foreground; background services must detach their output streams. The baseline contains committed files; submodules are not initialized. Ignored inputs such as data, `_freeze/`, `.env` or `.asta/cache/` are absent unless `make render` prepares them. Missing inputs produce build diagnostics.
@@ -223,7 +234,7 @@ The bundled diff script needs only Python's standard library. Custom scripts run
 
 #### Preview and cleanup
 
-Run `asta workspace preview --what-changed` to serve the cached site on port 4849, forwarded alongside live preview's port 4848. It prints the localhost or Codespaces URL. Local forwards may use another host port; use the URL shown by your container tools. Later comparisons appear without restarting the server. A request during directory replacement may need a reload.
+Run `asta workspace preview --what-changed` to serve the cached site on port 4849, forwarded alongside live preview's port 4848. It prints the localhost or Codespaces URL. Local forwards may use another host port; use the URL shown by your container tools. If another project's preview already holds port 4849, the command serves this project's page on a free port and prints its address. Later comparisons appear without restarting the server. A request during directory replacement may need a reload.
 
 Publish comparisons sequentially. The cache stays private to the command's user; run its preview as the same user. Host checks accept the configured Codespaces hostname and localhost/IPv4 loopback, including proxies that rewrite Host to localhost. Live Codespaces proxy behavior has not been verified. The server checks request containment and disables directory listings, but accepts the same-user symlink-swap race: a process able to replace private cache files already has your access.
 

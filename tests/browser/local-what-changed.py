@@ -107,7 +107,9 @@ def check_pair_fits_narrow(browser, url):
         page = browser.new_page(viewport={"width": width, "height": 900})
         page.goto(url)
         page.locator(".deck-review").wait_for()
-        page.locator('.dr-seg button[data-v="before"]').first.click()
+        page.locator(
+            'section.page-diff:has(.deck-live) .wc-head [data-wc-view="before"]'
+        ).first.click()
         pairs = [
             figures
             for pair in page.locator(".deck-live .dr-pair:visible").all()
@@ -163,7 +165,9 @@ def check_frames_fit_after_view_switch(browser, url):
             return page
 
         def switch(page, to):
-            page.locator(f'.dr-seg button[data-v="{to}"]').click()
+            page.locator(
+                f'section.page-diff:has(.deck-live) .wc-head [data-wc-view="{to}"]'
+            ).click()
 
         # What a frame loaded in view measures; the minimum scale is Reveal's floor.
         reference_page = open_page()
@@ -288,7 +292,9 @@ def check(project, artifacts):
             )
             for view in ("marked", "clean", "before"):
                 live = page.locator(".deck-live").first
-                live.locator(f'.dr-seg button[data-v="{view}"]').click()
+                page.locator(
+                    f'section.page-diff:has(.deck-live) .wc-head [data-wc-view="{view}"]'
+                ).first.click()
                 frames = live.locator(".dr-slide iframe:visible").all()
                 assert frames, view
                 marked_seen = set()
@@ -335,7 +341,9 @@ def check(project, artifacts):
             # Opening every unchanged-slide fold keeps the page responsive, and
             # each shown frame reaches its labelled slide within a few seconds.
             live = page.locator(".deck-live").first
-            live.locator('.dr-seg button[data-v="marked"]').click()
+            page.locator(
+                'section.page-diff:has(.deck-live) .wc-head [data-wc-view="marked"]'
+            ).first.click()
             for fold in live.locator("details.dr-unchanged").all():
                 fold.locator("summary").click()
             frames = live.locator(".dr-unchanged .dr-slide iframe:visible").all()

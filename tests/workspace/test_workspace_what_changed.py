@@ -1,5 +1,6 @@
 """`asta workspace what-changed` compares a git ref's rendered site with the working tree."""
 
+import http.server
 import json
 import os
 import re
@@ -128,6 +129,14 @@ def test_highlights_edit_since_ref(project: Path) -> None:
     page = (project / ".asta/cache/what-changed/what-changed.html").read_text()
     assert "Changes since last-read" in page
     assert "<ins" in page and "newly drafted paragraph" in page
+    # The page's own source at both commits is the Source view, from the project's files.
+    assert 'data-source="index.qmd"' in page
+    assert re.search(
+        r'<div class="wc-source" hidden><div class="wc-src">.*newly drafted paragraph',
+        page,
+        re.S,
+    )
+    assert "only in the source" not in page  # the page shows the only change there is
     assert_single_worktree(project)
 
 
@@ -162,6 +171,88 @@ def test_subdirectory_uses_matching_baseline(
         r'<section class="page-diff changed".*?</section>', report, re.S
     )
     assert page_diff and "<del" not in page_diff.group()
+
+
+def test_the_sources_options_need_the_built_sites(tmp_path: Path) -> None:
+    result = CliRunner().invoke(
+        workspace, ["what-changed", "--before-source", str(tmp_path)]
+    )
+    assert result.exit_code == 2
+    assert "require --before-site" in result.output
+
+
+def test_built_sites_comparison_passes_the_sources_on(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    before, after, old_src, new_src = (
+        tmp_path / name for name in ("before", "site", "old-src", "new-src")
+    )
+    for directory in (before, after, old_src, new_src):
+        directory.mkdir()
+    seen = {}
+
+    def fake(before, after, report, title, project, theme=None, sources=(None, None)):
+        seen["sources"] = sources
+        report.write_text("<html></html>")
+
+    monkeypatch.setattr(workspace_module, "_run_comparison", fake)
+    result = CliRunner().invoke(
+        workspace,
+        [
+            "what-changed",
+            "--before-site",
+            str(before),
+            "--after-site",
+            str(after),
+            "--before-source",
+            str(old_src),
+            "--after-source",
+            str(new_src),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert seen["sources"] == (old_src.resolve(), new_src.resolve())
+
+
+def test_the_comparator_is_given_the_sources_as_its_options(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import contextlib
+
+    given = []
+
+    class Process:
+        stdout = iter(())
+
+        def wait(self):
+            return 0
+
+    def fake(args, project, **kwargs):
+        given.append(args)
+        Path(args[args.index("--out") + 1]).write_text("<html></html>")
+        return contextlib.nullcontext(Process())
+
+    monkeypatch.setattr(workspace_module, "preview_process", fake)
+    report = tmp_path / "what-changed.html"
+    old_src, new_src = tmp_path / "old-src", tmp_path / "new-src"
+    for name in ("before", "after"):
+        (tmp_path / name).mkdir()
+    workspace_module._run_comparison(
+        tmp_path / "before",
+        tmp_path / "after",
+        report,
+        "title",
+        tmp_path,
+        sources=(old_src, new_src),
+    )
+    args = given[-1]
+    assert args[args.index("--old-source") + 1] == str(old_src)
+    assert args[args.index("--new-source") + 1] == str(new_src)
+    # Without them, the comparator is not told of any.
+    workspace_module._run_comparison(
+        tmp_path / "before", tmp_path / "after", report, "title", tmp_path
+    )
+    assert "--old-source" not in given[-1] and "--new-source" not in given[-1]
 
 
 def test_baseline_missing_ignored_input_reports_build_stderr(
@@ -1063,24 +1154,109 @@ def test_preview_what_changed_requires_a_page(tmp_path: Path) -> None:
     assert "asta workspace what-changed <ref>" in result.output
 
 
-def test_preview_what_changed_uses_codespace_url(project: Path, monkeypatch) -> None:
+def _page_project(root: Path, name: str, text: str) -> Path:
+    project = root / name
     owned = project / workspace_module.COMPARISON_DIR
     owned.mkdir(parents=True)
-    (owned / "what-changed.html").write_text("page")
+    (owned / "what-changed.html").write_text(text)
+    return project
+
+
+_REAL_SERVE_FOREVER = http.server.ThreadingHTTPServer.serve_forever
+
+
+def _serve_in_thread(server) -> None:
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+
+
+def test_preview_what_changed_uses_codespace_url(tmp_path: Path, monkeypatch) -> None:
+    project = _page_project(tmp_path, "mine", "page")
     monkeypatch.setenv("CODESPACE_NAME", "cs")
-    blocker = socket.socket()
-    blocker.bind(("127.0.0.1", 0))
-    blocker.listen()
-    monkeypatch.setattr(workspace_module, "WHAT_CHANGED_PORT", blocker.getsockname()[1])
+    # This project's own earlier preview holds the port.
+    earlier = workspace_module.comparison_server(
+        project / workspace_module.COMPARISON_DIR, 0
+    )
+    _serve_in_thread(earlier)
+    monkeypatch.setattr(workspace_module, "WHAT_CHANGED_PORT", earlier.server_port)
     try:
         result = CliRunner().invoke(
             workspace, ["preview", "--what-changed", "--project", str(project)]
         )
     finally:
-        blocker.close()
+        earlier.shutdown()
+        earlier.server_close()
     assert result.exit_code != 0
     port = workspace_module.WHAT_CHANGED_PORT
     assert f"https://cs-{port}.app.github.dev/what-changed.html" in result.output
+    assert "already serves the latest page" in result.output
+
+
+def test_second_project_preview_serves_its_own_page_elsewhere(
+    tmp_path: Path, monkeypatch
+) -> None:
+    other = _page_project(tmp_path, "other", "OTHER PROJECT PAGE")
+    mine = _page_project(tmp_path, "mine", "MY PROJECT PAGE")
+    holder = workspace_module.comparison_server(
+        other / workspace_module.COMPARISON_DIR, 0
+    )
+    _serve_in_thread(holder)
+    monkeypatch.setattr(workspace_module, "WHAT_CHANGED_PORT", holder.server_port)
+    served = {}
+
+    def serve_once(self, *args, **kwargs):
+        # Stand in for serve_forever: serve briefly, fetch the page, and stop.
+        thread = threading.Thread(target=_REAL_SERVE_FOREVER, args=(self,))
+        thread.start()
+        served["port"] = self.server_port
+        served["page"] = (
+            urlopen(f"http://127.0.0.1:{self.server_port}/what-changed.html")
+            .read()
+            .decode()
+        )
+        self.shutdown()
+        thread.join()
+
+    monkeypatch.setattr(http.server.ThreadingHTTPServer, "serve_forever", serve_once)
+    try:
+        result = CliRunner().invoke(
+            workspace, ["preview", "--what-changed", "--project", str(mine)]
+        )
+    finally:
+        holder.shutdown()
+        holder.server_close()
+    assert result.exit_code == 0, result.output
+    assert served["port"] != holder.server_port
+    assert served["page"] == "MY PROJECT PAGE"
+    assert f"http://localhost:{served['port']}/what-changed.html" in result.output
+    assert f"Port {holder.server_port} is held by" in result.output
+    assert "already serves" not in result.output
+
+
+def test_unrelated_server_on_the_port_does_not_stop_the_preview(
+    tmp_path: Path, monkeypatch
+) -> None:
+    mine = _page_project(tmp_path, "mine", "MY PROJECT PAGE")
+    blocker = socket.socket()
+    blocker.bind(("127.0.0.1", 0))
+    blocker.listen()
+    held = blocker.getsockname()[1]
+    monkeypatch.setattr(workspace_module, "WHAT_CHANGED_PORT", held)
+    monkeypatch.setattr(workspace_module, "PORT_PROBE_SECONDS", 0.2)
+    monkeypatch.setattr(
+        http.server.ThreadingHTTPServer,
+        "serve_forever",
+        lambda self, *a, **k: None,
+    )
+    try:
+        result = CliRunner().invoke(
+            workspace, ["preview", "--what-changed", "--project", str(mine)]
+        )
+    finally:
+        blocker.close()
+    assert result.exit_code == 0, result.output
+    assert "Serving What changed at http://localhost:" in result.output
+    assert f"localhost:{held}/" not in result.output
+    assert f"Port {held} is held by" in result.output
 
 
 def test_repeat_run_replaces_the_owned_directory(project: Path) -> None:

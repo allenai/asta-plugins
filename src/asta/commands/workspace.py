@@ -1709,8 +1709,12 @@ def _quarto_rendered(project, pages, inputs):
     ]
 
 
-def _run_comparison(before, after, report, title, project, theme=None):
-    """The single comparison engine for local and CI builds."""
+def _run_comparison(
+    before, after, report, title, project, theme=None, sources=(None, None)
+):
+    """The single comparison engine for local and CI builds. `sources` are the
+    project's own files at both commits (a pair of directories, either may be
+    None), from which each page shows its source."""
     decks = _has_deck(before) or _has_deck(after)
     python, env = _comparison_python(decks)
     args = [
@@ -1728,6 +1732,9 @@ def _run_comparison(before, after, report, title, project, theme=None):
     ]
     if theme is not None:
         args += ["--theme-root", str(theme)]
+    for flag, directory in zip(("--old-source", "--new-source"), sources):
+        if directory is not None:
+            args += [flag, str(directory)]
     if decks:
         args += [
             f"--render-decks={after / DECK_IMAGES}",
@@ -1753,8 +1760,15 @@ def _run_comparison(before, after, report, title, project, theme=None):
     return decks
 
 
-def compare_built_sites(before: Path, after: Path, title: str | None = None):
-    """Compare a published snapshot and PR build, publishing only on success."""
+def compare_built_sites(
+    before: Path,
+    after: Path,
+    title: str | None = None,
+    sources: tuple[Path | None, Path | None] = (None, None),
+):
+    """Compare a published snapshot and PR build, publishing only on success.
+    `sources` are the project's own files at both commits, when the caller has
+    them: each page then offers its Source view."""
     with tempfile.TemporaryDirectory(
         prefix="asta-built-comparison-", dir=after.parent
     ) as directory:
@@ -1768,6 +1782,7 @@ def compare_built_sites(before: Path, after: Path, title: str | None = None):
             report,
             title or "Changes since published site",
             after.parent,
+            sources=sources,
         )
         _publish(staged, after)
     click.echo(f"Wrote {after / 'what-changed.html'}")
@@ -1786,6 +1801,17 @@ def compare_built_sites(before: Path, after: Path, title: str | None = None):
 @click.option(
     "--after-site", type=click.Path(path_type=Path, file_okay=False, exists=True)
 )
+@click.option(
+    "--before-source",
+    type=click.Path(path_type=Path, file_okay=False, exists=True),
+    help="With --before-site: the project's own files as of the baseline, so that "
+    "each page can show its source.",
+)
+@click.option(
+    "--after-source",
+    type=click.Path(path_type=Path, file_okay=False, exists=True),
+    help="With --after-site: the project's own files as of the build.",
+)
 @click.option("--title", default=None)
 @click.option(
     "--full", is_flag=True, help="Render the full site, including dependent pages."
@@ -1798,6 +1824,8 @@ def what_changed(
     project: Path,
     before_site: Path | None,
     after_site: Path | None,
+    before_source: Path | None,
+    after_source: Path | None,
     title: str | None,
     full: bool,
     timings: bool = False,
@@ -1818,12 +1846,24 @@ def what_changed(
     started = time.perf_counter()
     try:
         with preview_signals():
+            if (before_source or after_source) and before_site is None:
+                raise click.UsageError(
+                    "--before-source and --after-source require --before-site"
+                )
             if before_site is not None:
                 if ref or after_site is None:
                     raise click.UsageError(
                         "--before-site requires --after-site and cannot be combined with REF"
                     )
-                compare_built_sites(before_site.resolve(), after_site.resolve(), title)
+                compare_built_sites(
+                    before_site.resolve(),
+                    after_site.resolve(),
+                    title,
+                    (
+                        before_source.resolve() if before_source else None,
+                        after_source.resolve() if after_source else None,
+                    ),
+                )
             else:
                 if after_site is not None:
                     raise click.UsageError("--after-site requires --before-site")
@@ -2081,6 +2121,7 @@ def compare_workspace(ref: str, project: Path, *, full: bool = False) -> None:
                         f"Changes since {ref}",
                         project,
                         theme,
+                        (baseline_project, copied_project),
                     )
                 deck_images = new_site / DECK_IMAGES
                 if decks and deck_images.is_dir() and not deck_images.is_symlink():
@@ -2131,6 +2172,10 @@ PREVIEW_PORT = 4848
 # A separate port, so the comparison can be viewed while the live preview runs.
 WHAT_CHANGED_PORT = 4849
 PREVIEW_STATE = Path(".asta/cache/preview.json")
+# Every response of the comparison server names the project it serves, so a
+# second project's command can tell whose server holds the port.
+PREVIEW_OWNER_HEADER = "X-Asta-Preview-Owner"
+PORT_PROBE_SECONDS = 2.0
 
 
 def preview_url(env: Mapping[str, str], port: int = PREVIEW_PORT) -> str:
@@ -2141,11 +2186,31 @@ def preview_url(env: Mapping[str, str], port: int = PREVIEW_PORT) -> str:
     return f"http://localhost:{port}/"
 
 
+def preview_owner(directory: Path) -> str:
+    return hashlib.sha256(str(directory.resolve()).encode()).hexdigest()
+
+
+def port_owner(port: int) -> str | None:
+    """Whose comparison server answers on the port, or None if none of ours."""
+    try:
+        connection = http.client.HTTPConnection(
+            "127.0.0.1", port, timeout=PORT_PROBE_SECONDS
+        )
+        try:
+            connection.request("HEAD", "/")
+            return connection.getresponse().getheader(PREVIEW_OWNER_HEADER)
+        finally:
+            connection.close()
+    except (OSError, http.client.HTTPException):
+        return None
+
+
 def comparison_server(directory: Path, port: int) -> http.server.ThreadingHTTPServer:
     """Serve the what-changed site copy; requests resolve its path afresh, so a
     rerun of what-changed is picked up without restarting."""
     root = directory.parent.resolve() / directory.name
     forwarded_host = None
+    owner = preview_owner(root)
 
     class SiteHandler(http.server.SimpleHTTPRequestHandler):
         serves_font = False
@@ -2211,6 +2276,7 @@ def comparison_server(directory: Path, port: int) -> http.server.ThreadingHTTPSe
             # through this server.
             if self.serves_font and self.response_code in (200, 304):
                 self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header(PREVIEW_OWNER_HEADER, owner)
             super().end_headers()
 
         def list_directory(self, path):
@@ -2234,11 +2300,20 @@ def serve_what_changed(project: Path) -> None:
     try:
         server = comparison_server(owned, WHAT_CHANGED_PORT)
     except OSError as exc:
-        raise click.ClickException(
-            f"Port {WHAT_CHANGED_PORT} is in use ({exc.strerror}). If an earlier "
-            f"`asta workspace preview --what-changed` is running, it already "
-            f"serves the latest page: {url}"
-        ) from exc
+        if port_owner(WHAT_CHANGED_PORT) == preview_owner(owned):
+            raise click.ClickException(
+                f"Port {WHAT_CHANGED_PORT} is in use ({exc.strerror}) by this "
+                f"project's earlier `asta workspace preview --what-changed`, which "
+                f"already serves the latest page: {url}"
+            ) from exc
+        # Another project's preview (or another program) holds the port.
+        server = comparison_server(owned, 0)
+        url = preview_url(os.environ, server.server_port) + "what-changed.html"
+        click.echo(
+            f"Port {WHAT_CHANGED_PORT} is held by another project's preview or "
+            f"another program ({exc.strerror}); serving this project's page on "
+            f"port {server.server_port} instead."
+        )
     click.echo(f"Serving What changed at {url} (Ctrl-C to stop)")
     with server:
         server.serve_forever()
