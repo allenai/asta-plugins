@@ -390,23 +390,63 @@ jobs:
           if [ -e _site/what-changed.html ]; then
             echo "::warning::The generated diff page will replace the project's what-changed.html if generation succeeds"
           fi
-          # The Source view compares the site directory at both commits: this
-          # checkout, and the commit the baseline was built from (the newest
-          # main deploy's message names it; archive, run in the site directory,
-          # keeps just that subtree). Without both, the page keeps its three views.
+          # The Source view compares the committed files of the site directory at
+          # both commits: this checkout's HEAD, and the commit the baseline was
+          # built from (the newest main deploy's message names it). A page's source
+          # is the committed blob's own bytes, written without any conversion, so
+          # generated files in the built working directory (gitignored viewer
+          # pages) are on neither side, and neither a site's export-ignore or
+          # export-subst attributes (git archive) nor its checkout filters,
+          # encodings or line-ending rules (git checkout) change what is compared.
+          # Only regular files What changed reads as a page's source are written
+          # (the suffixes of SOURCE_SUFFIXES in what-changed.py, which this list
+          # must match, in any case, as a case-insensitive disk finds them), so
+          # that a site's data and images cost nothing. No symlink or submodule is
+          # created, no path is written that already exists, and no path that is
+          # absolute or has an empty, `.` or `..` component, so that nothing
+          # committed can redirect or overwrite a write (a case-insensitive disk
+          # makes `A` and `a` one name). Known limit: a page reached only through
+          # a symlinked folder has no Source on a preview; a local run shows it.
+          # Without both sides, the page keeps its three views.
+          read_committed() {
+            local commit=$1 dest=$2 prefix tree entry meta rest mode oid path wanted
+            prefix=$(git rev-parse --show-prefix) || return 1
+            if [ -n "$prefix" ]; then tree=$commit:${prefix%/}; else tree=$commit^{tree}; fi
+            git ls-tree -r -z --full-tree "$tree" > "$tmpdir/source-tree" || return 1
+            while IFS= read -r -d '' entry; do
+              meta=${entry%%$'\t'*}
+              path=${entry#*$'\t'}
+              mode=${meta%% *}
+              rest=${meta#* }
+              oid=${rest#* }
+              case $mode in 100644|100755) ;; *) continue ;; esac
+              case /$path/ in *//*|*/./*|*/../*) continue ;; esac
+              wanted=
+              shopt -s nocasematch
+              case $path in *.qmd|*.md|*.ipynb|*.Rmd|*.rmd|*.markdown) wanted=1 ;; esac
+              shopt -u nocasematch
+              [ -n "$wanted" ] || continue
+              case $path in */*) mkdir -p -- "$dest/${path%/*}" || return 1 ;; esac
+              if [ -e "$dest/$path" ] || [ -L "$dest/$path" ]; then continue; fi
+              git cat-file blob "$oid" > "$dest/$path" || return 1
+            done < "$tmpdir/source-tree"
+          }
           source_args=()
           if [ "$baseline_label" != "no deployed baseline" ]; then
             deploy=$(git log -1 --format=%s -E --grep='^Deploy (push|workflow_dispatch) ' refs/remotes/origin/gh-pages) || deploy=
             source_sha=$(printf '%s\n' "$deploy" | sed -n 's/^Deploy push \([0-9a-f]\{40\}\) .*/\1/p')
             before_source="$tmpdir/before-source"
-            mkdir "$before_source"
+            after_source="$tmpdir/after-source"
+            mkdir "$before_source" "$after_source"
             if [ -z "$source_sha" ]; then
               echo "::warning::The deployed site's commit names no main commit; the diff page has no Source view"
             elif ! { git cat-file -e "$source_sha^{commit}" 2>/dev/null || git fetch -q --no-tags origin "$source_sha"; } \
-                || ! git archive "$source_sha" | tar -x -C "$before_source"; then
+                || ! read_committed "$source_sha" "$before_source"; then
               echo "::warning::Could not read the deployed site's source at ${source_sha:0:12}; the diff page has no Source view"
+            elif ! read_committed HEAD "$after_source"; then
+              echo "::warning::Could not read this checkout's committed source; the diff page has no Source view"
             else
-              source_args=(--before-source "$before_source" --after-source "$PWD")
+              source_args=(--before-source "$before_source" --after-source "$after_source")
             fi
           fi
           if ! asta workspace what-changed --before-site "$baseline" --after-site _site \
