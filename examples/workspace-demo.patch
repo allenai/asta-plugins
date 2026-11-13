@@ -10,11 +10,82 @@ index d565e6e..ac686f3 100644
 +    quote: "We introduce a new language representation model called BERT, which stands for Bidirectional Encoder Representations from Transformers."
 +    cite: devlin2019bert
 +    locator: "abstract"
+diff --git a/examples/workspace/lit-review/figures/path-length.svg b/examples/workspace/lit-review/figures/path-length.svg
+index 854f6f1..f4d970d 100644
+--- a/examples/workspace/lit-review/figures/path-length.svg
++++ b/examples/workspace/lit-review/figures/path-length.svg
+@@ -1,11 +1,11 @@
+ <svg xmlns="http://www.w3.org/2000/svg" width="640" height="230" viewBox="0 0 640 230" font-family="system-ui, sans-serif">
+-<text x="190" y="28" font-size="15" fill="#7a8794">Longest path between two tokens, 512-token sequence</text>
++<text x="190" y="28" font-size="15" fill="#7a8794">Longest path between two tokens, 2,048-token sequence</text>
+ <text x="178" y="75.12" font-size="14" fill="#7a8794" text-anchor="end">Recurrent</text>
+ <rect x="190" y="52" width="360.0" height="34" rx="3" fill="#5b7fa6"/>
+-<text x="558.0" y="75.12" font-size="14" fill="#7a8794">512</text>
++<text x="558.0" y="75.12" font-size="14" fill="#7a8794">2,048</text>
+ <text x="178" y="127.12" font-size="14" fill="#7a8794" text-anchor="end">Convolution, kernel 5</text>
+ <rect x="190" y="104" width="90.0" height="34" rx="3" fill="#5b7fa6"/>
+-<text x="288.0" y="127.12" font-size="14" fill="#7a8794">128</text>
++<text x="288.0" y="127.12" font-size="14" fill="#7a8794">512</text>
+ <text x="178" y="179.12" font-size="14" fill="#7a8794" text-anchor="end">Self-attention</text>
+ <rect x="190" y="156" width="2.0" height="34" rx="3" fill="#5b7fa6"/>
+ <text x="200.0" y="179.12" font-size="14" fill="#7a8794">1</text>
+diff --git a/examples/workspace/lit-review/figures/seen-2048-by-layer.svg b/examples/workspace/lit-review/figures/seen-2048-by-layer.svg
+new file mode 100644
+index 0000000..a2a3f70
+--- /dev/null
++++ b/examples/workspace/lit-review/figures/seen-2048-by-layer.svg
+@@ -0,0 +1,18 @@
++<svg xmlns="http://www.w3.org/2000/svg" width="640" height="342" viewBox="0 0 640 342" font-family="system-ui, sans-serif">
++<text x="190" y="28" font-size="15" fill="#7a8794">Tokens one position sees, 2,048-token sequence, by layer</text>
++<text x="178" y="75.12" font-size="14" fill="#7a8794" text-anchor="end">Convolution, layer 1</text>
++<rect x="190" y="52" width="2.0" height="34" rx="3" fill="#5b7fa6"/>
++<text x="200.0" y="75.12" font-size="14" fill="#7a8794">5</text>
++<text x="178" y="127.12" font-size="14" fill="#7a8794" text-anchor="end">Convolution, layer 2</text>
++<rect x="190" y="104" width="2.0" height="34" rx="3" fill="#5b7fa6"/>
++<text x="200.0" y="127.12" font-size="14" fill="#7a8794">9</text>
++<text x="178" y="179.12" font-size="14" fill="#7a8794" text-anchor="end">Convolution, layer 3</text>
++<rect x="190" y="156" width="2.3" height="34" rx="3" fill="#5b7fa6"/>
++<text x="200.3" y="179.12" font-size="14" fill="#7a8794">13</text>
++<text x="178" y="231.12" font-size="14" fill="#7a8794" text-anchor="end">Convolution, layer 4</text>
++<rect x="190" y="208" width="3.0" height="34" rx="3" fill="#5b7fa6"/>
++<text x="201.0" y="231.12" font-size="14" fill="#7a8794">17</text>
++<text x="178" y="283.12" font-size="14" fill="#7a8794" text-anchor="end">Self-attention, layer 1</text>
++<rect x="190" y="260" width="360.0" height="34" rx="3" fill="#5b7fa6"/>
++<text x="558.0" y="283.12" font-size="14" fill="#7a8794">2,048</text>
++</svg>
+diff --git a/examples/workspace/lit-review/figures/seen-512.svg b/examples/workspace/lit-review/figures/seen-512.svg
+deleted file mode 100644
+index 9e182f2..0000000
+--- a/examples/workspace/lit-review/figures/seen-512.svg
++++ /dev/null
+@@ -1,15 +0,0 @@
+-<svg xmlns="http://www.w3.org/2000/svg" width="640" height="290" viewBox="0 0 640 290" font-family="system-ui, sans-serif">
+-<text x="190" y="28" font-size="15" fill="#7a8794">Tokens one position sees, 512-token sequence</text>
+-<text x="178" y="75.12" font-size="14" fill="#7a8794" text-anchor="end">Convolution, layer 1</text>
+-<rect x="190" y="52" width="3.5" height="34" rx="3" fill="#5b7fa6"/>
+-<text x="201.5" y="75.12" font-size="14" fill="#7a8794">5</text>
+-<text x="178" y="127.12" font-size="14" fill="#7a8794" text-anchor="end">Convolution, layer 2</text>
+-<rect x="190" y="104" width="6.3" height="34" rx="3" fill="#5b7fa6"/>
+-<text x="204.3" y="127.12" font-size="14" fill="#7a8794">9</text>
+-<text x="178" y="179.12" font-size="14" fill="#7a8794" text-anchor="end">Convolution, layer 3</text>
+-<rect x="190" y="156" width="9.1" height="34" rx="3" fill="#5b7fa6"/>
+-<text x="207.1" y="179.12" font-size="14" fill="#7a8794">13</text>
+-<text x="178" y="231.12" font-size="14" fill="#7a8794" text-anchor="end">Self-attention, layer 1</text>
+-<rect x="190" y="208" width="360.0" height="34" rx="3" fill="#5b7fa6"/>
+-<text x="558.0" y="231.12" font-size="14" fill="#7a8794">512</text>
+-</svg>
+diff --git a/examples/workspace/lit-review/figures/sequence-length.txt b/examples/workspace/lit-review/figures/sequence-length.txt
+index 4d0e90c..c873496 100644
+--- a/examples/workspace/lit-review/figures/sequence-length.txt
++++ b/examples/workspace/lit-review/figures/sequence-length.txt
+@@ -1 +1 @@
+-512
++2048
 diff --git a/examples/workspace/lit-review/index.qmd b/examples/workspace/lit-review/index.qmd
-index b1bb0fa..2469f9a 100644
+index 1260756..952ea47 100644
 --- a/examples/workspace/lit-review/index.qmd
 +++ b/examples/workspace/lit-review/index.qmd
-@@ -5,7 +5,7 @@ documentclass: article
+@@ -5,15 +5,15 @@ documentclass: article
  
  This literature review is the editable Quarto source. To get a PDF or LaTeX source, render it with Quarto (see the [workspace guide](https://github.com/allenai/asta-plugins/blob/main/plugins/asta-tools/skills/workspace/assets/DEVELOPER.md#getting-a-latex-pdf)). This review cites the project-root `references.bib`. The separate `paper/main.tex` is edited directly and paired with Overleaf, so it keeps its own copy of the entries it cites.
  
@@ -24,6 +95,90 @@ index b1bb0fa..2469f9a 100644
 -[Vaswani and colleagues proposed a Transformer architecture based on attention mechanisms]{.ev key="transformer-attention"} [@vaswani2017attention]. The highlighted claim exposes its source quote on hover or keyboard focus.
 +[Vaswani and colleagues proposed a Transformer architecture based solely on attention mechanisms]{.ev key="transformer-attention"} [@vaswani2017attention]. [BERT later applied the Transformer encoder to bidirectional language representation]{.ev key="bert-encoder"} [@devlin2019bert]. Each highlighted claim shows its source quote on hover or keyboard focus.
  
+ ## Background
+ 
+ Recurrent networks read a sequence one token at a time, carrying a hidden state from each token to the next.
+ 
+-Gated cells, such as the [LSTM's](https://www.bioinf.jku.at/publications/older/2604.pdf), let that state carry information across longer spans, but a signal between two distant tokens still passes through every step between them.
++Gated cells, such as the [LSTM's](https://doi.org/10.1162/neco.1997.9.8.1735), let that state carry information across longer spans, but a signal between two distant tokens still passes through every step between them.
+ 
+ Encoder–decoder models used one recurrent network to read a sentence and a second to write its translation, joined only by the final state of the first.
+ 
+@@ -23,13 +23,16 @@ Attention was first added to these models to let the decoder look back at every
+ 
+ Convolutional sequence models shortened the path differently, stacking layers so that each widens the span a token can see.
+ 
++<!-- Next: add state-space models (Mamba) to the table. -->
++
+ ## Models compared
+ 
+ | Model | Year | Recurrence | Steps between distant tokens |
+ |---|---|---|---|
+ | LSTM encoder–decoder | 2014 | yes | one per token between them |
+ | RNN with attention | 2015 | yes | one, through attention |
+-| Transformer | 2017 | no | one |
++| Transformer | 2017 | none | one |
++| BERT | 2019 | none | one |
+ 
+ ## Encoder–decoder with attention
+ 
+@@ -37,26 +40,27 @@ Convolutional sequence models shortened the path differently, stacking layers so
+ flowchart LR
+   src[Source sentence] --> enc[Recurrent encoder]
+   enc --> dec[Recurrent decoder]
+-  enc -. every state .-> att[Attention]
++  enc -. every state .-> att[Attention weights]
+   att --> dec
++  dec -- query --> att
+   dec --> tgt[Translation]
+ ```
+ 
+ ## Attention in one line
+ 
+-Each token's output is a weighted average of every token's value:
++Each token's output is a weighted average of every token's value, its weights scaled by the key size so the softmax stays smooth:
+ 
+ $$
+-\operatorname{Attention}(Q,K,V) = \operatorname{softmax}\left(QK^T\right)V
++\operatorname{Attention}(Q,K,V) = \operatorname{softmax}\left(\frac{QK^T}{\sqrt{d_k}}\right)V
+ $$
+ 
+ ::: {.callout-tip}
+ ## Reading the equation
+-Q, K and V are the queries, keys and values, one row per token.
++Q, K and V hold the queries, keys and values, one row per token, and $d_k$ is the key size.
+ :::
+ 
+ ```python
+-scores = q @ k.T
++scores = q @ k.T / np.sqrt(k.shape[-1])
+ weights = softmax(scores, axis=-1)
+ out = weights @ v
+ ```
+@@ -70,13 +74,13 @@ digraph path {
+   t1 -> t2 [label="step"];
+   t2 -> t3 [label="step"];
+   t3 -> t4 [label="step"];
+-  t1 -> t4 [label="attention"];
++  t1 -> t4 [label="attention, one step"];
+ }
+ ```
+ 
+ ![The longest path a signal takes between two tokens of a sequence, by layer type. The convolution has kernel 5, stride 1 and no dilation, so each layer widens a token's view by 4 and its path is the number of layers needed to span the sequence.](figures/path-length.svg){width=80%}
+ 
+-![The tokens one position can see after each layer of that convolution, in a 512-token sequence.](figures/seen-512.svg){width=80%}
++![The tokens one position can see after each layer of that convolution, in a 2,048-token sequence.](figures/seen-2048-by-layer.svg){width=80%}
+ 
+ ## Takeaways
+ 
+@@ -84,5 +88,6 @@ digraph path {
+ - Gating eases, but doesn't remove, the long path between distant tokens.
+ - A fixed-size final state limits how much of a long input sentence a decoder can draw on.
+ - Convolutions shorten the path, but only by stacking more layers as the span grows.
+-- Attention connects every pair of tokens in one step.
++- Attention connects every pair of tokens in one step, however far apart they are.
+ - The Transformer drops recurrence entirely.
++- BERT pre-trains the Transformer's encoder alone, reading in both directions.
 diff --git a/examples/workspace/paper/main.tex b/examples/workspace/paper/main.tex
 index ee1f080..e44b568 100644
 --- a/examples/workspace/paper/main.tex
@@ -80,7 +235,7 @@ index 0f02951..977c2bf 100644
 +  url = {https://arxiv.org/abs/1810.04805}
 +}
 diff --git a/examples/workspace/slides/attention/slides.qmd b/examples/workspace/slides/attention/slides.qmd
-index 30e14f8..2ecea59 100644
+index 5dad620..0035a43 100644
 --- a/examples/workspace/slides/attention/slides.qmd
 +++ b/examples/workspace/slides/attention/slides.qmd
 @@ -21,7 +21,7 @@ $$

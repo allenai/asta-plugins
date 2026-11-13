@@ -41,6 +41,7 @@ $toc-color: $asta-fg;
 $footer-bg: $asta-bg;
 $navbar-bg: $asta-bg;
 $navbar-fg: $asta-fg;
+$mermaid-edge-color: $asta-fg; // lines and arrowheads; the default ($secondary) is 1.4:1 here
 
 /*-- scss:rules --*/
 a { text-underline-offset: 2px; }

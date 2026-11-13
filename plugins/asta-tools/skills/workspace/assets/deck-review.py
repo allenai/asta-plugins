@@ -22,12 +22,25 @@ therefore never reaches into a frame; it only posts it Reveal's ``layout`` messa
 
 import hashlib
 import html
+import importlib.util
 import os
 import posixpath
 import re
 from base64 import b64decode
 from html.parser import HTMLParser
 from urllib.parse import quote, unquote, unquote_to_bytes, urlsplit
+
+
+def _load_diff_engine():
+    """diff-engine.py beside this file: the pages' diff, whose rules the slides share."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "diff-engine.py")
+    spec = importlib.util.spec_from_file_location("diff_engine", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+DIFF_ENGINE = _load_diff_engine()
 
 LIVE_RE = re.compile(
     r"<(?:script|iframe|canvas|video|audio|object|embed)\b|data-background-(?:iframe|video)",
@@ -352,19 +365,36 @@ def mark_words(raw, indices, tag, struck=None):
         if struck.get(at):
             out.append('<del class="dr-live">' + " ".join(struck[at]) + "</del> ")
 
+    close = f"</{tag}>"
     for text, visible in text_parts(raw):
         if not visible:
             out.append(text)
             continue
-        pos = 0
+        pos, run = 0, False
         for w in _WORD_RE.finditer(text):
-            out.append(text[pos : w.start()])
-            strike(k)
-            word = w.group()
-            out.append(
-                f'<{tag} class="dr-live">{word}</{tag}>' if k in indices else word
-            )
+            gap, word = text[pos : w.start()], w.group()
+            if (
+                run
+                and k in indices
+                and not struck.get(k)
+                # Only spaces between two changed words: one mark, by the same
+                # rule as on the pages.
+                and DIFF_ENGINE.gap_joins_marks([("space", gap)])
+            ):
+                out.append(gap + word)
+            else:
+                if run:
+                    out.append(close)
+                out.append(gap)
+                strike(k)
+                if k in indices:
+                    out.append(f'<{tag} class="dr-live">{word}')
+                else:
+                    out.append(word)
+                run = k in indices
             pos, k = w.end(), k + 1
+        if run:
+            out.append(close)
         out.append(text[pos:])
     if struck.get(k):
         # Deleted words after the last kept word go before the slide's last closing tag.
@@ -679,14 +709,19 @@ def live_review(deck, old_doc, new_doc, old, new, pairs, files, old_url, new_url
                 frames[side, name] = docs[side].render(index)
         return frame_path(old_url if side == "before" else new_url, kind, index)
 
-    def frame(src, slide, side, view):
+    def frame(src, slide, side, view, role=""):
+        """One slide's frame. `role` is "old" or "new" for the frames of Before /
+        after (and a removed slide), which the page draws in a thin red or
+        green frame under a label of the same colour, as it draws a figure."""
         anchor = quote(slide.get("anchor") or slide.get("id") or "", safe="/")
         # Reveal's narrow-screen scroll view ignores slide hashes; query config
         # outranks the deck's. Navigation is off so a frame stays on its slide.
         src = html.escape(f"{src}?{FRAME_CONFIG}#/{anchor}", quote=True)
         slide_id = html.escape(slide.get("id") or slide.get("anchor") or "", quote=True)
+        role_class = f' class="dr-{role}"' if role else ""
         return (
-            f'<figure data-view="{view}"><figcaption>{side}</figcaption>'
+            f'<figure data-view="{view}"{role_class}>'
+            f"<figcaption>{side}</figcaption>"
             f'<iframe loading="lazy" sandbox="allow-scripts" title="{side} slide" '
             f'data-dr-slide-id="{slide_id}" data-src="{src}"></iframe></figure>'
         )
@@ -697,7 +732,11 @@ def live_review(deck, old_doc, new_doc, old, new, pairs, files, old_url, new_url
         label = "changed in look" if kind == "look" else kind
         if n is None:
             body = frame(
-                frame_src("before", o), old[o], "Removed", "marked clean before"
+                frame_src("before", o),
+                old[o],
+                "Removed",
+                "marked clean before",
+                "old",
             )
         else:
             clean = frame_src("clean", n)
@@ -710,8 +749,8 @@ def live_review(deck, old_doc, new_doc, old, new, pairs, files, old_url, new_url
             body = frame(marked, new[n], "Changes marked", "marked")
             body += frame(clean, new[n], "Clean", "clean")
             if o is not None:
-                body += frame(before, old[o], "Before", "before")
-            body += frame(clean, new[n], "After", "before")
+                body += frame(before, old[o], "Before", "before", "old")
+            body += frame(clean, new[n], "After", "before", "new")
         return (
             f'<article class="dr-slide dr-{kind}"><h3>Slide {number}: '
             f"{html.escape(slide_title(slide))} — {label}</h3>"
@@ -723,10 +762,11 @@ def live_review(deck, old_doc, new_doc, old, new, pairs, files, old_url, new_url
             first, last = folded[0][0], folded[-1][0]
             span = f"{first}" if first == last else f"{first}–{last}"
             # Inert templates ensure folded slides load no decks until opened.
+            # The strip reads as the page's own fold strips do.
             cards.append(
                 f'<details class="dr-unchanged wc-expander"><summary>'
                 f'<span class="wc-expander-icon" aria-hidden="true">↕</span> '
-                f"Expand {len(folded)} unchanged slide{'s' if len(folded) > 1 else ''}"
+                f"⋯ {len(folded)} unchanged slide{'s' if len(folded) > 1 else ''}"
                 f" ({span})</summary>"
                 "<template>" + "".join(c for _, c in folded) + "</template></details>"
             )
@@ -757,9 +797,11 @@ def live_review(deck, old_doc, new_doc, old, new, pairs, files, old_url, new_url
     )
 
 
+# minScale: Reveal stops shrinking a slide at 0.2 of its size by default, which
+# clips a 1600px deck in any frame under 320px; a frame's slide always fits it.
 FRAME_CONFIG = (
     "view=slide&scrollActivationWidth=0&fragments=false&keyboard=false&touch=false"
-    "&controls=false&mouseWheel=false&overview=false&help=false"
+    "&controls=false&mouseWheel=false&overview=false&help=false&minScale=0.05"
 )
 
 
@@ -778,17 +820,23 @@ LIVE_STYLE = """<style>
 .deck-live .dr-seg button[aria-pressed=true]{background:rgba(127,127,127,.3);font-weight:600;opacity:1}
 .deck-live .dr-pair{display:grid;grid-template-columns:minmax(0,1fr);gap:10px}
 .deck-live[data-view=before] .dr-pair{grid-template-columns:repeat(2,minmax(0,1fr))}
+/* Before and After side by side while each gets 320px, else one above the other;
+   the deck's own width decides, whatever page holds it. */
+.deck-live{container:deck-live / inline-size}
+@container deck-live (max-width: 649px){.deck-live[data-view=before] .dr-pair{grid-template-columns:minmax(0,1fr)}}
 .deck-live figure{margin:0;min-width:0}.deck-live figcaption{font-size:.8rem;opacity:.75}
 .deck-live[data-view=marked] figure:not([data-view~=marked]),
 .deck-live[data-view=clean] figure:not([data-view~=clean]),
 .deck-live[data-view=before] figure:not([data-view~=before]){display:none}
 .deck-live iframe{width:100%;aspect-ratio:16/9;border:1px solid #888;display:block}
+.deck-live figure.dr-old iframe,.deck-live figure.dr-new iframe{border-radius:6px}
+.deck-live figure.dr-old iframe{border-color:var(--wc-del-line,#c41d2c)}
+.deck-live figure.dr-new iframe{border-color:var(--wc-ins-line,#2a7a12)}
+.deck-live figure.dr-old figcaption,.deck-live figure.dr-new figcaption{font:600 .72rem/1.3 system-ui,sans-serif;letter-spacing:.02em;margin-bottom:.35rem;opacity:1}
+.deck-live figure.dr-old figcaption{color:var(--wc-del-line,#c41d2c)}
+.deck-live figure.dr-new figcaption{color:var(--wc-ins-line,#2a7a12)}
 .deck-live h3{font-size:1rem}
 .wc-expander{margin:8px 0}
-.wc-expander>summary{list-style:none;cursor:pointer;font-size:.9rem;padding:4px 12px;background:rgba(84,174,255,.12);border:1px solid rgba(84,174,255,.35);border-radius:6px;color:inherit}
-.wc-expander>summary::-webkit-details-marker{display:none}
-.wc-expander>summary:hover{background:rgba(84,174,255,.25)}
-.wc-expander[open]>summary{margin-bottom:8px}
 </style>"""
 
 

@@ -716,6 +716,23 @@ def test_live_report_of_an_unchanged_deck_is_none(tmp_path):
     assert renderer.review("deck.html", "deck.html", slides, slides, {0: 0}) is None
 
 
+def test_marked_slide_phrase_is_one_mark():
+    old = "<p>the <b>old</b> query token</p>"
+    new = "<p>the <b>old</b> query, so every <b>new</b> token</p>"
+    deleted, inserted = deck_review.word_changes(old, new)
+    marked = deck_review.mark_words(new, inserted, "ins")
+    assert marked == (
+        '<p>the <b>old</b> <ins class="dr-live">query, so every</ins> '
+        '<b><ins class="dr-live">new</ins></b> token</p>'
+    )
+    replaced = deck_review.mark_words(
+        "<p>a x y z b</p>", {1, 2, 3}, "ins", {1: ["p", "q"]}
+    )
+    assert replaced == (
+        '<p>a <del class="dr-live">p q</del> <ins class="dr-live">x y z</ins> b</p>'
+    )
+
+
 def test_marked_slide_strikes_deletions_where_they_were():
     struck = deck_review.struck_before("<p>a b c d</p>", "<p>a c d e</p>")
     assert struck == {1: ["b"]}
@@ -798,7 +815,7 @@ def test_self_contained_deck_folds_its_unchanged_slides(tmp_path):
         "d/deck.html", old_doc, new_doc, old, new, {0: 0, 1: 1}, files, "b", "a"
     )
     assert "1 changed or new; 0 removed; 2 slides" in body
-    assert "Expand 1 unchanged slide (1)" in body
+    assert "⋯ 1 unchanged slide (1)" in body
     assert "changed in look" not in body
 
 
@@ -1150,3 +1167,50 @@ def test_nested_speaker_notes_do_not_change_visible_slide(tmp_path):
         old, new, {0: 0}, lambda a, b: files.same_static("d/deck.html", a, b)
     )
     assert rows == [("unchanged", 0, 0)]
+
+
+def test_before_after_frames_the_old_slide_red_and_the_new_slide_green(tmp_path):
+    old_doc = _deck(['<section id="one"><h2>One</h2><p>old</p></section>'])
+    new_doc = _deck(['<section id="one"><h2>One</h2><p>new</p></section>'])
+    files, old, new = _static_files(tmp_path, old_doc, new_doc)
+    body, *_ = deck_review.live_review(
+        "d/deck.html", old_doc, new_doc, old, new, {0: 0}, files, "b", "a"
+    )
+    assert re.search(
+        r'<figure data-view="before" class="dr-old"><figcaption>Before</figcaption>',
+        body,
+    )
+    assert re.search(
+        r'<figure data-view="before" class="dr-new"><figcaption>After</figcaption>',
+        body,
+    )
+    # the frames of Changes marked and Clean carry no role
+    assert '<figure data-view="marked"><figcaption>Changes marked' in body
+    style = deck_review.LIVE_STYLE
+    # thin red and green frames and labels in the page's own palette
+    assert "figure.dr-old iframe{border-color:var(--wc-del-line" in style
+    assert "figure.dr-new iframe{border-color:var(--wc-ins-line" in style
+    assert "figure.dr-old figcaption{color:var(--wc-del-line" in style
+    assert "figure.dr-new figcaption{color:var(--wc-ins-line" in style
+
+
+def test_a_run_of_unchanged_slides_is_one_strip_named_in_slides(tmp_path):
+    slides = [
+        f'<section id="s{i}"><h2>S{i}</h2><p>same</p></section>' for i in range(4)
+    ]
+    old_doc = _deck([*slides, '<section id="e"><h2>E</h2><p>old</p></section>'])
+    new_doc = _deck([*slides, '<section id="e"><h2>E</h2><p>new</p></section>'])
+    files, old, new = _static_files(tmp_path, old_doc, new_doc)
+    body, *_ = deck_review.live_review(
+        "d/deck.html",
+        old_doc,
+        new_doc,
+        old,
+        new,
+        {i: i for i in range(5)},
+        files,
+        "b",
+        "a",
+    )
+    assert "⋯ 4 unchanged slides (1–4)" in body
+    assert "Expand" not in body

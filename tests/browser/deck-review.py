@@ -95,7 +95,7 @@ def check(site, artifacts):
                 page.locator(".deck-review").wait_for()
                 assert page.locator(".dr-changed").count() > 0
                 assert page.locator(".dr-look").count() > 0
-                assert page.locator(".dr-new").count() > 0
+                assert page.locator("article.dr-new").count() > 0
                 assert page.locator(".dr-removed").count() == 1
                 assert page.locator("details.dr-unchanged").count() > 0
                 # Each view hides the other views' frames (display: none), which
@@ -194,7 +194,9 @@ def check_large_deck(site, artifacts):
                     f"http://127.0.0.1:{server.server_address[1]}/what-changed.html"
                 )
                 page.locator(".deck-review").wait_for()
-                cards = page.locator(".dr-new .dr-pair figure:visible iframe").all()
+                cards = page.locator(
+                    "article.dr-new .dr-pair figure:visible iframe"
+                ).all()
                 assert len(cards) >= 60, len(cards)
                 started = time.monotonic()
                 for frame in cards:

@@ -43,6 +43,9 @@ def check_evidence(page, missing):
             focused = True
         except Exception:
             focused = False
+        # Move on as a reader does: a focused claim's open quote would cover the
+        # claim beside it.
+        ev.evaluate("e => e.blur()")
         if not (hovered and focused):
             missing.append(f"evidence claim {i + 1}'s quote on hover/focus")
 
@@ -114,7 +117,8 @@ def check_site(site, artifacts):
                 missing.append("the site's theme")
             if page.locator(".deck-review").count():
                 page.locator(".deck-review").first.wait_for()
-                if page.locator(".dr-changed, .dr-new, .dr-look").count() == 0:
+                cards = "article.dr-changed, article.dr-new, article.dr-look"
+                if page.locator(cards).count() == 0:
                     missing.append("the changed slide")
                 check_frames(page, missing)
             check_evidence(page, missing)

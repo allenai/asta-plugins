@@ -96,6 +96,19 @@ test("each view loads only its own frames, opened at the changed slide", () => {
   }
 });
 
+test("Before / after draws the old slide in a red frame and the new in a green one, each under its label", () => {
+  const { document } = page();
+  const label = cls => [...document.querySelectorAll(`figure.${cls}`)].map(f => f.querySelector("figcaption").textContent);
+  assert.deepEqual(label("dr-old"), ["Before"]);
+  assert.deepEqual(label("dr-new"), ["After"]);
+  // only the two sides of Before / after are framed
+  assert.deepEqual(
+    [...document.querySelectorAll('figure[data-view="before"]')].map(f => f.className),
+    ["dr-old", "dr-new"],
+  );
+  assert.equal(document.querySelectorAll('figure[data-view="marked"].dr-old, figure[data-view="marked"].dr-new').length, 0);
+});
+
 test("showing a view lays out its loaded frames, and only those", () => {
   const { document } = page();
   const frame = view => document.querySelector(`figure[data-view="${view}"] iframe`);
@@ -114,7 +127,7 @@ test("folded unchanged slides load no deck until expanded", () => {
   const { document, window } = page();
   const folds = [...document.querySelectorAll("details.wc-expander")];
   assert.deepEqual(folds.map(d => d.querySelector("summary").textContent.trim()),
-    ["↕ Expand 2 unchanged slides (1–2)", "↕ Expand 1 unchanged slide (4)"]);
+    ["↕ ⋯ 2 unchanged slides (1–2)", "↕ ⋯ 1 unchanged slide (4)"]);
   for (const details of folds) assert.equal(details.querySelectorAll("iframe").length, 0);
   const [first, second] = folds;
   if (!("open" in first)) Object.defineProperty(first, "open", { get() { return this.hasAttribute("open"); } });
