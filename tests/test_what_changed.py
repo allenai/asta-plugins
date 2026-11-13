@@ -1,5 +1,6 @@
 """Tests for the rendered Quarto preview diff generator."""
 
+import base64
 import html
 import importlib.util
 import json
@@ -9,6 +10,12 @@ import sys
 from pathlib import Path
 
 import pytest
+
+
+def _marked(result):
+    """`result` without the two versions each page carries (a `<template>` each) for
+    its Clean and Before / after views: the marked diff and the rest of the page."""
+    return re.sub(r'<template class="wc-version".*?</template>', "", result, flags=re.S)
 
 
 def _underline_contexts(css):
@@ -702,8 +709,8 @@ def test_new_self_contained_page_is_linked_and_carries_no_foreign_script(tmp_pat
     assert "new page · interactive (linked)" in result
     assert "DATA_B64" not in result  # the payload is not embedded
     assert "Trajectories" in result  # static text still previewed
-    # the page and its scripts, smaller than the 40000-byte payload it did not embed
-    assert len(result) < 40000
+    # the 40000-byte payload is not in the page (only the page's own scripts are)
+    assert "A" * 1000 not in result
 
 
 def test_two_self_contained_pages_do_not_collide(tmp_path):
@@ -1039,7 +1046,10 @@ def test_page_title_entities_read_as_on_the_page(tmp_path):
 
     assert "&amp;nbsp;" not in result
     assert "&amp;amp;" not in result
-    assert '<h2><a href="notes.html">Tea\xa0notes: milk &amp; sugar</a>' in result
+    assert (
+        '<h2 class="wc-title"><a href="notes.html">Tea\xa0notes: milk &amp; sugar</a>'
+        in result
+    )
     assert '<li><a href="#p-notes-html">Tea\xa0notes: milk &amp; sugar</a>' in result
 
 
@@ -1381,7 +1391,7 @@ def test_added_evidence_is_chipped_and_its_popover_stays_a_direct_child(tmp_path
         _ev_page("42,000 lines of code", "executing an average of 42,000 lines")
     )
 
-    result = WHAT_CHANGED.build(old, new, "", "PR #9")
+    result = _marked(WHAT_CHANGED.build(old, new, "", "PR #9"))
 
     assert "wc-ev-add" in result
     assert "evidence added" in result
@@ -1417,7 +1427,7 @@ def test_a_whole_added_claim_keeps_its_popover_and_focus(tmp_path):
         )
     )
 
-    result = WHAT_CHANGED.build(old, new, "", "PR #12")
+    result = _marked(WHAT_CHANGED.build(old, new, "", "PR #12"))
 
     assert "evidence added" in result
     assert _ev_popover_parents(result) == [("span", "ev")]
@@ -1504,7 +1514,7 @@ def test_removed_evidence_is_reported_on_the_claim(tmp_path):
     (old / "index.html").write_text(_ev_page("42,000 lines", "an average of 42,000"))
     (new / "index.html").write_text(_ev_page("42,000 lines"))
 
-    result = WHAT_CHANGED.build(old, new, "", "PR #11")
+    result = _marked(WHAT_CHANGED.build(old, new, "", "PR #11"))
 
     assert "evidence removed" in result
     # The stale quote is not carried into the new state.
@@ -1527,7 +1537,7 @@ def test_citation_links_point_at_the_full_page_bibliography(tmp_path):
     (old / "sub" / "page.html").write_text(shell.format(text="Old claim."))
     (new / "sub" / "page.html").write_text(shell.format(text="New claim."))
 
-    result = WHAT_CHANGED.build(old, new, "", "PR #1")
+    result = _marked(WHAT_CHANGED.build(old, new, "", "PR #1"))
     assert 'href="sub/page.html#ref-he2026"' in result
     assert 'href="#ref-he2026"' not in result
 
@@ -1748,6 +1758,36 @@ def test_removed_link_marker_text_is_readable_in_light_and_dark():
         assert _contrast(text, light_bg) >= 4.5
     for text in dark_text:
         assert _contrast(text, dark_bg) >= 4.5
+
+
+def test_plain_code_in_a_shaded_block_reads_on_the_shade():
+    # A code block in (or that is) a wholly added or removed block is drawn on the
+    # shade: the page's text colour and no background of its own, so a stylesheet's
+    # light box or black text does not stay. Which boxes match is in
+    # tests/dom/test_what_changed_code_dom.mjs.
+    css = re.sub(r"/\*.*?\*/", "", WHAT_CHANGED.DIFF_STYLE, flags=re.S)
+    rules = [
+        (selector, body)
+        for selector, body in re.findall(r"([^{}]+)\{([^{}]*)\}", css)
+        if ".wc-block-added" in selector
+        and re.search(r":is\(pre, pre code\)", selector)
+    ]
+    assert len(rules) == 2, rules
+    for selector, _ in rules:
+        # Quarto's highlighted code and the source view keep their own boxes.
+        assert ".sourceCode" in selector and ".wc-src" in selector
+        assert "span" not in selector
+    colour = [r for r in rules if re.search(r"(?<![-\w])color:\s*inherit\b", r[1])]
+    background = [r for r in rules if re.search(r"\bbackground:\s*none\b", r[1])]
+    assert len(colour) == len(background) == 1
+    # `inherit` is the page's text colour: GitHub's and Bootstrap's body colours.
+    page = _dark_vars(css, '[data-wc-mode="dark"] .wc-scope')
+    for side in ("ins", "del"):
+        light_shade = re.search(rf"--wc-{side}-blk:\s*(#[0-9a-f]{{6}})", css).group(1)
+        for text in ("#1f2328", "#212529"):
+            assert _contrast(text, light_shade) >= 4.5
+        for text in ("#e6edf3", "#dee2e6"):
+            assert _contrast(text, page[f"--wc-{side}-blk"]) >= 4.5
 
 
 def test_paragraph_split_in_two_keeps_two_paragraphs():
@@ -2266,7 +2306,8 @@ def test_regenerated_figure_shows_before_and_after():
     assert changed
     # in the one paragraph, the old figure (light red) then the new (light green)
     assert (
-        '<p><del class="wc-unit"><img src="data:image/png;base64,OLD" alt="Plot"></del>'
+        '<p><del class="wc-unit"><img src="data:image/png;base64,OLD" '
+        'data-wc-was="plot.png" alt="Plot"></del>'
         '<ins class="wc-unit"><img src="plot.png" alt="Plot"></ins></p>'
     ) in body
     assert "data-wc-digest" not in body
@@ -2285,8 +2326,8 @@ def test_regenerated_figure_with_a_new_alt_still_shows_the_old_bytes_as_removed(
     )
     assert changed
     assert (
-        '<del class="wc-unit"><img src="data:image/png;base64,OLD" alt="Old plot" '
-        'width="300"></del>'
+        '<del class="wc-unit"><img src="data:image/png;base64,OLD" '
+        'data-wc-was="plot.png" alt="Old plot" width="300"></del>'
     ) in body
     assert (
         '<ins class="wc-unit"><img src="plot.png" alt="New plot" width="500">' in body
@@ -2309,7 +2350,9 @@ def test_old_figure_drawn_from_its_old_bytes_has_no_srcset_sizes_or_picture_sour
     )
     body, _ = WHAT_CHANGED.diff_content(page, page, images)
     old = re.search(r'<del class="wc-unit">(<img [^>]*>)</del>', body).group(1)
-    assert old == '<img src="data:image/png;base64,OLD" alt="Plot">'
+    assert old == (
+        '<img src="data:image/png;base64,OLD" data-wc-was="plot.png" alt="Plot">'
+    )
     new = re.search(r'<ins class="wc-unit">(<img [^>]*>)</ins>', body).group(1)
     assert new == '<img src="plot.png" alt="Plot">'
     assert not re.search(r"srcset|sizes|<source|<picture", body)
@@ -2324,7 +2367,7 @@ def test_removed_figure_with_a_srcset_drops_it_too():
         "<p>Text.</p>",
         images,
     )
-    assert '<img src="data:image/png;base64,OLD">' in body
+    assert '<img src="data:image/png;base64,OLD" data-wc-was="gone.png">' in body
     assert "srcset" not in body and "sizes" not in body
 
 
@@ -3576,7 +3619,7 @@ def test_the_page_loads_mathjax_only_when_it_has_an_equation(tmp_path):
     (old / "a.html").write_text("<main><p>Old words.</p></main>")
     (new / "a.html").write_text("<main><p>New words.</p></main>")
     result = WHAT_CHANGED.build(old, new, "", "PR")
-    assert "mathjax" not in result.lower()
+    assert "mathjax@" not in result.lower()
     (old / "a.html").write_text("<main>" + MATH_PAGE + "</main>")
     (new / "a.html").write_text("<main>" + MATH_PAGE.replace("mc^2", "m") + "</main>")
     result = WHAT_CHANGED.build(old, new, "", "PR")
@@ -3763,7 +3806,8 @@ def test_an_image_whose_src_changed_is_drawn_before_and_after():
     )
     assert changed
     assert body == (
-        '<p><del class="wc-unit"><img src="data:image/png;base64,OLD" alt="plot"></del>'
+        '<p><del class="wc-unit"><img src="data:image/png;base64,OLD" '
+        'data-wc-was="before.png" alt="plot"></del>'
         '<ins class="wc-unit"><img src="after.png" alt="plot"></ins></p>'
     )
     # a size or an alt edited with the file: the same two figures
@@ -3800,7 +3844,8 @@ def test_a_page_whose_image_has_a_new_src_shows_the_old_file_beside_the_new(tmp_
         )
     result = WHAT_CHANGED.build(old, new, "", "PR")
     assert re.search(
-        r'<del class="wc-unit"><img src="data:image/png;base64,T0xEUE5H" alt="Plot">'
+        r'<del class="wc-unit"><img src="data:image/png;base64,T0xEUE5H" '
+        r'data-wc-was="before.png" alt="Plot">'
         r'</del><ins class="wc-unit"><img src="after.png" alt="Plot"></ins>',
         result,
     )
@@ -3966,7 +4011,7 @@ def _mermaid_config(script):
     return json.loads(text)
 
 
-def test_the_page_loads_pinned_mermaid_only_when_it_has_a_mermaid_unit(tmp_path):
+def test_the_page_loads_pinned_mermaid_only_when_it_has_a_mermaid_diagram(tmp_path):
     old, new = tmp_path / "old", tmp_path / "new"
     _mermaid_site(old, "B")
     _mermaid_site(new, "C")
@@ -3980,13 +4025,15 @@ def test_the_page_loads_pinned_mermaid_only_when_it_has_a_mermaid_unit(tmp_path)
     assert result.count("var mermaid = window.mermaid;") == 1
     assert result.index(PINNED_MERMAID[0]) < result.index("window.mermaid;")
     assert MERMAID_SRC not in result
-    # a diagram nobody changed, a changed page with no diagram: no Mermaid
+    # a diagram nobody changed is in the versions Clean and Before / after draw, so
+    # the loader is there (see the test of those views); a changed page with no
+    # diagram: no Mermaid
     same_old, same_new = tmp_path / "so", tmp_path / "sn"
     _mermaid_site(same_old, "B", extra="<p>Old.</p>")
     _mermaid_site(same_new, "B", extra="<p>New.</p>")
     unchanged = WHAT_CHANGED.build(same_old, same_new, "", "PR")
     assert "New." in unchanged
-    assert _mermaid_scripts(unchanged) == [] and "window.mermaid" not in unchanged
+    assert _mermaid_scripts(unchanged) == [PINNED_MERMAID]
     plain_old, plain_new = tmp_path / "po", tmp_path / "pn"
     for root, word in ((plain_old, "a"), (plain_new, "b")):
         root.mkdir()
@@ -4026,7 +4073,7 @@ def test_a_diagram_keeps_its_text_wrapped_until_mermaid_draws_it(tmp_path):
     old, new = tmp_path / "old", tmp_path / "new"
     _mermaid_site(old, "B", mermaid=False)
     _mermaid_site(new, "C", mermaid=False)
-    result = WHAT_CHANGED.build(old, new, "", "PR")
+    result = _marked(WHAT_CHANGED.build(old, new, "", "PR"))
     # the text is there, old and new, as before, whether or not Mermaid loads
     assert "A --&gt; B" in result and "A --&gt; C" in result
     assert result.count('<pre class="mermaid mermaid-js">') == 2
@@ -4266,8 +4313,8 @@ def test_a_paper_note_says_nothing_when_its_marked_pdf_says_it_all(tmp_path):
     )
     result = WHAT_CHANGED.build(old, new, "", "PR preview")
     assert "LaTeX edits are highlighted in the diff PDF" not in result
-    # the section goes from its heading to the viewer
-    assert re.search(r'</h2><div class="paper-view">', result)
+    # the section goes from its header to the viewer
+    assert re.search(r'</h2>.*?</span></div><div class="paper-view">', result, re.S)
     # a note that says something else stays
     (new / "paper-previews/paper/preview.json").write_text(
         json.dumps({"changed": True, "diff": True, "other_inputs": True})
@@ -4308,7 +4355,7 @@ def test_the_paper_leaves_whole_window_on_escape_keeping_focus_and_the_place():
     js = WHAT_CHANGED.PAPER_JS
     # Escape leaves; focus goes to the bar's button so that the key reaches the page
     assert 'event.key === "Escape" && view.classList.contains("paper-full")' in js
-    assert "expand.focus(" in js
+    assert ".focus({ preventScroll: true })" in js
     # the place is kept relative to the section, with scroll anchoring off meanwhile
     assert 'view.closest("section")' in js and "offset = window.scrollY - top()" in js
     assert 'root.style.overflowAnchor = "none"' in js
@@ -4360,8 +4407,11 @@ def test_the_overview_is_a_list_a_page_a_line_with_short_title_file_and_count(tm
         '<code class="toc-file">other.html</code> &middot; '
         '<span class="toc-count">1 change</span></li>'
     ) in result
-    # a section's own heading keeps its full title
-    assert "A small review – Asta workspace example</a>" in result
+    # a section's header reads the same short title, and links to the page
+    assert (
+        '<h2 class="wc-title"><a href="lit/index.html">A small review</a></h2>'
+        in result
+    )
 
 
 def test_the_overview_says_one_thing_and_tags_a_new_page_without_counting(tmp_path):
@@ -4445,3 +4495,631 @@ def test_no_selector_nests_has_in_has_which_a_browser_drops_whole():
                 stack.append("(")
             elif stack:
                 stack.pop()
+
+
+# --- one header per diff, with one control (Changes marked, Clean, Before / after, Source)
+
+
+def _site_with_sources(tmp_path, old_source, new_source):
+    """A one-page site and its project's own files, old and new."""
+    pages = {
+        "old": "<h2>Heading</h2><p>Keep it.</p><p>Tea is good today.</p>",
+        "new": "<h2>Heading</h2><p>Keep it.</p><p>Tea is great today.</p>",
+    }
+    for side in ("old", "new"):
+        (tmp_path / side).mkdir()
+        (tmp_path / side / "page.html").write_text(
+            f"<title>Notes – Site</title><main>{pages[side]}</main>"
+        )
+        (tmp_path / side / "other.html").write_text(
+            "<title>Other – Site</title><main><p>Same.</p></main>"
+        )
+    for side, text in (("old", old_source), ("new", new_source)):
+        (tmp_path / f"{side}-src").mkdir()
+        if text is not None:
+            (tmp_path / f"{side}-src" / "page.qmd").write_text(text)
+    return (
+        tmp_path / "old",
+        tmp_path / "new",
+        tmp_path / "old-src",
+        tmp_path / "new-src",
+    )
+
+
+def _head(result, anchor="p-page-html"):
+    section = re.search(
+        rf'<section class="page-diff[^"]*" id="{anchor}">(.*?)</section>', result, re.S
+    )
+    return re.search(
+        r'<div class="wc-head">(.*?</span>)</div>', section.group(1), re.S
+    ).group(1)
+
+
+def _pressed(head):
+    return re.findall(r'data-wc-view="(\w+)" aria-pressed="true"', head)
+
+
+def _assert_source_only_plain(head, result, anchor):
+    """The "only its source changed" of a page is a plain detail: after the file in
+    the header (title and file adjacent), and in the overview as the other pages'
+    counts are, never as the tag."""
+    assert re.search(
+        r'</h2><code class="wc-file"[^>]*>[^<]*</code>'
+        r'<span class="wc-detail">only its source changed</span></span>',
+        head,
+    )
+    assert "tag" not in head
+    toc = re.search(r'<nav class="toc">.*?</nav>', result, re.S).group()
+    line = re.search(rf'<li><a href="#{anchor}">.*?</li>', toc, re.S).group()
+    assert '<span class="toc-count">only its source changed</span>' in line
+    assert "tag" not in line
+
+
+def test_a_diff_has_one_header_in_order_with_no_heading_or_legend_of_its_own(tmp_path):
+    old, new, old_src, new_src = _site_with_sources(
+        tmp_path, "# Notes\n\nTea is good today.\n", "# Notes\n\nTea is great today.\n"
+    )
+    result = WHAT_CHANGED.build(
+        old, new, "", "PR", old_source=old_src, new_source=new_src
+    )
+    head = _head(result)
+    order = re.findall(r'class="(wc-(?:title|file|views|expand))"', head)
+    assert order == ["wc-title", "wc-file", "wc-views"]
+    assert '<h2 class="wc-title"><a href="page.html">Notes</a></h2>' in head
+    assert (
+        '<code class="wc-file" data-rendered="page.html" data-source="page.qmd">page.html</code>'
+        in head
+    )
+    # The control is on the right, after the left side, with every view: the three
+    # diffs (Source, Changes marked, Before / after), then Clean, which is no diff;
+    # Changes marked the one pressed.
+    assert (
+        head.index("wc-head-left")
+        < head.index("wc-head-right")
+        < head.index("wc-views")
+    )
+    # The header wraps rather than hide its title and file when the control leaves
+    # them no room (a phone): the left side asks for a line of its own to start with.
+    assert re.search(
+        r"\.wc-scope \.wc-head \{[^}]*flex-wrap: wrap", WHAT_CHANGED.DIFF_STYLE
+    )
+    assert re.search(r"\.wc-head-left \{[^}]*flex: 1 1 14rem", WHAT_CHANGED.DIFF_STYLE)
+    views = re.findall(r'data-wc-view="(\w+)" aria-pressed="(\w+)">([^<]*)<', head)
+    assert views == [
+        ("source", "false", "Source"),
+        ("marked", "true", "Changes marked"),
+        ("before", "false", "Before / after"),
+        ("clean", "false", "Clean"),
+    ]
+    assert _pressed(head) == ["marked"]
+    # It replaces the section's own heading and its file legend line.
+    section = result[result.index('id="p-page-html"') :]
+    assert (
+        section.count("<h2") - section.count("<h2>") == 1
+    )  # only the header's, bar the page's own
+    assert '<p class="legend"><code>' not in result
+
+
+def test_the_header_has_no_source_view_where_the_comparison_has_no_source(tmp_path):
+    old, new, *_ = _site_with_sources(tmp_path, None, None)
+    result = WHAT_CHANGED.build(old, new, "", "PR")
+    head = _head(result)
+    assert re.findall(r'data-wc-view="(\w+)"', head) == ["marked", "before", "clean"]
+    assert "data-source" not in head and 'class="wc-source"' not in result
+    # A project with files but not this page's: the same.
+    result = WHAT_CHANGED.build(
+        old,
+        new,
+        "",
+        "PR",
+        old_source=tmp_path / "old-src",
+        new_source=tmp_path / "new-src",
+    )
+    assert 'class="wc-source"' not in result
+
+
+def test_source_is_the_source_diff_of_the_pages_own_file_at_both_commits(tmp_path):
+    old_text, new_text = (
+        "# Notes\n\nTea is good today.\n",
+        "# Notes\n\nTea is great today.\n",
+    )
+    old, new, old_src, new_src = _site_with_sources(tmp_path, old_text, new_text)
+    result = WHAT_CHANGED.build(
+        old, new, "", "PR", old_source=old_src, new_source=new_src
+    )
+    source = re.search(
+        r'<div class="wc-source" hidden>(<div class="wc-src">.*?</div>)</div>\n?</section>',
+        result,
+        re.S,
+    ).group(1)
+    assert source == ENGINE.source_diff(old_text, new_text)
+    # Old line above new.
+    assert source.index("wc-edit-old") < source.index("wc-edit-new")
+
+
+def test_the_source_may_be_a_markdown_file_or_a_notebook_and_a_missing_side_is_empty(
+    tmp_path,
+):
+    old, new, old_src, new_src = _site_with_sources(tmp_path, None, None)
+    (new_src / "page.ipynb").write_text('{"cells": []}\n')
+    result = WHAT_CHANGED.build(
+        old, new, "", "PR", old_source=old_src, new_source=new_src
+    )
+    assert 'data-source="page.ipynb"' in _head(result)
+    assert (
+        '<div class="wc-ln wc-block-added" data-n="1"><ins>{"cells": []}</ins></div>'
+        in result
+    )
+    # .md before .ipynb; a symlink is not followed.
+    (new_src / "page.qmd").write_text("x\n")
+    outside = tmp_path / "secret.qmd"
+    outside.write_text("secret words\n")
+    (new_src / "page.qmd").unlink()
+    (new_src / "page.qmd").symlink_to(outside)
+    result = WHAT_CHANGED.build(
+        old, new, "", "PR", old_source=old_src, new_source=new_src
+    )
+    assert "secret words" not in result and 'data-source="page.ipynb"' in _head(result)
+
+
+def test_a_source_the_same_at_both_commits_says_so_in_place_of_a_diff(tmp_path):
+    old, new, old_src, new_src = _site_with_sources(tmp_path, "same\n", "same\n")
+    result = WHAT_CHANGED.build(
+        old, new, "", "PR", old_source=old_src, new_source=new_src
+    )
+    assert "This source is the same in both versions" in result
+    assert "wc-src" not in result.split('<div class="wc-source"')[1].split("</div>")[0]
+
+
+def test_no_report_says_what_only_the_source_has_or_marks_where(tmp_path):
+    # Comments, cell options and front matter the page does not print: the source's
+    # changes are in its Source view, never counted or marked as unseen.
+    old, new, old_src, new_src = _site_with_sources(
+        tmp_path,
+        "---\ndate: 2024\n---\n# Notes\n\n```{python}\n#| warning: true\n```\n\nTea is good today.\n",
+        "---\ndate: 2025\n---\n# Notes\n<!-- check this -->\n\n```{python}\n#| warning: false\n```\n\nTea is great today.\n",
+    )
+    result = WHAT_CHANGED.build(
+        old, new, "", "PR", old_source=old_src, new_source=new_src
+    )
+    assert "check this" in result and 'class="wc-source"' in result
+    for gone in ("only in the source", "data-wc-unseen", "wc-unseen", "data-wc-goto"):
+        assert gone not in result
+
+
+def test_a_new_removed_or_card_page_has_the_header_with_no_control(tmp_path):
+    old, new = tmp_path / "old", tmp_path / "new"
+    old.mkdir()
+    new.mkdir()
+    (old / "gone.html").write_text("<title>Gone – Site</title><main><p>Bye.</p></main>")
+    (new / "fresh.html").write_text(
+        "<title>Fresh – Site</title><main><p>Hi.</p></main>"
+    )
+    (new / "other.html").write_text("<title>Other – Site</title><main><p>x</p></main>")
+    (old / "other.html").write_text("<title>Other – Site</title><main><p>x</p></main>")
+    result = WHAT_CHANGED.build(old, new, "", "PR")
+    fresh, gone = _head(result, "p-fresh-html"), _head(result, "p-gone-html")
+    assert '<span class="tag new">new page</span>' in fresh
+    assert '<span class="tag removed">removed</span>' in gone
+    assert "wc-views" not in fresh and "wc-views" not in gone
+    assert (
+        '<a href="fresh.html">Fresh</a>' in fresh and "<a " not in gone
+    )  # a removed page has no page to link
+    assert 'wc-file" data-rendered="gone.html"' in gone
+
+
+def test_the_papers_header_holds_title_file_then_the_two_modes_then_the_whole_window_button(
+    tmp_path,
+):
+    old, new = tmp_path / "old", tmp_path / "new"
+    old.mkdir()
+    (new / "paper-previews/paper").mkdir(parents=True)
+    (new / "paper-previews/paper/preview.json").write_text(
+        json.dumps({"changed": True, "diff": True})
+    )
+    result = WHAT_CHANGED.build(old, new, "", "PR")
+    head = _head(result, "paper-diff")
+    assert re.findall(r'class="(wc-[a-z-]+)"', head) == [
+        "wc-head-left",
+        "wc-title",
+        "wc-file",
+        "wc-head-right",
+        "wc-views",
+        "wc-expand",
+    ]
+    assert '<h2 class="wc-title">Paper</h2>' in head
+    assert (
+        '<code class="wc-file" data-rendered="paper/main.tex">paper/main.tex</code>'
+        in head
+    )
+    assert re.findall(r'data-wc-pdf="([^"]*)" aria-pressed="(\w+)">([^<]*)<', head) == [
+        ("paper-previews/paper/what-changed.pdf", "true", "Changes marked"),
+        ("paper-previews/paper/main.pdf", "false", "Clean"),
+    ]
+    # No modes where there is no marked PDF; the button stays.
+    (new / "paper-previews/paper/preview.json").write_text(
+        json.dumps({"changed": True, "new": True})
+    )
+    plain = _head(WHAT_CHANGED.build(old, new, "", "PR"), "paper-diff")
+    assert "wc-views" not in plain and "wc-expand" in plain
+    assert '<span class="tag new">new</span>' in plain
+
+
+def test_the_script_that_sets_the_views_comes_with_the_page_and_the_style_hides_the_viewers_own_bar():
+    result = WHAT_CHANGED.build(*_site_with_sources_paths())
+    assert ENGINE.VIEWS_JS in result
+    assert ".paper-view:not(.paper-full) .paper-bar { display: none; }" in result
+
+
+def _site_with_sources_paths():
+    import tempfile
+
+    root = Path(tempfile.mkdtemp())
+    (root / "old").mkdir()
+    (root / "new").mkdir()
+    (root / "new/p.html").write_text("<main><p>x</p></main>")
+    return root / "old", root / "new", "", "PR"
+
+
+# --- each view is built from its own version; a change only the source has is never missed (apwdst-g5z)
+
+
+def _two_sites(tmp_path, pages, old_sources=None, new_sources=None):
+    """Sites old and new from `pages` ({name: (old body, new body)}), with the
+    project's files when `old_sources` / `new_sources` ({name.qmd: text}) are given."""
+    for side, index in (("old", 0), ("new", 1)):
+        (tmp_path / side).mkdir(exist_ok=True)
+        (tmp_path / f"{side}-src").mkdir(exist_ok=True)
+        for name, bodies in pages.items():
+            (tmp_path / side / f"{name}.html").write_text(
+                f"<title>{name} – Site</title><main>{bodies[index]}</main>"
+            )
+    for side, files in (("old", old_sources), ("new", new_sources)):
+        for name, text in (files or {}).items():
+            (tmp_path / f"{side}-src" / name).write_text(text)
+    return (
+        tmp_path / "old",
+        tmp_path / "new",
+        tmp_path / "old-src",
+        tmp_path / "new-src",
+    )
+
+
+def _version(result, anchor, which):
+    section = re.search(
+        rf'<section class="page-diff[^"]*" id="{anchor}">(.*?)</section>', result, re.S
+    ).group(1)
+    return re.search(
+        rf'<template class="wc-version" data-wc-version="{which}">(.*?)</template>',
+        section,
+        re.S,
+    ).group(1)
+
+
+def test_clean_and_before_after_hold_each_version_as_published_not_rebuilt_from_the_marks(
+    tmp_path,
+):
+    # the review's fixtures: an author's own ins and del, em to strong, a removed link
+    old, new, *_ = _two_sites(
+        tmp_path,
+        {
+            "dose": (
+                "<p>Dose: <del>5 mg</del> <ins>10 mg</ins>. Old conclusion.</p>",
+                "<p>Dose: <del>5 mg</del> <ins>10 mg</ins>. New conclusion.</p>",
+            ),
+            "format": (
+                "<p>The <em>sample</em> is old.</p>",
+                "<p>The <strong>sample</strong> is new.</p>",
+            ),
+            "link": (
+                '<p>The <a href="https://example.org/paper">paper</a> is old.</p>',
+                "<p>The paper is new.</p>",
+            ),
+        },
+    )
+    result = WHAT_CHANGED.build(old, new, "", "PR")
+    for which in ("old", "new"):
+        # both of the author's marks are in both versions
+        version = _version(result, "p-dose-html", which)
+        assert "<del>5 mg</del> <ins>10 mg</ins>" in version
+    assert "Old conclusion" in _version(result, "p-dose-html", "old")
+    assert "New conclusion" in _version(result, "p-dose-html", "new")
+    assert "<em>sample</em>" in _version(result, "p-format-html", "old")
+    assert "<strong>" not in _version(result, "p-format-html", "old")
+    assert "<strong>sample</strong>" in _version(result, "p-format-html", "new")
+    assert "<em>" not in _version(result, "p-format-html", "new")
+    assert '<a href="https://example.org/paper">paper</a>' in _version(
+        result, "p-link-html", "old"
+    )
+    assert "<a " not in _version(result, "p-link-html", "new")
+    # none of the engine's own marks
+    for anchor in ("p-dose-html", "p-format-html", "p-link-html"):
+        for which in ("old", "new"):
+            version = _version(result, anchor, which)
+            assert "formatting changed" not in version and "wc-" not in version
+
+
+def test_a_version_draws_an_old_image_from_its_old_bytes_and_cannot_close_its_template(
+    tmp_path,
+):
+    old, new, *_ = _two_sites(
+        tmp_path,
+        {
+            "fig": (
+                '<p>Plot <img src="a.png" alt="p"> old</p>'
+                "<p>&lt;/template&gt;&lt;script&gt;x&lt;/script&gt;</p>"
+                "</template><script>run()</script>",
+                '<p>Plot <img src="a.png" alt="p"> new</p>',
+            )
+        },
+    )
+    (tmp_path / "old/a.png").write_bytes(b"OLDBYTES")
+    (tmp_path / "new/a.png").write_bytes(b"NEWBYTES")
+    result = WHAT_CHANGED.build(old, new, "", "PR")
+    old_version = _version(result, "p-fig-html", "old")
+    assert (
+        "data:image/png;base64," + base64.b64encode(b"OLDBYTES").decode() in old_version
+    )
+    assert "data-wc-digest" not in old_version
+    new_version = _version(result, "p-fig-html", "new")
+    assert 'src="a.png"' in new_version
+    # what a compared page writes cannot end the template early or run
+    section = result[result.index('id="p-fig-html"') :]
+    section = section[: section.index("</section>")]
+    assert section.count("<template") == 2 and section.count("</template>") == 2
+    assert "<script" not in section
+
+
+def test_views_draw_a_diagram_nobody_changed_so_the_page_loads_the_renderer(tmp_path):
+    # the review's case: both pages hold the same diagram, a paragraph beside it
+    # changes; Clean and Before / after draw it from their versions
+    old, new = tmp_path / "old", tmp_path / "new"
+    _mermaid_site(old, "B", extra="<p>Old conclusion.</p>")
+    _mermaid_site(new, "B", extra="<p>New conclusion.</p>")
+    result = WHAT_CHANGED.build(old, new, "", "PR")
+    assert _mermaid_scripts(result) == [PINNED_MERMAID]
+    assert result.count("var mermaid = window.mermaid;") == 1
+    for which in ("old", "new"):
+        assert 'class="mermaid mermaid-js"' in _version(result, "p-p-html", which)
+    # a page whose only change is in its source has the same views
+    (tmp_path / "so").mkdir()
+    (tmp_path / "plain").mkdir()
+    so_old, so_new, so_old_src, so_new_src = _two_sites(
+        tmp_path / "so",
+        {
+            "page": ('<pre class="mermaid mermaid-js">flowchart LR\n A --&gt; B</pre>',)
+            * 2
+        },
+        {"page.qmd": "Same.\n"},
+        {"page.qmd": "Same.\n<!-- note -->\n"},
+    )
+    only = WHAT_CHANGED.build(
+        so_old, so_new, "", "PR", old_source=so_old_src, new_source=so_new_src
+    )
+    assert "p-page-html" in only and _mermaid_scripts(only) == [PINNED_MERMAID]
+    # no diagram in any version: no renderer
+    plain_old, plain_new, *_ = _two_sites(
+        tmp_path / "plain", {"q": ("<p>Word a.</p>", "<p>Word b.</p>")}
+    )
+    assert _mermaid_scripts(WHAT_CHANGED.build(plain_old, plain_new, "", "PR")) == []
+
+
+def test_a_citation_reaches_its_bibliography_in_every_view(tmp_path):
+    # the review's case: a citation whose target the sanitizer's page does not carry
+    old, new, *_ = _two_sites(
+        tmp_path,
+        {
+            "p": (
+                '<p>Old <a href="#ref-key">citation</a>.</p><div id="ref-key">Ref.</div>',
+                '<p>New <a href="#ref-key">citation</a>.</p><div id="ref-key">Ref.</div>',
+            )
+        },
+    )
+    result = WHAT_CHANGED.build(old, new, "https://x.example/pv", "PR")
+    body = re.search(r'<div class="diff-body">(.*?)</div>\n<template', result, re.S)
+    want = 'href="https://x.example/pv/p.html#ref-key"'
+    assert want in body.group(1)
+    for which in ("old", "new"):
+        assert want in _version(result, "p-p-html", which)
+        assert 'href="#ref-key"' not in _version(result, "p-p-html", which)
+
+
+def test_a_page_whose_only_change_is_in_its_source_is_kept_with_its_source_view(
+    tmp_path,
+):
+    old, new, old_src, new_src = _two_sites(
+        tmp_path,
+        {
+            "source-only": ("<p>Same visible page.</p>",) * 2,
+            "quiet": ("<p>Same.</p>",) * 2,
+        },
+        {"source-only.qmd": "Same visible page.\n", "quiet.qmd": "Same.\n"},
+        {
+            "source-only.qmd": "Same visible page.\n<!-- important reviewer note -->\n",
+            "quiet.qmd": "Same.\n",
+        },
+    )
+    result = WHAT_CHANGED.build(
+        old, new, "", "PR", old_source=old_src, new_source=new_src
+    )
+    head = _head(result, "p-source-only-html")
+    # the header says so, plainly after the file, then the control with every view
+    _assert_source_only_plain(head, result, "p-source-only-html")
+    assert re.findall(r'data-wc-view="(\w+)"', head) == [
+        "source",
+        "marked",
+        "before",
+        "clean",
+    ]
+    section = result[result.index('id="p-source-only-html"') :]
+    section = section[: section.index("</section>")]
+    assert "important reviewer note" in section and 'class="wc-source"' in section
+    # the rendered views show the page as it is, unchanged
+    assert "Same visible page." in _version(result, "p-source-only-html", "new")
+    # the overview lists it, saying so
+    toc = re.search(r'<nav class="toc">.*?</nav>', result, re.S).group()
+    assert "p-source-only-html" in toc and "only its source changed" in toc
+    assert "only in the source" not in result
+    # a page whose source is the same, or differs by nothing a reader could mean, is not
+    assert "p-quiet-html" not in result
+    # and the report no longer says nothing changed
+    assert "No rendered content changed" not in result
+
+
+def test_a_page_with_no_rendered_change_and_no_source_change_is_still_left_out(
+    tmp_path,
+):
+    old, new, old_src, new_src = _two_sites(
+        tmp_path,
+        {"same": ("<p>Same.</p>",) * 2},
+        {"same.qmd": "Same.\n"},
+        {"same.qmd": "Same.  \n"},
+    )
+    result = WHAT_CHANGED.build(
+        old, new, "", "PR", old_source=old_src, new_source=new_src
+    )
+    assert "p-same-html" not in result and "No rendered content changed" in result
+
+
+def test_a_changed_slide_deck_has_source_first_and_changes_marked_pressed(tmp_path):
+    deck = (
+        '<html><head></head><body><div class="reveal"><div class="slides">'
+        '<section id="a"><h2>{}</h2></section></div></div></body></html>'
+    )
+    old, new, old_src, new_src = _two_sites(
+        tmp_path, {}, {"deck.qmd": "# First\n"}, {"deck.qmd": "# Second\n"}
+    )
+    (old / "deck.html").write_text(deck.format("First"))
+    (new / "deck.html").write_text(deck.format("Second"))
+
+    class Decks:  # a deck the reviewer drew
+        used = False
+
+        def review(self, rel, link, old, new, pairs):
+            return "<p>drawn</p>"
+
+    result = WHAT_CHANGED.build(
+        old, new, "", "PR", old_source=old_src, new_source=new_src, decks=Decks()
+    )
+    head = _head(result, "p-deck-html")
+    assert re.findall(r'data-wc-view="(\w+)"', head) == [
+        "source",
+        "marked",
+        "before",
+        "clean",
+    ]
+    assert _pressed(head) == ["marked"]
+
+
+def test_a_slide_deck_whose_only_change_is_in_its_source_is_kept_too(tmp_path):
+    deck = (
+        '<html><head></head><body><div class="reveal"><div class="slides">'
+        '<section id="a"><h2>Same slide</h2></section></div></div></body></html>'
+    )
+    old, new, old_src, new_src = _two_sites(
+        tmp_path,
+        {},
+        {"deck.qmd": "# Same slide\n"},
+        {"deck.qmd": "# Same slide\n<!-- note -->\n"},
+    )
+    (old / "deck.html").write_text(deck)
+    (new / "deck.html").write_text(deck)
+    result = WHAT_CHANGED.build(
+        old, new, "", "PR", old_source=old_src, new_source=new_src
+    )
+    head = _head(result, "p-deck-html")
+    _assert_source_only_plain(head, result, "p-deck-html")
+    assert re.findall(r'data-wc-view="(\w+)"', head) == ["source", "marked"]
+    assert _pressed(head) == ["marked"]
+    section = result[result.index('id="p-deck-html"') :]
+    section = section[: section.index("</section>")]
+    assert "&lt;!-- note --&gt;" in section and 'class="deck-' not in section
+    toc = re.search(r'<nav class="toc">.*?</nav>', result, re.S).group()
+    assert "p-deck-html" in toc and "only its source changed" in toc
+    # the same deck with the same source is still left out
+    (new_src / "deck.qmd").write_text("# Same slide\n")
+    result = WHAT_CHANGED.build(
+        old, new, "", "PR", old_source=old_src, new_source=new_src
+    )
+    assert "p-deck-html" not in result
+
+
+# --- which source changes count: git's rule (--ignore-blank-lines --ignore-space-at-eol)
+
+
+@pytest.mark.parametrize(
+    "old_text, new_text, counts",
+    [
+        ("x=1\n", "x = 1\n", True),  # spacing inside a line
+        ("if a:\n    x\n", "if a:\n  x\n", True),  # indentation
+        ("a b\n", "a  b\n", True),
+        ("a b\n", "ab\n", True),
+        ("a b\n", "a b   \n", False),  # whitespace at a line's end
+        ("a b\n", "a b\r\n", False),
+        ("a\nb\n", "a\n\n\nb\n", False),  # blank lines
+        ("a\nb\n", "a\n  \t\nb\n", False),  # a line of only whitespace
+        ("a\nb\n", "a\nb", False),  # the last newline
+        ("a\nb\n", "a\nc\n", True),
+    ],
+)
+def test_a_source_change_counts_unless_only_blank_lines_or_space_at_line_ends(
+    tmp_path, old_text, new_text, counts
+):
+    old, new, old_src, new_src = _two_sites(
+        tmp_path,
+        {"page": ("<p>Same.</p>",) * 2},
+        {"page.qmd": old_text},
+        {"page.qmd": new_text},
+    )
+    result = WHAT_CHANGED.build(
+        old, new, "", "PR", old_source=old_src, new_source=new_src
+    )
+    assert ("p-page-html" in result) is counts
+
+
+def test_slide_diff_keeps_no_list_nothing_reads():
+    import ast
+
+    tree = ast.parse(Path(WHAT_CHANGED.__file__).read_text())
+    func = next(
+        n
+        for n in ast.walk(tree)
+        if isinstance(n, ast.FunctionDef) and n.name == "slide_diff"
+    )
+    names = {n.id for n in ast.walk(func) if isinstance(n, ast.Name)}
+    assert "shown" not in names
+
+
+SCRIPT_PAGE = (
+    '<div class="plotly html-widget" id="plot"></div>'
+    '<script type="application/json" data-for="plot">{"x":[1]}</script>'
+)
+
+
+def test_a_page_made_by_script_with_the_same_output_and_changed_source_is_listed(
+    tmp_path,
+):
+    old, new, old_src, new_src = _two_sites(
+        tmp_path,
+        {"p": (SCRIPT_PAGE,) * 2, "quiet": (SCRIPT_PAGE,) * 2},
+        {"p.qmd": "Same.\n", "quiet.qmd": "Same.\n"},
+        {"p.qmd": "Same.\n<!-- note -->\n", "quiet.qmd": "Same.\n"},
+    )
+    result = WHAT_CHANGED.build(
+        old, new, "", "PR", old_source=old_src, new_source=new_src
+    )
+    head = _head(result, "p-p-html")
+    _assert_source_only_plain(head, result, "p-p-html")
+    # Source, and the page's rendered side as the card for such pages
+    assert re.findall(r'data-wc-view="(\w+)"', head) == ["source", "marked"]
+    assert _pressed(head) == ["marked"]
+    section = result[result.index('id="p-p-html"') :]
+    section = section[: section.index("</section>")]
+    assert "&lt;!-- note --&gt;" in section
+    assert "renders its content with client-side scripts" in section
+    # its scripts are never carried: no version of the page, no script in the section
+    assert "<template" not in section and "<script" not in section
+    assert "data-for" not in section
+    # the same source, or a same output with no source given, leaves it out
+    assert "p-quiet-html" not in result
+    assert "p-p-html" not in WHAT_CHANGED.build(old, new, "", "PR")

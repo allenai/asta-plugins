@@ -663,7 +663,9 @@ def live_rows(old, new, pairs, same_static):
     )
 
 
-def live_review(deck, old_doc, new_doc, old, new, pairs, files, old_url, new_url):
+def live_review(
+    deck, old_doc, new_doc, old, new, pairs, files, old_url, new_url, bar=True
+):
     """Browser-free live cards, marked deck documents and the frame documents.
 
     Returns ``(body, before, after, marked, frames)``: the report HTML; the old
@@ -671,6 +673,10 @@ def live_review(deck, old_doc, new_doc, old, new, pairs, files, old_url, new_url
     and ``frames``, ``{(side, path): document}`` with ``side`` "before" or
     "after" (relative to that side's copy of the site) or "shared", for the files
     every frame document links to (``path`` relative to the frame assets).
+
+    The report opens with the deck's own bar (its count and the views). A page
+    that has one header and one control of its own passes ``bar=False``: the
+    control then sets the view through ``root.wcView`` (see ``LIVE_SCRIPT``).
     """
     rows, removed = live_rows(
         old, new, pairs, lambda a, b: files.same_static(deck, a, b)
@@ -781,10 +787,16 @@ def live_review(deck, old_doc, new_doc, old, new, pairs, files, old_url, new_url
     flush()
     cards.extend(card("removed", None, o) for o in removed)
     count = sum(kind != "unchanged" for kind, _, _ in rows)
+    head = (
+        f'<div class="dr-bar"><span class="dr-count">{count} changed or new; '
+        f"{len(removed)} removed; {len(new)} slides</span>" + VIEW_SWITCH + "</div>"
+        if bar
+        else ""
+    )
     body = (
-        f'<div class="deck-live deck-review" data-view="marked"><div class="dr-bar">'
-        f'<span class="dr-count">{count} changed or new; {len(removed)} removed; '
-        f"{len(new)} slides</span>" + VIEW_SWITCH + "</div>" + "".join(cards) + "</div>"
+        f'<div class="deck-live deck-review" data-view="marked">{head}'
+        + "".join(cards)
+        + "</div>"
     )
     for name, data in assets.files.items():
         frames["shared", name] = data
@@ -868,16 +880,20 @@ document.querySelectorAll('.deck-live').forEach(root => {
   if (!near) { if (shown(f)) { f.src = f.dataset.src; f.removeAttribute('data-src'); } return; }
   near.observe(f);
  });
- root.querySelectorAll('.dr-seg button').forEach(b => b.addEventListener('click', () => {
-  root.dataset.view = b.dataset.v;
-  root.querySelectorAll('.dr-seg button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+ // The view is set here, by the deck's own bar or, on a page with one header and
+ // one control, by that control (root.wcView).
+ const setView = v => {
+  root.dataset.view = v;
+  root.querySelectorAll('.dr-seg button').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.v === v)));
   load();
   // A frame that finished loading while hidden laid out at no size: ask its
   // Reveal to fit it now. Frames are sandboxed, so only a message reaches them.
   root.querySelectorAll('iframe[src]').forEach(f => {
    if (shown(f) && f.contentWindow) f.contentWindow.postMessage('{"method":"layout"}', '*');
   });
- }));
+ };
+ root.wcView = setView;
+ root.querySelectorAll('.dr-seg button').forEach(b => b.addEventListener('click', () => setView(b.dataset.v)));
  root.querySelectorAll('details').forEach(details => details.addEventListener('toggle', () => {
   const template = details.querySelector('template');
   if (details.open && template) template.replaceWith(template.content.cloneNode(true));

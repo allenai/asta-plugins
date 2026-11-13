@@ -390,7 +390,27 @@ jobs:
           if [ -e _site/what-changed.html ]; then
             echo "::warning::The generated diff page will replace the project's what-changed.html if generation succeeds"
           fi
+          # The Source view compares the site directory at both commits: this
+          # checkout, and the commit the baseline was built from (the newest
+          # main deploy's message names it; archive, run in the site directory,
+          # keeps just that subtree). Without both, the page keeps its three views.
+          source_args=()
+          if [ "$baseline_label" != "no deployed baseline" ]; then
+            deploy=$(git log -1 --format=%s -E --grep='^Deploy (push|workflow_dispatch) ' refs/remotes/origin/gh-pages) || deploy=
+            source_sha=$(printf '%s\n' "$deploy" | sed -n 's/^Deploy push \([0-9a-f]\{40\}\) .*/\1/p')
+            before_source="$tmpdir/before-source"
+            mkdir "$before_source"
+            if [ -z "$source_sha" ]; then
+              echo "::warning::The deployed site's commit names no main commit; the diff page has no Source view"
+            elif ! { git cat-file -e "$source_sha^{commit}" 2>/dev/null || git fetch -q --no-tags origin "$source_sha"; } \
+                || ! git archive "$source_sha" | tar -x -C "$before_source"; then
+              echo "::warning::Could not read the deployed site's source at ${source_sha:0:12}; the diff page has no Source view"
+            else
+              source_args=(--before-source "$before_source" --after-source "$PWD")
+            fi
+          fi
           if ! asta workspace what-changed --before-site "$baseline" --after-site _site \
+              "${source_args[@]}" \
               --title "PR $PR_NUMBER · $baseline_label" 2> >(tee "$tmpdir/stderr" >&2); then
             echo "::warning::What changed page generation failed; preview still published"
           fi

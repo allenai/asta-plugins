@@ -15,6 +15,14 @@ integrity hashes (MathJax in row 9, Mermaid in row 11), never one from a compare
 site: the report is published on the repo's Pages origin, where nothing a pull
 request ships may run.
 
+Views: Changes marked is the diff this file builds. Clean and Before / after show
+each version as published, sanitized (`sanitize_fragment`, the way the diff's own
+content is), never rebuilt from the marks: the old page and the new page are each
+carried whole beside the diff (`version_of`, old images by their old bytes) and
+the view is drawn from them, so that an author's own `<ins>` and `<del>`, a
+formatting change and a removed link read in a view as they were written. The
+scripts that draw an equation or a diagram in the marked diff draw it in a view too.
+
 What is compared, how it is drawn, and why, for each kind of content a scientist
 puts in a workspace. "Page" is the rendered `<main>` of a site page, not the
 `.qmd`: the reviewer sees what a reader will. Test names are in
@@ -1074,12 +1082,13 @@ class SiteImages:
 _ALT_RE = re.compile(r"""(?is)\salt\s*=\s*(["'])(.*?)\1""")
 
 
-def _old_image(tag, images):
+def _old_image(tag, images, was=False):
     """An old page's `<img>` as the removed side draws it. The diff is served
     from the new site, so a file the new site does not serve under that name
     (other bytes, or gone) is drawn from its old bytes, inlined; if those cannot
     be had (past INLINE_LIMIT), a note says so: the new file is never shown as
-    the old one."""
+    the old one. With `was`, what it draws also names the old address
+    (`data-wc-was`), so that the diff's source view can tell which image changed."""
     digest, src = _DIGEST_VALUE_RE.search(tag), _SRC_RE.search(tag)
     if images is None or not digest or not src:
         return tag
@@ -1089,14 +1098,29 @@ def _old_image(tag, images):
     if url := getattr(images, "before_url", lambda name: None)(name):
         # (The sanitizer keeps no srcset or sizes, which a browser would take
         # over src, and no picture source: nothing shows the new file here.)
+        named = f' data-wc-was="{html.escape(name, quote=True)}"' if was else ""
         return _SRC_RE.sub(
-            lambda m: f' src="{html.escape(url, quote=True)}"', tag, count=1
+            lambda m: f' src="{html.escape(url, quote=True)}"{named}', tag, count=1
         )
     alt = _ALT_RE.search(tag)
+    named = f' data-wc-was="{html.escape(name, quote=True)}"' if was else ""
     return (
-        '<span class="wc-img-unavailable">old image not shown (too large to '
-        f"show beside the new page){': ' + alt.group(2) if alt else ''}</span>"
+        f'<span class="wc-img-unavailable"{named}>old image not shown (too large '
+        f"to show beside the new page){': ' + alt.group(2) if alt else ''}</span>"
     )
+
+
+def version_of(content, side, images=None):
+    """One version of a page, for the Clean and Before / after views: `content`
+    (already made safe, `sanitize_fragment`) as it was published on `side`, "old"
+    or "new", with none of the diff's marks. An old image the new site does not
+    serve under that name is drawn from its old bytes, as the diff draws it
+    (`_old_image`); every other image keeps the address it has."""
+    if side != "old":
+        return content
+    content = stamp_images(content, side, images)
+    content = _IMG_RE.sub(lambda m: _old_image(m.group(0), images), content)
+    return _DIGEST_RE.sub("", content)
 
 
 def _image_change(old_tok, new_tok, images):
@@ -1111,7 +1135,7 @@ def _image_change(old_tok, new_tok, images):
     if not (od and nd and od.group(1) != nd.group(1) and same):
         return None
     return (
-        f'<del class="wc-unit">{_old_image(old_tok, images)}</del>',
+        f'<del class="wc-unit">{_old_image(old_tok, images, was=True)}</del>',
         f'<ins class="wc-unit">{new_bare}</ins>',
     )
 
@@ -1331,7 +1355,7 @@ class ImageUnit(Unit):
     @classmethod
     def whole(cls, text, wrapper, images):
         if wrapper == "del":
-            text = _old_image(text, images)
+            text = _old_image(text, images, was=True)
         return f'<{wrapper} class="wc-unit">{text}</{wrapper}>'
 
     @classmethod
@@ -2053,6 +2077,9 @@ MERMAID_SRI = "sha384-o+g/BxPwhi0C3RK7oQBxQuNimeafQ3GE/ST4iT2BxVI4Wzt60SH4pq9iXV
 MERMAID_UNIT_RE = re.compile(
     r'(?is)<(?:del|ins)\s+class="wc-unit"\s*>\s*<pre\s+class="mermaid\b'
 )
+# A diagram a view will show: any Mermaid block in the page, among its changes or in
+# the version each view is drawn from (a template holds both whole pages).
+MERMAID_PRE_RE = re.compile(r'(?is)<pre\b[^>]*\bclass="[^"]*\bmermaid\b')
 MERMAID_CONFIG = {
     "startOnLoad": False,
     "securityLevel": "strict",
@@ -2075,8 +2102,10 @@ MERMAID_JS = r"""
   var mermaid = window.mermaid;
   var pres = Array.prototype.slice.call(
     document.querySelectorAll(".wc-unit > pre.mermaid"));
-  // No Mermaid (the script did not load), or nothing to draw: the text stays.
-  if (!mermaid || !pres.length || !mermaid.initialize || !mermaid.render) return;
+  // No Mermaid (the script did not load): the text stays. The page is not asked
+  // whether it has a changed diagram: a diagram nobody changed is drawn by the
+  // views, so Mermaid is set up and `wcMermaid` defined all the same.
+  if (!mermaid || !mermaid.initialize || !mermaid.render) return;
   var root = document.documentElement;
   var mode = root.getAttribute("data-wc-mode");
   var dark = mode ? mode === "dark" : !!(window.matchMedia &&
@@ -2114,11 +2143,12 @@ MERMAID_JS = r"""
   // One diagram at a time, each its own failure: a diagram that does not parse
   // stays as its text. Drawn once the page and its fonts have loaded, as the
   // site's own script draws, so that Mermaid measures the labels it will show.
-  function start() {
+  var counter = 0;
+  function drawAll(list) {
     var chain = Promise.resolve();
-    pres.forEach(function (pre, i) {
+    list.forEach(function (pre) {
       chain = chain.then(function () {
-        var id = "wc-mermaid-" + i;
+        var id = "wc-mermaid-" + counter++;
         var text = pre.textContent.replace(/\u00a0/g, " ");
         return Promise.resolve().then(function () { return mermaid.render(id, text); })
           .then(function (out) { draw(pre, out && out.svg); })
@@ -2129,9 +2159,18 @@ MERMAID_JS = r"""
           });
       });
     });
-    // A drawing has a size now: a pair too wide for half the column is stacked.
-    chain.then(function () { if (window.wcPairLayout) window.wcPairLayout(); });
+    return chain;
   }
+  function start() {
+    // A drawing has a size now: a pair too wide for half the column is stacked.
+    if (!pres.length) return;
+    drawAll(pres).then(function () { if (window.wcPairLayout) window.wcPairLayout(); });
+  }
+  // The Clean and Before / after views hold each version's diagrams as text; they
+  // are drawn the same way once the view is in the page.
+  window.wcMermaid = function (root) {
+    drawAll(Array.prototype.slice.call(root.querySelectorAll("pre.mermaid")));
+  };
   if (document.readyState === "complete") start();
   else window.addEventListener("load", start);
 })();
@@ -2146,9 +2185,10 @@ def has_mermaid_unit(*fragments):
 def mermaid_script(*fragments):
     """The scripts that draw the Mermaid diagrams of a page made of `fragments`:
     Mermaid 11.12.0 pinned from cdn.jsdelivr.net with its integrity hash, then the
-    drawing script. "" when none has a changed Mermaid diagram. Without a network
-    the pinned script does not load and the diagram's text stays, wrapped."""
-    if not has_mermaid_unit(*fragments):
+    drawing script. "" when none holds a Mermaid diagram (a changed one, or one a
+    view shows as published: the versions carry them). Without a network the pinned
+    script does not load and the diagram's text stays, wrapped."""
+    if not any(MERMAID_PRE_RE.search(f) for f in fragments):
         return ""
     return (
         f'<script src="{MERMAID_URL}" integrity="{MERMAID_SRI}" '
@@ -3164,7 +3204,7 @@ _DARK = """{ --wc-ins-bg: #1b4d0f; --wc-ins-line: #8ee04f;
 # line, light text on them still above 4.5:1.
 _DARK_SRC = """{ --wc-ins-bg: #2a6b1a; --wc-del-bg: #8e2a2e; }"""
 # Greys of a page with no theme to borrow from (the standalone fallback only).
-_DARK_GREYS = """{ --wc-hover: rgba(88,166,255,.12);
+_DARK_GREYS = """{ --wc-hover: rgba(88,166,255,.12); --wc-bg: #0d1117;
   --wc-muted: #8b949e; --wc-border: #30363d; }"""
 
 # The tags the stylesheet draws as a figure: those of the figure entries.
@@ -3206,9 +3246,10 @@ DIFF_STYLE = (
                             color-mix(in srgb, currentColor 70%, transparent));
             --wc-strip: color-mix(in srgb, var(--wc-changed) 16%, transparent);
             --wc-strip-line: color-mix(in srgb, var(--wc-changed) 45%, transparent);
-            --wc-hover: color-mix(in srgb, currentColor 12%, transparent); }
+            --wc-hover: color-mix(in srgb, currentColor 12%, transparent);
+            --wc-bg: var(--bs-body-bg, #fff); }
 .wc-scope.wc-standalone { --wc-border: #d0d7de; --wc-muted: #57606a;
-            --wc-hover: rgba(9,105,218,.08); }
+            --wc-hover: rgba(9,105,218,.08); --wc-bg: #fff; }
 /* Follow the mode the site is shown in (`data-wc-mode`, set by MODE_JS) when a
    theme is reused. The media query is only for standalone output. */
 [data-wc-mode="dark"] .wc-scope {DARK}
@@ -3266,11 +3307,71 @@ DIFF_STYLE = (
     border-radius: 6px; }
 .wc-scope section.page-diff.new { border-left-color: var(--wc-new); }
 .wc-scope section.page-diff.removed { border-left-color: var(--wc-removed); }
-.wc-scope section.page-diff > h2 { margin-top: .25rem; }
 .wc-scope .tag { font-weight: 600;
     padding: .15em .6em; border-radius: 1em; vertical-align: middle;
     margin-left: .5em; color: var(--wc-tag-fg); }
-.wc-scope section.page-diff > h2 .tag { font-size: .65em; }
+.wc-scope .wc-head .tag { font-size: .7em; }
+/* One header to each diff, on one line (the control drops to a line of its own
+   when the title, the file and the control do not fit, so that the title and the
+   file stay) and kept at the top of the window while
+   its section scrolls by (as GitHub's file header is): the page's short title,
+   its file, a plain detail after it (as "only its source changed"), then the control (the same
+   views for every diff: Changes marked, Clean, Before / after, Source). */
+.wc-scope .wc-head { position: sticky; top: 0; z-index: 5; display: flex;
+    flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .75rem;
+    margin: 0 0 .75rem; padding: .45rem 0; background: var(--wc-bg);
+    border-bottom: 1px solid var(--wc-border); }
+.wc-scope .wc-head-left { display: flex; align-items: baseline; gap: .55rem;
+    min-width: 0; flex: 1 1 14rem; overflow: hidden; white-space: nowrap;
+    font-size: .82rem; }
+.wc-scope .wc-head .wc-title { flex: 0 1 auto; min-width: 7rem; margin: 0;
+    padding: 0; border: 0; font-size: 1.05rem; font-weight: 600; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+.wc-scope .wc-head .wc-title a { color: inherit; text-decoration: none; }
+.wc-scope .wc-head .wc-title a:hover { text-decoration: underline; }
+.wc-scope .wc-head .wc-detail { flex: 0 1 auto; min-width: 0; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; color: var(--wc-muted); }
+.wc-scope .wc-file { flex: 0 2 auto; min-width: 0; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; font-size: .78rem; opacity: .75;
+    background: none; padding: 0; }
+.wc-scope .wc-head-right { display: inline-flex; align-items: center; gap: .5rem;
+    flex: 0 0 auto; margin-left: auto; max-width: 100%; }
+.wc-scope .wc-views { display: inline-flex; }
+@media (min-width: 361px) { .wc-scope .wc-views button { white-space: nowrap; } }
+@media (max-width: 480px) { .wc-scope .wc-views button { padding-inline: .35rem; } }
+.wc-scope .wc-views button, .wc-scope .wc-expand { font: inherit; font-size: .78rem;
+    line-height: 1.2; cursor: pointer; padding: .18rem .55rem; color: inherit;
+    background: transparent; border: 1px solid var(--wc-border); border-radius: 6px; }
+.wc-scope .wc-views button + button { border-start-start-radius: 0;
+    border-end-start-radius: 0; margin-inline-start: -1px; }
+.wc-scope .wc-views button:has(+ button) { border-start-end-radius: 0;
+    border-end-end-radius: 0; }
+.wc-scope .wc-views button[aria-pressed="true"] { font-weight: 600;
+    background: var(--bs-body-color, #24292f); color: var(--bs-body-bg, #fff);
+    border-color: var(--bs-body-color, #24292f); }
+.wc-scope .wc-expand { font-size: .85rem; line-height: 1; padding: .2rem .45rem; }
+/* The views other than the marked page: its new version alone, old and new side
+   by side (each framed thin red or green, as GitHub frames an image diff), and
+   the page's own source. */
+.wc-scope :is(.wc-clean, .wc-ba-body) { overflow-wrap: break-word; }
+/* A version is the page as published: an author's own ins and del keep the
+   browser's look (the rules above are rolled back), not the diff's marks. */
+.wc-scope :is(.wc-clean, .wc-ba-body) :is(ins, del) { background: none; border: 0;
+    padding: 0; border-radius: 0; text-decoration: revert;
+    text-decoration-color: revert; text-decoration-thickness: revert; }
+.wc-scope .wc-ba { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+.wc-scope .wc-ba-col { min-width: 0; border: 1px solid; border-radius: 6px;
+    padding: .5rem .8rem; font-size: .92rem; overflow-wrap: break-word; }
+.wc-scope .wc-ba-before { border-color: var(--wc-del-line); }
+.wc-scope .wc-ba-after { border-color: var(--wc-ins-line); }
+.wc-scope .wc-ba-label { font: 600 .72rem/1.3 system-ui, sans-serif;
+    letter-spacing: .02em; margin-bottom: .35rem; }
+.wc-scope .wc-ba-before .wc-ba-label { color: var(--wc-del-line); }
+.wc-scope .wc-ba-after .wc-ba-label { color: var(--wc-ins-line); }
+@media (max-width: 700px) { .wc-scope .wc-ba { grid-template-columns: 1fr; } }
+/* The paper's header drives its viewer; the viewer's own bar shows only in the
+   whole window, to leave it. */
+.wc-scope .paper-view:not(.paper-full) .paper-bar { display: none; }
 .wc-scope nav.toc .tag { font-size: .75em; }
 .wc-scope .tag.changed { background: var(--wc-changed); color: var(--wc-tag-fg); }
 .wc-scope .tag.new { background: var(--wc-new); color: var(--wc-tag-fg); }
@@ -3299,6 +3400,17 @@ DIFF_STYLE = (
    not marked darker, nor struck through. */
 .wc-scope .wc-block-added ins { background: none; border-inline-start: 0; }
 .wc-scope .wc-block-removed del { background: none; text-decoration: none; }
+/* A plain code block in a wholly added or removed block, or one that is itself
+   that block, is drawn on the shade like the text around it: the page's text
+   colour, and no background of its own (the block that is itself shaded keeps
+   the shade), so that no box keeps a light background or a dark text colour the
+   site meant for another. Quarto's highlighted code (`.sourceCode`) and the
+   source view keep their own boxes and colours. */
+.wc-scope :is(pre, pre code):is(:is(.wc-block-added, .wc-block-removed) *,
+    .wc-block-added, .wc-block-removed):not(.sourceCode, .sourceCode *, .wc-src *) {
+    color: inherit; }
+.wc-scope :is(.wc-block-added, .wc-block-removed) :is(pre, pre code):not(.sourceCode,
+    .sourceCode *, .wc-src *) { background: none; }
 /* A whole unit is shaded like any other change when it is not framed below
    (an inline equation takes the darker word shade, as words do); no band behind
    an image, no outline or fading on it. */
@@ -3720,6 +3832,185 @@ FOLD_JS = r"""
 """.replace(
     "__TAG_NAMES__", json.dumps(_STRIP_TAG_NAMES, separators=(",", ":"))
 ).replace("__CLASS_NAMES__", json.dumps(_STRIP_CLASS_NAMES, separators=(",", ":")))
+
+
+# The control in each diff's header (`.wc-head`), which sets the view of its
+# section: Changes marked (the diff as built), Clean (the new version alone, as
+# readers will see it), Before / after (old and new side by side) and Source (the
+# page's own source at both commits, `source_diff`). Clean and Before / after are
+# drawn the first time they are asked for from the two versions the section carries
+# (`version_of`, in a `<template>` each, inert until then), never from the marked
+# diff: an author's own `<ins>` and `<del>`, a changed tag and a removed link are
+# there as they were written. A slide deck sets its own views (`root.wcView`,
+# deck-review.py). A switch keeps the reader's place in the section: the block at
+# the top of the window in one view is put back at the same place in the next,
+# where the next has it; a block of a version is placed by the marked page's blocks
+# that are not the other side's alone, in order.
+VIEWS_JS = r"""
+(function () {
+  "use strict";
+  var LEAF = "p, li, h1, h2, h3, h4, h5, h6, tr, pre, figcaption, dt, dd";
+  var OLD_ONLY = ".wc-block-removed, del";
+  // A box's place in the window; none where there is no layout.
+  function rect(el) {
+    return el.getBoundingClientRect ? el.getBoundingClientRect()
+      : { top: 0, bottom: 0, width: 0, height: 0 };
+  }
+  function leaves(root) {
+    return Array.prototype.slice.call(root.querySelectorAll(LEAF));
+  }
+  // The page as `which` ("old" or "new") published it: what the section carries in
+  // its template, already sanitized (it holds no script, handler or active element).
+  function version(section, which) {
+    var holder = section.querySelector('template[data-wc-version="' + which + '"]');
+    var box = document.createElement("div");
+    box.innerHTML = holder ? holder.innerHTML : "";
+    return box;
+  }
+  // What the marked page has drawn by script, drawn in a version once it is in the
+  // page: its equations, and the diagrams the diagram script draws.
+  function draw(root) {
+    var jax = window.MathJax;
+    if (jax && jax.typesetPromise) jax.typesetPromise([root]).catch(function () {});
+    if (window.wcMermaid) window.wcMermaid(root);
+  }
+  // For each of `blocks`, a version's, the place of its counterpart among `drawn`, the
+  // marked page's blocks: the blocks of the marked page that the other side does not have alone,
+  // in order (spread evenly where the two counts differ).
+  function counterparts(blocks, drawn, other) {
+    var own = [];
+    drawn.forEach(function (el, i) { if (!el.closest(other)) own.push(i); });
+    return blocks.map(function (el, j) {
+      if (!own.length) return -1;
+      var k = own.length === blocks.length ? j
+        : Math.min(own.length - 1, Math.floor(j * own.length / blocks.length));
+      return own[k];
+    });
+  }
+  function clean(section, drawn) {
+    var root = version(section, "new");
+    root.className = "wc-clean";
+    var blocks = leaves(root);
+    return { root: root, bodies: [root], blocks: blocks,
+      hub: counterparts(blocks, drawn, OLD_ONLY) };
+  }
+  function beforeAfter(section, drawn) {
+    var grid = document.createElement("div");
+    grid.className = "wc-ba";
+    var bodies = [];
+    [["Before", "old"], ["After", "new"]].forEach(function (s) {
+      var col = document.createElement("div");
+      col.className = "wc-ba-col wc-ba-" + s[0].toLowerCase();
+      var label = document.createElement("div");
+      label.className = "wc-ba-label";
+      label.textContent = s[0];
+      var body = version(section, s[1]);
+      body.className = "wc-ba-body";
+      col.appendChild(label);
+      col.appendChild(body);
+      grid.appendChild(col);
+      bodies.push(body);
+    });
+    // The new side's blocks are the place a block is found by, as the page is read.
+    var blocks = leaves(bodies[1]);
+    return { root: grid, bodies: bodies, blocks: blocks,
+      hub: counterparts(blocks, drawn, OLD_ONLY) };
+  }
+
+  function wire(section) {
+    var head = section.querySelector(".wc-head");
+    if (!head) return;
+    var buttons = Array.prototype.slice.call(head.querySelectorAll(".wc-views button[data-wc-view]"));
+    if (!buttons.length) return;
+    var marked = section.querySelector(".diff-body");
+    var deck = section.querySelector(".deck-review");
+    var source = section.querySelector(".wc-source");
+    var file = head.querySelector(".wc-file");
+    var made = {};
+    var blocks = marked ? leaves(marked) : [];
+    if (marked) {
+      made.marked = { root: marked, blocks: blocks,
+        hub: blocks.map(function (el, i) { return i; }) };
+    }
+    var current = "marked";
+
+    function box(v) {
+      if (deck && v !== "source") return deck;
+      if (v === "source") return source;
+      if (v === "marked") return marked;
+      if (!made[v]) {
+        made[v] = v === "clean" ? clean(section, blocks) : beforeAfter(section, blocks);
+        marked.after(made[v].root);
+        made[v].bodies.forEach(draw);
+      }
+      return made[v].root;
+    }
+    function visible(el) {
+      var r = rect(el);
+      return r.height > 0 || r.width > 0;
+    }
+    // Where the header's bottom edge is once it is kept at the top of the window.
+    function edge() { return rect(head).height; }
+    // The block at the top of the window in the view shown now: its place among the
+    // marked page's blocks, and how far below the header it sits.
+    function place() {
+      var view = made[current];
+      if (!view || deck) return null;
+      for (var i = 0; i < view.blocks.length; i++) {
+        var el = view.blocks[i];
+        if (view.hub[i] < 0 || !visible(el)) continue;
+        var r = rect(el);
+        if (r.bottom > edge() + 1) return { n: view.hub[i], off: r.top - edge() };
+      }
+      return null;
+    }
+    function restore(v, p) {
+      var view = made[v];
+      if (!p || !view) return false;
+      // The block itself, else the next one the view has, else the last before it.
+      var next = -1, last = -1;
+      for (var j = 0; j < view.blocks.length; j++) {
+        if (view.hub[j] < 0 || !visible(view.blocks[j])) continue;
+        if (view.hub[j] >= p.n) { next = j; break; }
+        last = j;
+      }
+      var at = next >= 0 ? next : last;
+      if (at < 0) return false;
+      window.scrollBy(0, rect(view.blocks[at]).top - (edge() + p.off));
+      return true;
+    }
+    function show(v) {
+      var shown = box(v);
+      if (!shown) return;
+      var was = place();
+      ["marked", "clean", "before", "source"].forEach(function (name) {
+        var el = name === "source" ? source
+          : deck ? (name === "marked" ? deck : null)
+          : name === "marked" ? marked : made[name] && made[name].root;
+        if (el) el.hidden = el !== shown;
+      });
+      if (deck && v !== "source") {
+        if (deck.wcView) deck.wcView(v); else deck.setAttribute("data-view", v);
+      }
+      current = v;
+      buttons.forEach(function (b) {
+        b.setAttribute("aria-pressed", String(b.getAttribute("data-wc-view") === v));
+      });
+      if (file) file.textContent = file.getAttribute(v === "source" ? "data-source" : "data-rendered");
+      if (restore(v, was)) return;
+      // Where no block carries over, a section whose top has gone by is read from its top.
+      var top = rect(section).top;
+      if (top < 0) window.scrollBy(0, top);
+    }
+    head.querySelectorAll("[data-wc-view]").forEach(function (b) {
+      b.addEventListener("click", function () {
+        show(b.getAttribute("data-wc-view"));
+      });
+    });
+  }
+  Array.prototype.forEach.call(document.querySelectorAll("section.page-diff"), wire);
+})();
+"""
 
 
 # Body typography for the fallback path, when no site theme could be reused, and

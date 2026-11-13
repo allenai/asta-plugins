@@ -92,7 +92,7 @@ function run({ render, withMermaid = true, mode = null, loaded = false, autoLoad
   const fire = () => window.dispatchEvent(new window.Event("load"));
   if (!loaded && autoLoad) fire();
   const settled = new Promise((resolve) => setTimeout(resolve, 20));
-  return { document, calls, settled, fire };
+  return { document, window, calls, settled, fire };
 }
 
 test("it configures Mermaid strict with no auto-start, before drawing anything", async () => {
@@ -201,4 +201,93 @@ test("once the diagrams are drawn it asks the page to lay its pairs out again", 
   const alone = run({ render: draw });
   await alone.settled;
   assert.equal(alone.document.querySelectorAll("pre[data-wc-drawn]").length, 2);
+});
+
+test("the page's views have their diagrams drawn the same way, inside the view only", async () => {
+  const { document, window, calls, settled } = run({
+    render: (id) => Promise.resolve({ svg: `<svg id="${id}"></svg>` }),
+    loaded: true,
+  });
+  await settled;
+  assert.equal(calls.render.length, 2);
+  const view = document.createElement("div");
+  view.innerHTML = '<pre class="mermaid mermaid-js">flowchart LR\n  A --&gt; Z</pre><pre>not a diagram</pre>';
+  document.body.appendChild(view);
+  assert.equal(typeof window.wcMermaid, "function");
+  window.wcMermaid(view);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(calls.render.length, 3);
+  assert.match(calls.render[2].text, /A --> Z/);
+  assert.notEqual(calls.render[2].id, calls.render[0].id, "each drawing has an id of its own");
+  assert.notEqual(calls.render[2].id, calls.render[1].id);
+  assert.ok(view.querySelector("pre.mermaid[data-wc-drawn] svg"));
+  assert.equal(view.querySelectorAll("[data-wc-drawn]").length, 1);
+  assert.equal(document.getElementById("outside").hasAttribute("data-wc-drawn"), false);
+});
+
+// A page whose prose changed and whose diagram did not: no old/new pair holds it, yet
+// Clean and Before / after must show it drawn, as they do on a page where it changed.
+const quiet = fs.mkdtempSync(path.join(os.tmpdir(), "what-changed-mermaid-quiet-"));
+function quietSite(root, sentence) {
+  fs.mkdirSync(path.join(root, path.dirname(MERMAID)), { recursive: true });
+  fs.writeFileSync(path.join(root, MERMAID), "globalThis.mermaid = {};");
+  fs.writeFileSync(
+    path.join(root, "p.html"),
+    `<html><head><script src="${MERMAID}"></script></head><body><main><p>${sentence}</p>` +
+      '<div><pre class="mermaid mermaid-js">flowchart LR\n  A --&gt; B\n</pre></div>' +
+      "</main></body></html>",
+  );
+}
+quietSite(path.join(quiet, "old"), "Tea is good.");
+quietSite(path.join(quiet, "new"), "Tea is great.");
+const quietOut = path.join(quiet, "what-changed.html");
+const quietRun = spawnSync(
+  "python3",
+  [
+    "plugins/asta-tools/skills/workspace/assets/what-changed.py",
+    "--old", path.join(quiet, "old"), "--new", path.join(quiet, "new"), "--out", quietOut,
+  ],
+  { cwd: repoRoot, encoding: "utf8" },
+);
+assert.equal(quietRun.status, 0, quietRun.stderr);
+const quietPage = fs.readFileSync(quietOut, "utf8");
+fs.rmSync(quiet, { recursive: true, force: true });
+const quietScripts = [...quietPage.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
+const quietDrawing = quietScripts.find((s) => s.includes("var mermaid = window.mermaid;"));
+const quietViews = quietScripts.find((s) => s.includes("wcView") && s.includes("wc-views"));
+
+test("an unchanged diagram is drawn in Clean and in Before / after, though no pair holds it", async () => {
+  assert.ok(quietDrawing, "the page carries the drawing script, for the views");
+  assert.ok(quietViews, "and the script that sets the views");
+  assert.ok(!/<(?:del|ins) class="wc-unit"><pre class="mermaid/.test(quietPage), "no pair holds the diagram");
+  const { document, window } = parseHTML(quietPage);
+  const calls = { initialize: 0, render: [] };
+  // linkedom's windows share a prototype: what an earlier test's script defined there
+  // would stand in for the hook this page's script must define itself.
+  delete Object.getPrototypeOf(window).wcMermaid;
+  delete window.wcMermaid;
+  window.mermaid = {
+    initialize: () => { calls.initialize++; },
+    render: (id, text) => {
+      calls.render.push(text);
+      return Promise.resolve({ svg: `<svg id="${id}"></svg>` });
+    },
+  };
+  window.matchMedia = () => ({ matches: false });
+  window.scrollBy = () => {};
+  Object.defineProperty(document, "readyState", { value: "complete" });
+  new Function("window", "document", "DOMParser", quietDrawing)(window, document, DOMParser);
+  assert.equal(typeof window.wcMermaid, "function");
+  Function("document", "window", quietViews)(document, window);
+  const section = document.querySelector("section.page-diff");
+  for (const [view, box] of [["clean", ".wc-clean"], ["before", ".wc-ba"]]) {
+    section.querySelector(`.wc-head [data-wc-view="${view}"]`).click();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.ok(section.querySelector(`${box} pre.mermaid[data-wc-drawn] svg`), `${view} draws the diagram`);
+    assert.equal(section.querySelector(`${box} pre.mermaid:not([data-wc-drawn])`), null, `${view} leaves none as text`);
+  }
+  assert.ok(calls.initialize >= 1);
+  assert.ok(calls.render.every((t) => /A --> B/.test(t)));
+  // and the page's changed-marks view still has no diagram to draw
+  assert.equal(document.querySelectorAll("del.wc-unit > pre, ins.wc-unit > pre").length, 0);
 });

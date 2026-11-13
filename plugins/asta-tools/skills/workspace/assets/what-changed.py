@@ -76,6 +76,7 @@ _engine = _load_diff_engine()
     DIFF_STYLE,
     FOLD_JS,
     STANDALONE_STYLE,
+    VIEWS_JS,
     VOID_TAGS,
     SiteImages,
     diff_content,
@@ -89,10 +90,12 @@ _engine = _load_diff_engine()
     sanitize_fragment,
     source_diff,
     strip_ids,
+    version_of,
 ) = (
     _engine.DIFF_STYLE,
     _engine.FOLD_JS,
     _engine.STANDALONE_STYLE,
+    _engine.VIEWS_JS,
     _engine.VOID_TAGS,
     _engine.SiteImages,
     _engine.diff_content,
@@ -106,6 +109,7 @@ _engine = _load_diff_engine()
     _engine.sanitize_fragment,
     _engine.source_diff,
     _engine.strip_ids,
+    _engine.version_of,
 )
 
 ID_RE = re.compile(r'(?is)\bid\s*=\s*["\']([^"\']+)["\']')
@@ -407,7 +411,9 @@ def list_pages(root, out_path=None, paper_dirs=(), reserved_local_output=False):
 
 
 # The paper's viewer works as on its own page: the switch picks the marked or
-# the clean PDF, ⤢ gives it the whole window, and Esc gives the report back.
+# the clean PDF, ⤢ gives it the whole window, and Esc gives the report back. The
+# paper's header (title, file, the same switch and ⤢) drives it; the viewer's own
+# bar shows only in the whole window, to leave it.
 PAPER_JS = r"""
 (function () {
   "use strict";
@@ -415,8 +421,23 @@ PAPER_JS = r"""
     var frame = view.querySelector("object");
     var expand = view.querySelector(".paper-expand");
     var buttons = view.querySelectorAll(".paper-modes button");
+    var head = view.closest("section") ? view.closest("section").querySelector(".wc-head") : null;
+    var headModes = head ? head.querySelectorAll("[data-wc-pdf]") : [];
+    var headExpand = head ? head.querySelector(".wc-expand") : null;
+    // The header's switch presses the viewer's own button for the same PDF.
+    Array.prototype.forEach.call(headModes, function (mode) {
+      mode.addEventListener("click", function () {
+        Array.prototype.forEach.call(buttons, function (button) {
+          if (button.getAttribute("data-pdf") === mode.getAttribute("data-wc-pdf")) button.click();
+        });
+      });
+    });
     buttons.forEach(function (button) {
       button.addEventListener("click", function () {
+        Array.prototype.forEach.call(headModes, function (mode) {
+          mode.setAttribute("aria-pressed",
+            String(mode.getAttribute("data-wc-pdf") === button.getAttribute("data-pdf")));
+        });
         var next = frame.cloneNode(true);
         next.setAttribute("data", button.getAttribute("data-pdf") + "#navpanes=0&view=FitH");
         // Where a browser can't show the PDF inline, its link opens the same one.
@@ -447,9 +468,11 @@ PAPER_JS = r"""
       document.body.style.overflow = full ? "hidden" : "";
       expand.setAttribute("aria-pressed", String(full));
       expand.title = full ? "Back to the report" : "Give the paper the whole window";
+      if (headExpand) headExpand.setAttribute("aria-pressed", String(full));
       // A key pressed inside the PDF goes to the browser's PDF viewer, not to
-      // the page: the focus stays on the bar's button, so that Escape reaches us.
-      expand.focus({ preventScroll: true });
+      // the page: the focus stays on a bar's button, so that Escape reaches us
+      // (the viewer's own bar in the whole window, the header's after it).
+      (full || !headExpand ? expand : headExpand).focus({ preventScroll: true });
       if (full) return;
       var back = function () { window.scrollTo(0, top() + offset); };
       requestAnimationFrame(function () {
@@ -458,9 +481,9 @@ PAPER_JS = r"""
         setTimeout(function () { back(); root.style.overflowAnchor = ""; }, 500);
       });
     }
-    expand.addEventListener("click", function () {
-      setFull(!view.classList.contains("paper-full"));
-    });
+    function toggle() { setFull(!view.classList.contains("paper-full")); }
+    expand.addEventListener("click", toggle);
+    if (headExpand) headExpand.addEventListener("click", toggle);
     document.addEventListener("keydown", function (event) {
       if (event.key === "Escape" && view.classList.contains("paper-full")) setFull(false);
     });
@@ -818,6 +841,200 @@ def head_title(path, rel):
         return rel
 
 
+# The views of a diff's control, in order: the diffs (Source, where there is one,
+# Changes marked, Before / after), then Clean, the one view that is no diff; and the
+# one it opens on.
+VIEWS = (
+    ("source", "Source"),
+    ("marked", "Changes marked"),
+    ("before", "Before / after"),
+    ("clean", "Clean"),
+)
+# What the header and the overview say of a page whose rendered content no reader
+# sees change but whose source did.
+SOURCE_ONLY = "only its source changed"
+DEFAULT_VIEW = "marked"
+# What a page's own source may be called, by the rendered page's name, and the
+# most of it that is read (a notebook's JSON can be megabytes).
+SOURCE_SUFFIXES = (".qmd", ".md", ".ipynb", ".Rmd", ".rmd", ".markdown")
+SOURCE_LIMIT = 512 * 1024
+
+
+def counts_as_change(old_text, new_text):
+    """Whether two versions of a source differ as a reviewer would count it, the
+    rule of `git diff --ignore-blank-lines --ignore-space-at-eol`: not when they
+    differ only in blank lines or in whitespace at the end of lines. Any other
+    spacing counts, inside a line or in indentation: in code it can matter."""
+
+    def lines(text):
+        kept = (line.rstrip() for line in text.splitlines())
+        return [line for line in kept if line]
+
+    return lines(old_text) != lines(new_text)
+
+
+class SourceFiles:
+    """The project's own files at both commits, where `asta workspace
+    what-changed` has them, so that a page can show its source (.qmd, .md or
+    .ipynb) at both, and a page whose only change is in its source is not lost."""
+
+    def __init__(self, old_root=None, new_root=None):
+        self.roots = (old_root, new_root)
+
+    @staticmethod
+    def find(root, rel):
+        """(path, text) of the source of the rendered page `rel` under `root`, else None."""
+        if not root:
+            return None
+        base = os.path.realpath(root)
+        stem = os.path.splitext(rel.replace(os.sep, "/"))[0]
+        for suffix in SOURCE_SUFFIXES:
+            path = os.path.join(root, stem + suffix)
+            if os.path.islink(path) or not os.path.isfile(path):
+                continue
+            if os.path.commonpath((base, os.path.realpath(path))) != base:
+                continue
+            try:
+                if os.path.getsize(path) > SOURCE_LIMIT:
+                    return None
+                with open(path, encoding="utf-8", errors="replace") as stream:
+                    return stem + suffix, stream.read()
+            except OSError:
+                return None
+        return None
+
+    def view(self, rel):
+        """(file, html, changed) for the page `rel`: the source file's name, its
+        Source view, and whether the two versions differ (`counts_as_change`); None
+        where neither commit has the source."""
+        old, new = (self.find(root, rel) for root in self.roots)
+        if old is None and new is None:
+            return None
+        file = (new or old)[0]
+        old_text, new_text = (old or (file, ""))[1], (new or (file, ""))[1]
+        if old_text == new_text:
+            return (
+                file,
+                '<p class="wc-note">This source is the same in both versions; what '
+                "changed comes from a file it uses (a figure, data, an included "
+                "file).</p>",
+                False,
+            )
+        return (
+            file,
+            source_diff(old_text, new_text),
+            counts_as_change(old_text, new_text),
+        )
+
+
+def version_templates(old_c, new_c, rel, link, images):
+    """The old and the new page as published, each whole and made safe the way the
+    diff's own content is (`strip_volatile`; an old image the new site does not serve
+    from its old bytes, `version_of`), in a `<template>` each: inert until the page's
+    script draws a view from it. Never the marked diff with its marks taken off. A
+    citation (`#ref-key`) reaches its bibliography on the full page at `link`, as it
+    does in the marked view."""
+    out = []
+    for which, content in (("old", old_c), ("new", new_c)):
+        safe = version_of(strip_volatile(content, rel), which, images)
+        safe = link_citations(safe, link)
+        # (Made safe, it holds no template tag; the end of one is never left in it.)
+        safe = re.sub(r"(?i)</template", "&lt;/template", safe)
+        out.append(
+            f'<template class="wc-version" data-wc-version="{which}">{safe}</template>'
+        )
+    return "".join(out)
+
+
+def unchanged_page(output, old_c, new_c, rel, link, sources):
+    """A page of the site whose rendered content no reader sees change, as `(state,
+    label, body)` when its source has a change the page does not show (a comment, a
+    cell option, front matter it does not print), else None. Its body is the page as
+    it is, under a note: the header says only its source changed, and its Source view
+    shows the change. A page made by script is the card for such pages, never the
+    page: its scripts are not carried."""
+    if (
+        output.name not in ("site page", "page made by script")
+        or old_c is None
+        or new_c is None
+        or not sources
+    ):
+        return None
+    found = sources.view(rel)
+    if not found or not found[2]:
+        return None
+    if output.name == "page made by script":
+        card = summary_card(
+            new_c,
+            link,
+            "This page renders its content with client-side scripts; no reader sees "
+            "a change in it, but its source changed (open Source)",
+        )
+        return "changed", "changed", card
+    note = (
+        '<p class="wc-note">No reader sees a change on this page. Its source '
+        "changed: open Source.</p>"
+    )
+    return "changed", "changed", note + strip_volatile(new_c, rel)
+
+
+def views_control(views):
+    """The control: one button to each of `views` (names of VIEWS), in the order
+    of VIEWS, with DEFAULT_VIEW pressed."""
+    return (
+        '<span class="wc-views" role="group" aria-label="View">'
+        + "".join(
+            f'<button type="button" data-wc-view="{v}" '
+            f'aria-pressed="{"true" if v == DEFAULT_VIEW else "false"}">{label}</button>'
+            for v, label in VIEWS
+            if v in views
+        )
+        + "</span>"
+    )
+
+
+def diff_header(
+    title, link, state, label, file, controls="", source_file="", detail=""
+):
+    """The one header of a diff, on one line: the page's short title (linking
+    to the page, with a tag when it is more than plain `changed`), its file, a
+    plain `detail` after the file, then `controls`, the control (views_control)
+    and any button.
+
+    title, label, file, source_file and detail are plain text, escaped here."""
+    name = html.escape(title)
+    if link:
+        name = f'<a href="{html.escape(link, quote=True)}">{name}</a>'
+    tag = (
+        ""
+        if label == "changed"
+        else f' <span class="tag {state}">{html.escape(label)}</span>'
+    )
+    detail_html = (
+        f'<span class="wc-detail">{html.escape(detail)}</span>' if detail else ""
+    )
+    shown = html.escape(file, quote=True)
+    source = (
+        f' data-source="{html.escape(source_file, quote=True)}"' if source_file else ""
+    )
+    return (
+        '<div class="wc-head"><span class="wc-head-left">'
+        f'<h2 class="wc-title">{name}{tag}</h2>'
+        f'<code class="wc-file" data-rendered="{shown}"{source}>{html.escape(file)}</code>'
+        f"{detail_html}"
+        f'</span><span class="wc-head-right">{controls}</span></div>'
+    )
+
+
+def source_part(found):
+    """What a diff's section holds for its Source view: `(source_file, html)` from
+    `SourceFiles.view`'s answer, or ("", "") when there is none."""
+    if not found:
+        return "", ""
+    file, body, _ = found
+    return file, f'<div class="wc-source" hidden>{body}</div>'
+
+
 def overview(entries):
     """The overview at the top: what this edit changed, a line to each page, deck
     or paper (its short title, its file, how much changed), as a list."""
@@ -921,8 +1138,14 @@ def paper_preview(old_root, new_root, paper_dir="paper"):
     if state.get("removed"):
         section = (
             f'<section class="page-diff removed" id="{section_id}">'
-            f'<h2>{label} <span class="tag removed">removed</span></h2>'
-            '<p class="wc-note">Paper removed; no paper PDF is published in this preview.</p>'
+            + diff_header(
+                html.unescape(label),
+                "",
+                "removed",
+                "removed",
+                paper_file(new_root, paper_dir),
+            )
+            + '<p class="wc-note">Paper removed; no paper PDF is published in this preview.</p>'
             "</section>"
         )
         return section, "removed"
@@ -962,7 +1185,8 @@ def paper_preview(old_root, new_root, paper_dir="paper"):
     # The bar reads the same in the page and in the whole window: the paper's
     # title and file on the left; the switch and the whole-window button at the
     # far right.
-    file = html.escape(paper_file(new_root, paper_dir))
+    path = paper_file(new_root, paper_dir)
+    file = html.escape(path)
     viewer = (
         '<div class="paper-view"><div class="paper-bar">'
         f'<strong class="paper-title">{label}</strong>'
@@ -973,10 +1197,26 @@ def paper_preview(old_root, new_root, paper_dir="paper"):
         f'title="{label}"><a href="{pdf}">Open the paper PDF</a></object></div>'
     )
     note_html = f'<p class="wc-note">{note}</p>' if note else ""
+    # The header holds the title and file, then the same two views as the viewer's
+    # own switch (Changes marked, Clean), which drive it, and the whole-window
+    # button at the far right; the viewer's own bar shows only in the whole window.
+    controls = ""
+    if state.get("diff"):
+        controls = (
+            '<span class="wc-views" role="group" aria-label="Which PDF">'
+            f'<button type="button" data-wc-pdf="{paper_url("what-changed.pdf")}" '
+            'aria-pressed="true">Changes marked</button>'
+            f'<button type="button" data-wc-pdf="{paper_url("main.pdf")}" '
+            'aria-pressed="false">Clean</button></span>'
+        )
+    controls += (
+        '<button type="button" class="wc-expand" aria-pressed="false" '
+        'title="Give the paper the whole window">&#x2922;</button>'
+    )
     section = (
         f'<section class="page-diff {status}" id="{section_id}">'
-        f'<h2>{label} <span class="tag {status}">{status}</span></h2>'
-        f"{note_html}{viewer}</section>"
+        + diff_header(html.unescape(label), "", status, status, path, controls)
+        + f"{note_html}{viewer}</section>"
     )
     return section, status
 
@@ -1290,6 +1530,7 @@ class DeckRenderer:
             self.files,
             f"{self.img_url}/before/{url}",
             f"{self.img_url}/after/{url}",
+            bar=False,
         )
         if body is None:
             return None
@@ -1356,8 +1597,49 @@ def slides_changed(edited, total, state, reordered):
     return "slides reordered" if reordered else ""
 
 
+def unchanged_slides(rel, link, old_doc, new_doc, sources, site):
+    """A slide deck whose slides no reader sees change, as `(section, TocEntry)`
+    when its source changed, else None: the header says only its source changed,
+    and its Source view shows the change."""
+    if old_doc is None or new_doc is None or not sources:
+        return None
+    found = sources.view(rel)
+    if not found or not found[2]:
+        return None
+    source_file, source_html = source_part(found)
+    label = "Slides · " + page_title(new_doc, rel)
+    aid = anchor_id(rel)
+    head = diff_header(
+        short_title(label, site),
+        link,
+        "changed",
+        "changed",
+        rel,
+        views_control(("marked", "source")),
+        source_file,
+        SOURCE_ONLY,
+    )
+    note = (
+        '<div class="diff-body"><p class="wc-note">No reader sees a change in these '
+        "slides. Their source changed: open Source.</p></div>"
+    )
+    return (
+        f'<section class="page-diff changed" id="{aid}">{head}{note}{source_html}</section>',
+        TocEntry(aid, label, "changed", "", rel, SOURCE_ONLY),
+    )
+
+
 def slide_diff(
-    old_doc, new_doc, rel, link, old=None, new=None, decks=None, images=None
+    old_doc,
+    new_doc,
+    rel,
+    link,
+    old=None,
+    new=None,
+    decks=None,
+    images=None,
+    sources=None,
+    site=None,
 ):
     old = (reveal_slides(old_doc) if old is None else old) or []
     new = (reveal_slides(new_doc) if new is None else new) or []
@@ -1366,7 +1648,7 @@ def slide_diff(
     reordered = matched_order != sorted(matched_order)
     rendered = decks.review(rel, link, old, new, pairs) if decks else False
     if rendered is None and not reordered:
-        return None
+        return unchanged_slides(rel, link, old_doc, new_doc, sources, site)
     entries = [(pairs.get(index), index) for index in range(len(new))]
     entries.extend(
         (index, None) for index in range(len(old)) if index not in pairs.values()
@@ -1421,23 +1703,32 @@ def slide_diff(
     if reordered:
         changes.insert(0, '<p class="wc-note">Slides reordered.</p>')
     if not changes:
-        return None
+        return unchanged_slides(rel, link, old_doc, new_doc, sources, site)
     state = "new" if old_doc is None else "removed" if new_doc is None else "changed"
     label = "Slides · " + page_title(new_doc or old_doc, rel)
-    heading = html.escape(label)
-    if new_doc:
-        heading = f'<a href="{html.escape(link, quote=True)}">{heading}</a>'
     aid = anchor_id(rel)
+    # The deck's views are the control's; the deck's own bar is not drawn.
+    found = sources.view(rel) if sources and rendered else None
+    source_file, source_html = source_part(found)
+    controls = (
+        views_control(("marked", "clean", "before") + (("source",) if found else ()))
+        if rendered
+        else ""
+    )
+    head = diff_header(
+        short_title(label, site),
+        link if new_doc else "",
+        state,
+        state,
+        rel,
+        controls,
+        source_file,
+    )
+    detail = slides_changed(edited, len(new) if new else len(old), state, reordered)
     return (
-        f'<section class="page-diff {state}" id="{aid}"><h2>{heading} <span class="tag {state}">{state}</span></h2>{"".join(changes)}</section>',
-        TocEntry(
-            aid,
-            label,
-            state,
-            "",
-            rel,
-            slides_changed(edited, len(new) if new else len(old), state, reordered),
-        ),
+        f'<section class="page-diff {state}" id="{aid}">{head}'
+        f"{''.join(changes)}{source_html}</section>",
+        TocEntry(aid, label, state, "", rel, detail),
     )
 
 
@@ -1615,10 +1906,15 @@ def build(
     theme_url_prefix="",
     decks=None,
     reserved_local_output=False,
+    old_source=None,
+    new_source=None,
 ):
     sections = []
     toc = []
     images = SiteImages(old_root, new_root)
+    # The project's own files at both commits, when the caller has them: each page
+    # then offers its Source view.
+    sources = SourceFiles(old_source, new_source) if old_source or new_source else None
     paper_root = os.path.join(new_root, "paper-previews")
     paper_dirs = []
     if os.path.isdir(paper_root):
@@ -1630,6 +1926,15 @@ def build(
     old_pages = list_pages(old_root, out_path, paper_dirs, reserved_local_output)
     new_pages = list_pages(new_root, out_path, paper_dirs, reserved_local_output)
     every_page = [*old_pages.items(), *new_pages.items()]
+    theme_pages = (
+        list_pages(theme_root, out_path, reserved_local_output=reserved_local_output)
+        if theme_root
+        else {}
+    )
+    # The name every page's title repeats, which a header's title leaves out.
+    site = site_name(
+        head_title(path, rel) for rel, path in [*every_page, *theme_pages.items()]
+    )
     for paper_dir in sorted(paper_dirs, key=lambda name: (name != "paper", name)):
         paper_section = OUTPUT_KINDS["LaTeX paper"].compare(
             old_root, new_root, paper_dir
@@ -1674,7 +1979,16 @@ def build(
             else quote(rel, safe="/")
         )
         result = OUTPUT_KINDS["slide deck"].compare(
-            old_doc, new_doc, rel, link, old_slides, new_slides, decks, images
+            old_doc,
+            new_doc,
+            rel,
+            link,
+            old_slides,
+            new_slides,
+            decks,
+            images,
+            sources,
+            site,
         )
         if result:
             section, entry = result
@@ -1691,25 +2005,60 @@ def build(
         link = (preview_url.rstrip("/") + "/" + rel) if preview_url else rel
         old_c = normalize(extract_main(old_doc)) if old_doc is not None else None
         new_c = normalize(extract_main(new_doc)) if new_doc is not None else None
-        result = page_output(old_c, new_c).compare(old_c, new_c, rel, link, images)
+        output = page_output(old_c, new_c)
+        result = output.compare(old_c, new_c, rel, link, images)
+        source_only = False
         if result is None:
-            continue  # no reader would see a change
+            # No reader would see a change; the page's source may still have one.
+            result = unchanged_page(output, old_c, new_c, rel, link, sources)
+            if result is None:
+                continue
+            source_only = True
         state, label, body = result
         title_txt = page_title(new_doc if new_doc is not None else old_doc, rel)
         detail = ""
         if state == "changed" and (n := count_changes(body)):
             detail = f"{n} change{'' if n == 1 else 's'}"
         aid = anchor_id(rel)
-        h2 = html.escape(title_txt)
         if state != "removed":
             body = link_citations(body, link)
-            h2 = f'<a href="{html.escape(link)}">{h2}</a>'
         state_class = "new" if state == "new" else state
+        # A diff of the page's own content has the control, with every view; a new
+        # or removed page, or a card that links to one, has the header alone.
+        marked = state == "changed" and label == "changed"
+        # (A page made by script has no views drawn from its versions: its scripts
+        # are never carried. Its card is its one rendered side.)
+        by_script = source_only and output.name == "page made by script"
+        # (A page whose reader sees no change has no marks to match against.)
+        found = sources.view(rel) if sources and marked else None
+        source_file, source_html = source_part(found)
+        if source_only:
+            detail = SOURCE_ONLY
+        head = diff_header(
+            short_title(title_txt, site),
+            link if state != "removed" else "",
+            state_class,
+            label,
+            rel,
+            views_control(
+                ("marked",)
+                + (() if by_script else ("clean", "before"))
+                + (("source",) if found else ())
+            )
+            if marked
+            else "",
+            source_file,
+            SOURCE_ONLY if source_only else "",
+        )
+        # Clean and Before / after are drawn from the two versions, each whole.
+        versions = (
+            version_templates(old_c, new_c, rel, link, images)
+            if marked and not by_script
+            else ""
+        )
         sections.append(
-            f'<section class="page-diff {state}" id="{aid}">\n'
-            f'<h2>{h2} <span class="tag {state_class}">{label}</span></h2>\n'
-            f'<p class="legend"><code>{html.escape(rel)}</code></p>\n'
-            f'<div class="diff-body">{body}</div>\n</section>'
+            f'<section class="page-diff {state}" id="{aid}">\n{head}\n'
+            f'<div class="diff-body">{body}</div>\n{versions}{source_html}</section>'
         )
         toc.append(
             TocEntry(
@@ -1722,17 +2071,9 @@ def build(
             )
         )
 
-    theme_pages = (
-        list_pages(theme_root, out_path, reserved_local_output=reserved_local_output)
-        if theme_root
-        else {}
-    )
     if sections:
         n = len(sections)
         summary = f"{n} page{'s' if n != 1 else ''} changed"
-        site = site_name(
-            head_title(path, rel) for rel, path in [*every_page, *theme_pages.items()]
-        )
         toc_html = overview([e._replace(title=short_title(e.title, site)) for e in toc])
         body_html = "\n".join(sections)
     else:
@@ -1805,6 +2146,7 @@ def build(
         f"<title>What changed &middot; {escaped_title}</title>"
         f"{head}</head><body{body_attrs}>{mode_js}{body}"
         f"<script>{FOLD_JS}</script><script>{PAPER_JS}</script>"
+        f"<script>{VIEWS_JS}</script>"
         f"{pair_script(body_html)}"
         f"{math_script(body_html)}"
         f"{mermaid_script(body_html)}"
@@ -1841,6 +2183,17 @@ def main(argv=None):
         metavar="DIR",
         help="publish marked live decks into generated DIR (needs deck-review.py"
         "; else slides as text); existing DIR contents are replaced",
+    )
+    ap.add_argument(
+        "--old-source",
+        metavar="DIR",
+        help="the project's own files (.qmd, .md, .ipynb) as of --old, so that each "
+        "page can show its source",
+    )
+    ap.add_argument(
+        "--new-source",
+        metavar="DIR",
+        help="the project's own files as of --new",
     )
     ap.add_argument(
         "--reserved-local-output",
@@ -1910,6 +2263,8 @@ def main(argv=None):
             theme_url_prefix=args.theme_url_prefix,
             decks=decks,
             reserved_local_output=args.reserved_local_output,
+            old_source=args.old_source,
+            new_source=args.new_source,
         )
     finally:
         if decks:

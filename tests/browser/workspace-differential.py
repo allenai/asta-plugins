@@ -154,7 +154,9 @@ def worker(project, full, record):
     original_compare = module._run_comparison
     preview_signatures = []
 
-    def compare(before, after, report, title, project, theme=None):
+    def compare(
+        before, after, report, title, project, theme=None, sources=(None, None)
+    ):
         # Reuse these full renders through the PR-preview entry point. This
         # preserves local/preview equality without building another site.
         if full:
@@ -170,13 +172,21 @@ def worker(project, full, record):
                             str(before),
                             "--after-site",
                             str(preview),
+                            *[
+                                arg
+                                for flag, directory in zip(
+                                    ("--before-source", "--after-source"), sources
+                                )
+                                if directory is not None
+                                for arg in (flag, str(directory))
+                            ],
                         ],
                     )
                 finally:
                     module._run_comparison = compare
                 assert result.exit_code == 0, result.output
                 preview_signatures.append(report_signature(preview))
-        return original_compare(before, after, report, title, project, theme)
+        return original_compare(before, after, report, title, project, theme, sources)
 
     def render(directory, label, pages=None):
         actual = pages
