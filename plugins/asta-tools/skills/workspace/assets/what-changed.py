@@ -855,7 +855,9 @@ VIEWS = (
 SOURCE_ONLY = "only its source changed"
 DEFAULT_VIEW = "marked"
 # What a page's own source may be called, by the rendered page's name, and the
-# most of it that is read (a notebook's JSON can be megabytes).
+# most of it that is read (a notebook's JSON can be megabytes). The workspace's
+# workflow lists the same suffixes where it reads the committed sources; a test
+# keeps the two equal.
 SOURCE_SUFFIXES = (".qmd", ".md", ".ipynb", ".Rmd", ".rmd", ".markdown")
 SOURCE_LIMIT = 512 * 1024
 
