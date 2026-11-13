@@ -1,0 +1,1344 @@
+<!doctype html><html lang="en" data-wc-mode="dark"><head><meta name="robots" content="noindex, nofollow"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="generator" content="asta-what-changed"><title>What changed &middot; Changes since HEAD</title><link href="site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link rel="stylesheet" href="site_libs/quarto-html/quarto-syntax-highlighting-517513f5a2bcdbfd1b1023e3fc9cca9c.css" class="quarto-color-scheme" id="quarto-text-highlighting-styles">
+<link rel="stylesheet" href="site_libs/quarto-html/quarto-syntax-highlighting-dark-388f8d67df6149ff0c4f0d88f9153ee2.css" class="quarto-color-scheme quarto-color-alternate" id="quarto-text-highlighting-styles">
+<link href="site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link rel="stylesheet" href="site_libs/bootstrap/bootstrap-e3ca7ee9c60a43d1ee136884c9699ba1.min.css" append-hash="true" class="quarto-color-scheme" id="quarto-bootstrap" data-mode="light">
+<link rel="stylesheet" href="site_libs/bootstrap/bootstrap-dark-6e1df6cfb8532c3c2cd2e7defc4b396c.min.css" append-hash="true" class="quarto-color-scheme quarto-color-alternate" id="quarto-bootstrap" data-mode="dark">
+<link rel="stylesheet" href="site_libs/quarto-contrib/quarto-project/asta-theme/asta.css">
+<link rel="stylesheet" href="styles.css">
+<style>
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+<style>
+  /* ---- evidence: hover-viewable supporting quotes --------------------------
+     A claim marked `.ev` gets a subtle dotted underline; hovering or
+     keyboard-focusing it reveals a styled popover (`.ev-pop > .ev-card`) that
+     holds the supporting VERBATIM QUOTE and its REFERENCE (with an optional
+     citeproc locator). The popover is a real DOM child of the claim and is
+     shown purely with CSS (`:hover` / `:focus-within`), so it works
+     identically on the full site and on the workspace "what-changed" diff page
+     (which strips <script> but keeps this head <style>, class/role/aria/title
+     attributes, <a href>, and <details>/<summary>). No JavaScript is required
+     for the popover to appear; the optional script only nudges position near
+     the viewport edge. */
+
+  /* Subtle affordance: a light dotted underline that says "there is evidence
+     here to hover" without pulling the eye away from reading. */
+  .ev {
+    position: relative;
+    border-bottom: 1px dotted currentColor;
+    cursor: help;
+    text-decoration: none;
+  }
+  .ev:hover,
+  .ev:focus-visible {
+    border-bottom-color: var(--bs-link-color, #0d6efd);
+    background: color-mix(in srgb, var(--bs-link-color, #0d6efd) 10%, transparent);
+    outline: none;
+  }
+
+  /* The popover wrapper is transparent and positioned just below the claim. Its
+     top padding is a hover "bridge" that overlaps the claim's bottom edge, so
+     moving the pointer from the claim into the box never crosses a dead zone —
+     and because the wrapper is a DESCENDANT of `.ev`, hovering anywhere in it
+     keeps `.ev:hover` true, so the popover stays open with no timers. */
+  .ev-pop {
+    position: absolute;
+    left: 0;
+    top: 100%;
+    z-index: 1080;
+    padding-top: 0.4rem;
+    display: block;
+    width: max-content;
+    max-width: min(360px, 92vw);
+    opacity: 0;
+    visibility: hidden;
+    /* Hiding is DELAYED by a short grace period; showing is immediate. A claim
+       that wraps onto several lines has tiny leading gaps BETWEEN its line boxes
+       where `:hover` is momentarily false. Without the delay the popover flips
+       off and back on as the pointer brushes across those gaps (a visible
+       flash). With it, the pointer re-enters the next line well inside the grace
+       window, so the hide transition never starts and the popover holds steady.
+       Keep the grace modest so moving to a *different* claim doesn't leave two
+       popovers overlapping for long. */
+    transition: opacity 0.12s ease 0.2s, visibility 0s linear 0.32s;
+  }
+  .ev:hover > .ev-pop,
+  .ev:focus > .ev-pop,
+  .ev:focus-within > .ev-pop {
+    opacity: 1;
+    visibility: visible;
+    transition: opacity 0.12s ease 0s, visibility 0s linear 0s;
+  }
+  /* Near the right viewport edge the optional script adds `.ev-flip`, opening
+     the popover leftward instead. Base behaviour (no script) opens rightward. */
+  .ev.ev-flip > .ev-pop {
+    left: auto;
+    right: 0;
+  }
+
+  /* The visible card. */
+  .ev-card {
+    display: block;
+    padding: 0.55rem 0.7rem;
+    font-size: 0.82rem;
+    line-height: 1.5;
+    font-style: normal;
+    font-weight: 400;
+    text-align: left;
+    white-space: normal;
+    color: var(--bs-body-color, #1a1a1a);
+    background: var(--bs-body-bg, #fff);
+    border: 1px solid var(--bs-border-color, rgba(0, 0, 0, 0.14));
+    border-radius: 6px;
+    box-shadow: 0 6px 22px rgba(0, 0, 0, 0.16);
+  }
+
+  /* The verbatim quote: real typographic quotes + italics and a thin accent
+     rule so it reads as exact wording, not a gloss. */
+  .ev-pop-text {
+    display: block;
+  }
+  .ev-pop-text.ev-quote {
+    padding-left: 0.6rem;
+    border-left: 3px solid var(--bs-link-color, #0d6efd);
+    color: inherit;
+  }
+
+  /* The reference line: the same author–year citation format as the body text,
+     rendered by citeproc (locator and all). */
+  .ev-pop-src {
+    display: block;
+    margin-top: 0.45rem;
+    padding-top: 0.4rem;
+    border-top: 1px solid var(--bs-border-color, rgba(0, 0, 0, 0.08));
+    font-size: 0.78rem;
+    color: inherit;
+  }
+  .ev-pop-src a {
+    color: var(--bs-link-color, #0d6efd);
+  }
+
+  /* Provenance — HOW the quote was obtained — is retained but NOT shown by
+     default: it sits behind a small "Source details" disclosure so a reader can
+     open it on demand without the popover becoming a wall of metadata. The
+     disclosure is built from PLAIN INLINE SPANS (no <details>/<div>) and revealed
+     with pure CSS on hover/focus. This matters: the popover lives inside the
+     claim's inline <span>, and the what-changed diff wraps inserted claims in
+     <ins>; a block element here would force a </ins> mid-nesting that ejects the
+     disclosure out of the hidden popover. Inline-only markup keeps the whole
+     popover one valid phrasing subtree, so it survives the diff intact. */
+  .ev-src {
+    display: block;
+    margin-top: 0.4rem;
+  }
+  .ev-src-label {
+    display: inline-block;
+    cursor: pointer;
+    font-size: 0.72rem;
+    color: inherit;
+    user-select: none;
+    outline: none;
+  }
+  /* A small disclosure triangle we control, so it reads the same in every theme. */
+  .ev-src-label::before {
+    content: "▸ ";
+    color: inherit;
+  }
+  .ev-src:hover .ev-src-label::before,
+  .ev-src:focus-within .ev-src-label::before {
+    content: "▾ ";
+  }
+  .ev-src-label:hover,
+  .ev-src-label:focus-visible {
+    color: var(--bs-link-color, #0d6efd);
+  }
+  /* Hidden until the disclosure is hovered or focused. Because the body is a
+     descendant of `.ev-src`, hovering it keeps `.ev-src:hover` true, so it stays
+     open with no gap. */
+  .ev-prov-body {
+    display: none;
+    margin-top: 0.25rem;
+    font-size: 0.72rem;
+    line-height: 1.5;
+    color: inherit;
+  }
+  .ev-src:hover .ev-prov-body,
+  .ev-src:focus-within .ev-prov-body {
+    display: block;
+  }
+  .ev-prov-body a {
+    color: var(--bs-link-color, #0d6efd);
+  }
+</style>
+<style>
+/* Two solid shades of each colour, chosen against Asta's light and dark pages:
+   the light one fills a block, the darker one only the words changed. Removed
+   is red, added is green. */
+.wc-scope { --wc-ins-bg: #b4e4a0; --wc-ins-line: #2a7a12;
+            --wc-del-bg: #f7b9b1; --wc-del-line: #c41d2c;
+            --wc-ins-blk: #dcf2d0; --wc-del-blk: #fcdad5;
+            --wc-changed: #0969da; --wc-new: #2a7a12;
+            --wc-removed: #c41d2c; --wc-tag-fg: #fff;
+            /* Everything that is not a shade of the diff is the site's: its
+               rule colour, its muted text, a wash of its own text colour. */
+            --wc-border: var(--bs-border-color, #d0d7de);
+            --wc-muted: var(--bs-secondary-color,
+                            color-mix(in srgb, currentColor 70%, transparent));
+            --wc-strip: color-mix(in srgb, var(--wc-changed) 16%, transparent);
+            --wc-strip-line: color-mix(in srgb, var(--wc-changed) 45%, transparent);
+            --wc-hover: color-mix(in srgb, currentColor 12%, transparent); }
+.wc-scope.wc-standalone { --wc-border: #d0d7de; --wc-muted: #57606a;
+            --wc-hover: rgba(9,105,218,.08); }
+/* Follow the mode the site is shown in (`data-wc-mode`, set by MODE_JS) when a
+   theme is reused. The media query is only for standalone output. */
+[data-wc-mode="dark"] .wc-scope { --wc-ins-bg: #1b4d0f; --wc-ins-line: #8ee04f;
+  --wc-del-bg: #6b1f22; --wc-del-line: #ff7b72;
+  --wc-ins-blk: #123a0e; --wc-del-blk: #4a171b;
+  --wc-changed: #58a6ff; --wc-new: #8ee04f;
+  --wc-removed: #ff7b72; --wc-tag-fg: #0d1117; }
+@media (prefers-color-scheme: dark) { .wc-scope.wc-standalone { --wc-ins-bg: #1b4d0f; --wc-ins-line: #8ee04f;
+  --wc-del-bg: #6b1f22; --wc-del-line: #ff7b72;
+  --wc-ins-blk: #123a0e; --wc-del-blk: #4a171b;
+  --wc-changed: #58a6ff; --wc-new: #8ee04f;
+  --wc-removed: #ff7b72; --wc-tag-fg: #0d1117; } .wc-scope.wc-standalone { --wc-hover: rgba(88,166,255,.12);
+  --wc-muted: #8b949e; --wc-border: #30363d; } }
+[data-wc-mode="dark"] .wc-scope .wc-src { --wc-ins-bg: #2a6b1a; --wc-del-bg: #8e2a2e; }
+@media (prefers-color-scheme: dark) { .wc-scope.wc-standalone .wc-src { --wc-ins-bg: #2a6b1a; --wc-del-bg: #8e2a2e; } }
+/* What changed reads wider than a page of prose: its main content takes up to
+   1040px (old and new side by side need the room), centred. */
+.wc-scope.page-columns { display: block; }
+.wc-scope main.content { max-width: 1040px; margin-inline: auto; padding-inline: 1rem; }
+.wc-scope header.diff-head { padding: 1.25rem 0 0.5rem; margin-bottom: 1rem;
+    border-bottom: 1px solid var(--wc-border); }
+.wc-scope header.diff-head h1 { margin: 0 0 .25rem; }
+.wc-scope header.diff-head p, .wc-scope .legend, .wc-scope .empty {
+    color: var(--wc-muted); }
+.wc-scope .legend { font-size: .9rem; }
+.wc-scope .legend ins, .wc-scope .legend del { padding: 0 .25em; }
+.wc-scope .empty { font-style: italic; }
+.wc-scope .wc-note { margin: .25rem 0 .5rem; }
+.wc-scope .wc-preview { color: var(--wc-muted); font-size: .95rem;
+    padding: .5rem .85rem; border-left: 3px solid var(--wc-border);
+    white-space: pre-wrap; overflow-wrap: break-word; }
+/* The paper's own viewer, as on its page: one bar over the PDF, a page tall
+   at the column's width (whatever the window), and ⤢ for the whole window. */
+.wc-scope .paper-view { margin-top: .5rem; }
+.wc-scope .paper-bar { display: flex; flex-wrap: wrap; align-items: center;
+    gap: .25rem .9rem; font-size: .9rem; padding: .35rem 0;
+    border-bottom: 1px solid var(--wc-border); }
+.wc-scope .paper-title { font-size: 1rem; }
+.wc-scope .paper-expand, .wc-scope .paper-modes button { font: inherit; line-height: 1.2;
+    padding: .2rem .55rem; border: 1px solid var(--wc-border); border-radius: 6px;
+    background: transparent; color: inherit; cursor: pointer; }
+.wc-scope .paper-file { font-size: .8rem; opacity: .75; background: none; padding: 0; }
+.wc-scope .paper-modes { display: inline-flex; gap: .3rem; margin-left: auto; }
+.wc-scope .paper-expand { margin-left: auto; }
+.wc-scope .paper-modes ~ .paper-expand { margin-left: 0; }
+.wc-scope .paper-modes button { font-size: .85rem; padding: .15rem .7rem; }
+.wc-scope .paper-modes button[aria-pressed="true"] { font-weight: 600;
+    background: var(--bs-body-color, #24292f); color: var(--bs-body-bg, #fff);
+    border-color: var(--bs-body-color, #24292f); }
+.wc-scope .paper-view object { display: block; width: 100%; aspect-ratio: 3 / 4; border: 0; }
+.wc-scope .paper-view.paper-full { position: fixed; inset: 0; z-index: 1050; margin: 0;
+    display: flex; flex-direction: column; background: var(--bs-body-bg, #fff); }
+.wc-scope .paper-full .paper-bar { padding: .35rem .75rem; }
+.wc-scope .paper-full object { flex: 1; aspect-ratio: auto; }
+.wc-scope nav.toc { font-size: .95rem; margin: 0 0 2rem; padding: .75rem 1rem;
+    border: 1px solid var(--wc-border); border-radius: 6px; }
+.wc-scope nav.toc .toc-head { margin: 0 0 .35rem; font-weight: 600; }
+.wc-scope nav.toc ul { margin: 0; padding-inline-start: 1.2rem; }
+.wc-scope nav.toc li { margin: .15rem 0; }
+.wc-scope nav.toc .toc-file { font-size: .8rem; opacity: .75; background: none; padding: 0; }
+.wc-scope nav.toc .toc-count { color: var(--wc-muted); }
+.wc-scope section.page-diff { margin-top: 2.5rem; padding: .75rem 1rem 1rem;
+    border: 1px solid var(--wc-border); border-left: 4px solid var(--wc-changed);
+    border-radius: 6px; }
+.wc-scope section.page-diff.new { border-left-color: var(--wc-new); }
+.wc-scope section.page-diff.removed { border-left-color: var(--wc-removed); }
+.wc-scope section.page-diff > h2 { margin-top: .25rem; }
+.wc-scope .tag { font-weight: 600;
+    padding: .15em .6em; border-radius: 1em; vertical-align: middle;
+    margin-left: .5em; color: var(--wc-tag-fg); }
+.wc-scope section.page-diff > h2 .tag { font-size: .65em; }
+.wc-scope nav.toc .tag { font-size: .75em; }
+.wc-scope .tag.changed { background: var(--wc-changed); color: var(--wc-tag-fg); }
+.wc-scope .tag.new { background: var(--wc-new); color: var(--wc-tag-fg); }
+.wc-scope .tag.removed { background: var(--wc-removed); color: var(--wc-tag-fg); }
+.wc-scope .diff-body { overflow-wrap: break-word; }
+.wc-scope ins { background: var(--wc-ins-bg);
+    text-decoration: none; border-inline-start: 2px solid var(--wc-ins-line);
+    border-radius: 2px; padding: 0 .1em; }
+.wc-scope del { background: var(--wc-del-bg);
+    text-decoration: line-through; text-decoration-color: var(--wc-del-line);
+    text-decoration-thickness: 2px; border-radius: 2px; padding: 0 .1em; }
+/* Block level: a wholly removed or added block (`wc-block-removed` /
+   `wc-block-added`) is the light shade only. An edited block has none, only its
+   words are marked; the exception is a source line, drawn twice, its old copy
+   (`wc-edit-old`) in the light red, then its new copy (`wc-edit-new`) in the
+   light green, as GitHub's source view. Unchanged blocks have no shade. */
+.wc-scope :is(.wc-edit-old, .wc-block-removed):not(tr) { background: var(--wc-del-blk); }
+.wc-scope :is(.wc-edit-new, .wc-block-added):not(tr) { background: var(--wc-ins-blk); }
+/* A row is shaded through its cells, as a layer over whatever fill the theme's
+   table gives them (Bootstrap fills cells, which would hide a row background). */
+.wc-scope tr.wc-block-removed > :is(td, th) {
+    background-image: linear-gradient(var(--wc-del-blk), var(--wc-del-blk)); }
+.wc-scope tr.wc-block-added > :is(td, th) {
+    background-image: linear-gradient(var(--wc-ins-blk), var(--wc-ins-blk)); }
+/* A wholly added or removed block takes the light shade only: its words are
+   not marked darker, nor struck through. */
+.wc-scope .wc-block-added ins { background: none; border-inline-start: 0; }
+.wc-scope .wc-block-removed del { background: none; text-decoration: none; }
+/* A whole unit is shaded like any other change when it is not framed below
+   (an inline equation takes the darker word shade, as words do); no band behind
+   an image, no outline or fading on it. */
+.wc-scope del.wc-unit, .wc-scope ins.wc-unit { padding: .1em .3em; border-radius: 4px;
+    text-decoration: none; border-inline-start: 0; outline: none; }
+.wc-scope del.wc-unit { background: var(--wc-del-blk); }
+.wc-scope ins.wc-unit { background: var(--wc-ins-blk); }
+.wc-scope del.wc-unit:has(> mjx-container:not([display="true"])) { background: var(--wc-del-bg); }
+.wc-scope ins.wc-unit:has(> mjx-container:not([display="true"])) { background: var(--wc-ins-bg); }
+/* A whole display equation, figure or diagram is framed, never filled, as
+   GitHub's image diff frames old and new: on the page's own background, the old
+   in a thin red frame, the new in a thin green one, each with a small "Before"
+   or "After" label in its colour. A block that holds only such a unit has no
+   shade either: the frame says old or new. */
+.wc-scope del.wc-unit { --wc-frame: var(--wc-del-line); --wc-label: "Before"; }
+.wc-scope ins.wc-unit { --wc-frame: var(--wc-ins-line); --wc-label: "After"; }
+.wc-scope :is(del, ins).wc-unit:is(:has(mjx-container[display="true"]), :has(> :is(img, svg, pre, div, figure))) {
+    display: block; background: transparent; text-decoration: none;
+    border: 1px solid var(--wc-frame); border-radius: 6px; padding: .45rem .6rem .6rem; }
+.wc-scope :is(del, ins).wc-unit:is(:has(mjx-container[display="true"]), :has(> :is(img, svg, pre, div, figure)))::before {
+    display: block; content: var(--wc-label); color: var(--wc-frame); text-align: left;
+    font: 600 .72rem/1.3 system-ui, sans-serif; letter-spacing: .02em;
+    margin-bottom: .3rem; text-decoration: none; }
+.wc-scope :is(.wc-edit-old, .wc-block-removed, .wc-edit-new, .wc-block-added):not(tr):is(:has(> :is(del, ins).wc-unit:only-child > :is(img, svg, pre, div, figure)), :has(> :is(del, ins).wc-unit:only-child mjx-container[display="true"])) {
+    background: transparent; }
+.wc-scope .wc-unit > :is(img, svg, pre) { max-width: 100%; height: auto; }
+/* A changed figure or drawing: old and new side by side, as GitHub's
+   image diff shows them, when their parent holds nothing else (else old above
+   new, so that a page is never set in a row). */
+.wc-scope :is(p, div, figure):has(> del.wc-unit > :is(img, svg, pre)):has(> ins.wc-unit > :is(img, svg, pre)):not(:has(> :not(:is(del, ins).wc-unit))) {
+    display: flex; gap: 1rem; align-items: flex-start; }
+.wc-scope :is(p, div, figure):has(> del.wc-unit > :is(img, svg, pre)):has(> ins.wc-unit > :is(img, svg, pre)):not(:has(> :not(:is(del, ins).wc-unit))) > .wc-unit {
+    flex: 1 1 0; min-width: 0; }
+.wc-scope :is(p, div, figure):has(> del.wc-unit > :is(img, svg, pre)):has(> ins.wc-unit > :is(img, svg, pre)):not(:has(> :not(:is(del, ins).wc-unit))) > .wc-unit > :is(img, svg, pre) {
+    width: 100%; }
+/* A pair whose figure is wider, at its natural size, than half the column is
+   set old above new (the page's script marks it; the figure takes its natural
+   width, up to the full column). */
+.wc-scope :is(p, div, figure):has(> del.wc-unit > :is(img, svg, pre)):has(> ins.wc-unit > :is(img, svg, pre)):not(:has(> :not(:is(del, ins).wc-unit))).wc-pair-stack {
+    flex-direction: column; align-items: stretch; }
+.wc-scope :is(p, div, figure):has(> del.wc-unit > :is(img, svg, pre)):has(> ins.wc-unit > :is(img, svg, pre)):not(:has(> :not(:is(del, ins).wc-unit))).wc-pair-stack > .wc-unit {
+    flex: none; }
+.wc-scope .wc-unit > pre { margin: 0; overflow-x: auto; }
+/* A Mermaid diagram: its text wrapped (never cut off at the right) until the
+   page draws it, then its drawing at the width of its box. */
+.wc-scope pre.mermaid { white-space: pre-wrap; overflow-wrap: anywhere; }
+.wc-scope pre.mermaid[data-wc-drawn] { white-space: normal; background: none;
+    border: 0; padding: 0; text-align: center; }
+.wc-scope pre.mermaid[data-wc-drawn] svg { max-width: 100%; height: auto; }
+.wc-scope .wc-img-unavailable { font-style: italic; }
+/* A link or image whose target changed: its text takes the dark shade and the
+   old target is shown beside the new. */
+.wc-scope .wc-link-changed { background: var(--wc-ins-bg); border-radius: 2px; }
+.wc-scope .wc-link-was { background: var(--wc-del-bg); border-radius: 2px; }
+.wc-scope a.wc-link-changed::after { content: " (" attr(data-wc-was) " \2192 " attr(href) ")";
+    font-size: .8em; color: var(--wc-muted); overflow-wrap: anywhere; }
+/* A link taken off words that stay: its old target, where the link began. */
+.wc-scope .wc-link-gone { background: none; }
+.wc-scope .wc-link-gone::before { content: "(link removed: " attr(data-wc-was) ") ";
+    font-size: .8em; background: var(--wc-del-bg);
+    border-radius: 2px; overflow-wrap: anywhere; }
+.wc-scope img.wc-link-changed { outline: 3px solid var(--wc-ins-line); }
+.wc-scope img.wc-link-was { outline: 3px solid var(--wc-del-line); }
+/* Formatting put on words that were already there (em -> strong): the new tag
+   is outlined, as the words did not change. */
+.wc-scope .wc-fmt-changed { outline: 1px dashed var(--wc-changed); outline-offset: 2px; }
+/* Links: no resting underline on the diff (GitHub's diff view does the same).
+   The reused theme carries Bootstrap's default `a { text-decoration: underline }`,
+   which otherwise underlines every citation, crossref (e.g. "Table 1") and bare
+   URL in the change — and inside an inserted run those links pick up the green
+   ins colour, reading as green underlines scattered across the page. A modest
+   weight change keeps a persistent non-colour cue without adding another field
+   of lines; the underline returns on hover or keyboard focus. */
+.wc-scope a { text-decoration: none; font-weight: 600; }
+.wc-scope a:hover, .wc-scope a:focus { text-decoration: underline; }
+/* Evidence claims (`.ev`) need a visible cue on the diff. The extension's
+   default thin currentColor border is intentionally subtle on a normal
+   report, but becomes effectively invisible against the green insertion tint.
+   Strengthen it to a 2px dotted rule in the active theme's link color, so it
+   stays an underline rather than another background and follows light/dark. */
+.wc-scope .wc-ev-chip { font-size: .7em; font-weight: 600; white-space: nowrap;
+    color: var(--wc-tag-fg); padding: 0 .3em; border-radius: 3px; }
+.wc-scope .wc-ev-chip.wc-ev-add { background: var(--wc-new); }
+.wc-scope .wc-ev-chip.wc-ev-del { background: var(--wc-removed); }
+.wc-scope .ev { border-bottom: 2px dotted var(--bs-link-color, var(--wc-changed)); }
+/* Insertions are background-only: the `ins` rule above sets
+   `text-decoration: none` to suppress the browser UA-default `ins {
+   text-decoration: underline }` (otherwise every added run keeps a green
+   underline even with no explicit underline rule in this stylesheet). */
+/* Source, a line being the unit (`source_diff`): the same two rows as the blocks
+   above (light on the line, darker on its words), an old row with its old line
+   number and a new row with its new one in a gutter, and no strike-through, as
+   GitHub's unified view draws it. */
+.wc-scope .wc-src { font: .8rem/1.5 var(--bs-font-monospace, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+    border: 1px solid var(--wc-border); border-radius: 6px; overflow: hidden; }
+.wc-scope .wc-ln { position: relative; padding: 0 .75rem 0 8.5em; min-height: 1.5em;
+    white-space: pre-wrap; overflow-wrap: anywhere; tab-size: 4; }
+.wc-scope .wc-ln::before, .wc-scope .wc-ln::after { position: absolute; top: 0; width: 3.5em;
+    text-align: right; color: var(--wc-muted); user-select: none; }
+.wc-scope .wc-ln::before { content: attr(data-o); left: .25em; }
+.wc-scope .wc-ln::after { content: attr(data-n); left: 4.25em; }
+.wc-scope .wc-src ins, .wc-scope .wc-src del { padding: 0; border-inline-start: 0;
+    text-decoration: none; }
+/* The fold strip, for unchanged lines, blocks and slides alike (`FOLD_JS`, and
+   the deck's `details.wc-expander`): one look, a row tinted What changed's own
+   blue where the folded ones were, in the page's text colour, with blue
+   arrows; the arrows open about 20 at a time from the change above (down) or
+   below (up), the text opens all of them. */
+.wc-scope [hidden] { display: none !important; }
+.wc-scope :is(div, li).wc-strip, .wc-scope .wc-strip-bar, .wc-scope .wc-expander > summary {
+    display: flex; align-items: center; gap: .25rem; margin: .5rem 0;
+    padding: 2px .5rem; font-size: .85rem; line-height: 1.6;
+    color: inherit; background: var(--wc-strip);
+    border-block: 1px solid var(--wc-strip-line); }
+.wc-scope .wc-expander > summary { cursor: pointer; list-style: none; }
+.wc-scope .wc-expander > summary::-webkit-details-marker { display: none; }
+.wc-scope .wc-expander > summary:hover { background: var(--wc-hover); }
+.wc-scope .wc-expander[open] > summary { margin-bottom: .5rem; }
+.wc-scope .wc-strip button:not(.wc-more), .wc-scope .wc-expander-icon {
+    color: var(--wc-changed); font-weight: 700; }
+.wc-scope li.wc-strip { list-style: none; }
+/* In a table body the strip is a row with one cell across; the cell is the
+   table's own, so it takes none of the theme's cell padding, rule or fill. */
+.wc-scope tr.wc-strip > td { padding: 0; border: 0; background: none;
+    box-shadow: none; }
+.wc-scope tr.wc-strip .wc-strip-bar { margin: 0; }
+.wc-scope .wc-src .wc-strip { margin: 0; border-width: 1px 0; }
+.wc-scope .wc-strip button { font: inherit; color: inherit; background: transparent;
+    border: 0; border-radius: 4px; padding: 0 .45em; cursor: pointer; }
+.wc-scope .wc-strip button:hover { background: var(--wc-hover); }
+.wc-scope .wc-strip .wc-more:hover { color: var(--wc-changed); }
+.wc-scope .wc-strip .wc-more { margin-inline-start: .25rem; }
+.wc-scope .wc-toolbar { margin: -.5rem 0 1.5rem; }
+.wc-scope .wc-toolbar button { font: inherit; font-size: .85rem; cursor: pointer;
+    color: var(--wc-changed); background: transparent; padding: .35em .9em;
+    border: 1px solid var(--wc-border); border-radius: 6px; }
+.wc-scope .wc-toolbar button:hover { border-color: var(--wc-changed); }
+</style></head><body class="quarto-dark"><script>
+(() => {
+  const root = document.documentElement;
+  let stored = null;
+  try { stored = window.localStorage.getItem("quarto-color-scheme"); } catch (e) {}
+  let dark = root.dataset.wcMode === "dark";
+  // A single-theme site has no toggle; a preference saved on another page
+  // must not change the diff palette without a corresponding stylesheet.
+  const hasAlternate = document.querySelector("link.quarto-color-scheme.quarto-color-alternate:not(.quarto-color-scheme-extra)");
+  if (hasAlternate) {
+    if (stored === "alternate" || stored === "default") dark = stored === "alternate";
+    else if (root.dataset.wcFollowSystem === "true")
+      dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  }
+  const mode = dark ? "dark" : "light";
+  root.dataset.wcMode = mode;
+  document.querySelectorAll("link.quarto-color-scheme, link.quarto-color-scheme-extra").forEach((link) => {
+    // Quarto keeps primary styles enabled and layers the alternate over them.
+    // Extra sheets are render-time helpers and are disabled in either mode.
+    const enabled = !link.classList.contains("quarto-color-scheme-extra") &&
+      (!link.classList.contains("quarto-color-alternate") || link_mode(link) === mode);
+    link.rel = enabled ? "stylesheet" : "disabled-stylesheet";
+  });
+  document.body.classList.remove("quarto-light", "quarto-dark");
+  document.body.classList.add("quarto-" + mode);
+  function link_mode(link) {
+    if (link.dataset.mode) return link.dataset.mode.toLowerCase();
+    return link.classList.contains("quarto-color-alternate") ? "dark" : "light";
+  }
+})();
+</script><div class="page-columns page-rows-contents page-layout-article wc-scope">
+<main class="content" id="quarto-document-content">
+<header class="diff-head"><h1>What changed</h1><p>Changes since HEAD &middot; 3 pages changed</p><p class="legend">Legend: <ins>added</ins> &middot; <del>removed</del> words, the removed ones right before the added ones. A wholly added or removed block is shaded; a whole equation, figure or diagram is framed, the old in red, the new in green. Page titles link to the full preview.</p></header><nav class="toc"><p class="toc-head">This edit changed 3 things:</p><ul><li><a href="#paper-diff">Paper</a> &middot; <code class="toc-file">paper/main.tex</code></li><li><a href="#p-slides-attention-slides-html">Slides · Attention in sequence models</a> &middot; <code class="toc-file">slides/attention/slides.html</code> &middot; <span class="toc-count">1 of 10 slides changed</span></li><li><a href="#p-lit-review-index-html">A small literature review</a> &middot; <code class="toc-file">lit-review/index.html</code> &middot; <span class="toc-count">15 changes</span></li></ul></nav>
+<section class="page-diff changed" id="paper-diff"><h2>Paper <span class="tag changed">changed</span></h2><p class="wc-note">LaTeX edits are highlighted; other paper inputs may not be.</p><div class="paper-view"><div class="paper-bar"><strong class="paper-title">Paper</strong><code class="paper-file">paper/main.tex</code><span class="paper-modes" role="group" aria-label="Which PDF"><button type="button" data-pdf="paper-previews/paper/what-changed.pdf" aria-pressed="true">Changes marked</button><button type="button" data-pdf="paper-previews/paper/main.pdf" aria-pressed="false">Clean</button></span><button type="button" class="paper-expand" aria-pressed="false" title="Give the paper the whole window">&#x2922;</button></div><object data="paper-previews/paper/what-changed.pdf#navpanes=0&amp;view=FitH" type="application/pdf" title="Paper"><a href="paper-previews/paper/what-changed.pdf">Open the paper PDF</a></object></div></section>
+<section class="page-diff changed" id="p-slides-attention-slides-html"><h2><a href="slides/attention/slides.html">Slides · Asta workspace example – Attention in sequence models</a> <span class="tag changed">changed</span></h2><div class="deck-live deck-review" data-view="marked"><div class="dr-bar"><span class="dr-count">1 changed or new; 0 removed; 10 slides</span><span class="dr-seg" role="group" aria-label="Slide view"><button type="button" data-v="marked" aria-pressed="true">Changes marked</button><button type="button" data-v="clean" aria-pressed="false">Clean</button><button type="button" data-v="before" aria-pressed="false">Before / after</button></span></div><details class="dr-unchanged wc-expander"><summary><span class="wc-expander-icon" aria-hidden="true">↕</span> ⋯ 4 unchanged slides (1–4)</summary><template><article class="dr-slide dr-unchanged"><h3>Slide 1: Attention in sequence models — unchanged</h3><div class="dr-pair"><figure data-view="marked"><figcaption>Changes marked</figcaption><iframe loading="lazy" sandbox="allow-scripts" title="Changes marked slide" data-dr-slide-id="title-slide" data-src="what-changed-decks/after/slides/attention/slides.frame-clean-1.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false&amp;minScale=0.05#/title-slide"></iframe></figure><figure data-view="clean"><figcaption>Clean</figcaption><iframe loading="lazy" sandbox="allow-scripts" title="Clean slide" data-dr-slide-id="title-slide" data-src="what-changed-decks/after/slides/attention/slides.frame-clean-1.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false&amp;minScale=0.05#/title-slide"></iframe></figure><figure data-view="before" class="dr-old"><figcaption>Before</figcaption><iframe loading="lazy" sandbox="allow-scripts" title="Before slide" data-dr-slide-id="title-slide" data-src="what-changed-decks/before/slides/attention/slides.frame-before-1.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false&amp;minScale=0.05#/title-slide"></iframe></figure><figure data-view="before" class="dr-new"><figcaption>After</figcaption><iframe loading="lazy" sandbox="allow-scripts" title="After slide" data-dr-slide-id="title-slide" data-src="what-changed-decks/after/slides/attention/slides.frame-clean-1.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false&amp;minScale=0.05#/title-slide"></iframe></figure></div></article><article class="dr-slide dr-unchanged"><h3>Slide 2: The question — unchanged</h3><div class="dr-pair"><figure data-view="marked"><figcaption>Changes marked</figcaption><iframe loading="lazy" sandbox="allow-scripts" title="Changes marked slide" data-dr-slide-id="the-question" data-src="what-changed-decks/after/slides/attention/slides.frame-clean-2.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false&amp;minScale=0.05#/the-question"></iframe></figure><figure data-view="clean"><figcaption>Clean</figcaption><iframe loading="lazy" sandbox="allow-scripts" title="Clean slide" data-dr-slide-id="the-question" data-src="what-changed-decks/after/slides/attention/slides.frame-clean-2.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false&amp;minScale=0.05#/the-question"></iframe></figure><figure data-view="before" class="dr-old"><figcaption>Before</figcaption><iframe loading="lazy" sandbox="allow-scripts" title="Before slide" data-dr-slide-id="the-question" data-src="what-changed-decks/before/slides/attention/slides.frame-before-2.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false&amp;minScale=0.05#/the-question"></iframe></figure><figure data-view="before" class="dr-new"><figcaption>After</figcaption><iframe loading="lazy" sandbox="allow-scripts" title="After slide" data-dr-slide-id="the-question" data-src="what-changed-decks/after/slides/attention/slides.frame-clean-2.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false&amp;minScale=0.05#/the-question"></iframe></figure></div></article><article class="dr-slide dr-unchanged"><h3>Slide 3: How can a sequence model connect distant tokens? — unchanged</h3><div class="dr-pair"><figure data-view="marked"><figcaption>Changes marked</figcaption><iframe loading="lazy" sandbox="allow-scripts" title="Changes marked slide" data-dr-slide-id="how-can-a-sequence-model-connect-distant-tokens" data-src="what-changed-decks/after/slides/attention/slides.frame-clean-3.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false&amp;minScale=0.05#/how-can-a-sequence-model-connect-distant-tokens"></iframe></figure><figure data-view="clean"><figcaption>Clean</figcaption><iframe loading="lazy" sandbox="allow-scripts" title="Clean slide" data-dr-slide-id="how-can-a-sequence-model-connect-distant-tokens" data-src="what-changed-decks/after/slides/attention/slides.frame-clean-3.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false&amp;minScale=0.05#/how-can-a-sequence-model-connect-distant-tokens"></iframe></figure><figure data-view="before" class="dr-old"><figcaption>Before</figcaption><iframe loading="lazy" sandbox="allow-scripts" title="Before slide" data-dr-slide-id="how-can-a-sequence-model-connect-distant-tokens" data-src="what-changed-decks/before/slides/attention/slides.frame-before-3.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false&amp;minScale=0.05#/how-can-a-sequence-model-connect-distant-tokens"></iframe></figure><figure data-view="before" class="dr-new"><figcaption>After</figcaption><iframe loading="lazy" sandbox="allow-scripts" title="After slide" data-dr-slide-id="how-can-a-sequence-model-connect-distant-tokens" data-src="what-changed-decks/after/slides/attention/slides.frame-clean-3.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false&amp;minScale=0.05#/how-can-a-sequence-model-connect-distant-tokens"></iframe></figure></div></article><article class="dr-slide dr-unchanged"><h3>Slide 4: The mechanism — unchanged</h3><div class="dr-pair"><figure data-view="marked"><figcaption>Changes marked</figcaption><iframe loading="lazy" sandbox="allow-scripts" title="Changes marked slide" data-dr-slide-id="the-mechanism" data-src="what-changed-decks/after/slides/attention/slides.frame-clean-4.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false&amp;minScale=0.05#/the-mechanism"></iframe></figure><figure data-view="clean"><figcaption>Clean</figcaption><iframe loading="lazy" sandbox="allow-scripts" title="Clean slide" data-dr-slide-id="the-mechanism" data-src="what-changed-decks/after/slides/attention/slides.frame-clean-4.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false&amp;minScale=0.05#/the-mechanism"></iframe></figure><figure data-view="before" class="dr-old"><figcaption>Before</figcaption><iframe loading="lazy" sandbox="allow-scripts" title="Before slide" data-dr-slide-id="the-mechanism" data-src="what-changed-decks/before/slides/attention/slides.frame-before-4.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false&amp;minScale=0.05#/the-mechanism"></iframe></figure><figure data-view="before" class="dr-new"><figcaption>After</figcaption><iframe loading="lazy" sandbox="allow-scripts" title="After slide" data-dr-slide-id="the-mechanism" data-src="what-changed-decks/after/slides/attention/slides.frame-clean-4.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false&amp;minScale=0.05#/the-mechanism"></iframe></figure></div></article></template></details><article class="dr-slide dr-changed"><h3>Slide 5: Attention weights the available context — changed</h3><div class="dr-pair"><figure data-view="marked"><figcaption>Changes marked</figcaption><iframe loading="lazy" sandbox="allow-scripts" title="Changes marked slide" data-dr-slide-id="attention-weights-the-available-context" data-src="what-changed-decks/after/slides/attention/slides.frame-marked-5.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false&amp;minScale=0.05#/attention-weights-the-available-context"></iframe></figure><figure data-view="clean"><figcaption>Clean</figcaption><iframe loading="lazy" sandbox="allow-scripts" title="Clean slide" data-dr-slide-id="attention-weights-the-available-context" data-src="what-changed-decks/after/slides/attention/slides.frame-clean-5.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false&amp;minScale=0.05#/attention-weights-the-available-context"></iframe></figure><figure data-view="before" class="dr-old"><figcaption>Before</figcaption><iframe loading="lazy" sandbox="allow-scripts" title="Before slide" data-dr-slide-id="attention-weights-the-available-context" data-src="what-changed-decks/before/slides/attention/slides.frame-before-5.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false&amp;minScale=0.05#/attention-weights-the-available-context"></iframe></figure><figure data-view="before" class="dr-new"><figcaption>After</figcaption><iframe loading="lazy" sandbox="allow-scripts" title="After slide" data-dr-slide-id="attention-weights-the-available-context" data-src="what-changed-decks/after/slides/attention/slides.frame-clean-5.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false&amp;minScale=0.05#/attention-weights-the-available-context"></iframe></figure></div></article><details class="dr-unchanged wc-expander"><summary><span class="wc-expander-icon" aria-hidden="true">↕</span> ⋯ 5 unchanged slides (6–10)</summary><template><article class="dr-slide dr-unchanged"><h3>Slide 6: Follow the computation — unchanged</h3><div class="dr-pair"><figure data-view="marked"><figcaption>Changes marked</figcaption><iframe loading="lazy" sandbox="allow-scripts" title="Changes marked slide" data-dr-slide-id="follow-the-computation" data-src="what-changed-decks/after/slides/attention/slides.frame-clean-6.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false&amp;minScale=0.05#/follow-the-computation"></iframe></figure><figure data-view="clean"><figcaption>Clean</figcaption><iframe loading="lazy" sandbox="allow-scripts" title="Clean slide" data-dr-slide-id="follow-the-computation" data-src="what-changed-decks/after/slides/attention/slides.frame-clean-6.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false&amp;minScale=0.05#/follow-the-computation"></iframe></figure><figure data-view="before" class="dr-old"><figcaption>Before</figcaption><iframe loading="lazy" sandbox="allow-scripts" title="Before slide" data-dr-slide-id="follow-the-computation" data-src="what-changed-decks/before/slides/attention/slides.frame-before-6.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false&amp;minScale=0.05#/follow-the-computation"></iframe></figure><figure data-view="before" class="dr-new"><figcaption>After</figcaption><iframe loading="lazy" sandbox="allow-scripts" title="After slide" data-dr-slide-id="follow-the-computation" data-src="what-changed-decks/after/slides/attention/slides.frame-clean-6.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false&amp;minScale=0.05#/follow-the-computation"></iframe></figure></div></article><article class="dr-slide dr-unchanged"><h3>Slide 7: The workspace — unchanged</h3><div class="dr-pair"><figure data-view="marked"><figcaption>Changes marked</figcaption><iframe loading="lazy" sandbox="allow-scripts" title="Changes marked slide" data-dr-slide-id="the-workspace" data-src="what-changed-decks/after/slides/attention/slides.frame-clean-7.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false&amp;minScale=0.05#/the-workspace"></iframe></figure><figure data-view="clean"><figcaption>Clean</figcaption><iframe loading="lazy" sandbox="allow-scripts" title="Clean slide" data-dr-slide-id="the-workspace" data-src="what-changed-decks/after/slides/attention/slides.frame-clean-7.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false&amp;minScale=0.05#/the-workspace"></iframe></figure><figure data-view="before" class="dr-old"><figcaption>Before</figcaption><iframe loading="lazy" sandbox="allow-scripts" title="Before slide" data-dr-slide-id="the-workspace" data-src="what-changed-decks/before/slides/attention/slides.frame-before-7.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false&amp;minScale=0.05#/the-workspace"></iframe></figure><figure data-view="before" class="dr-new"><figcaption>After</figcaption><iframe loading="lazy" sandbox="allow-scripts" title="After slide" data-dr-slide-id="the-workspace" data-src="what-changed-decks/after/slides/attention/slides.frame-clean-7.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false&amp;minScale=0.05#/the-workspace"></iframe></figure></div></article><article class="dr-slide dr-unchanged"><h3>Slide 8: Keep the talk beside its sources — unchanged</h3><div class="dr-pair"><figure data-view="marked"><figcaption>Changes marked</figcaption><iframe loading="lazy" sandbox="allow-scripts" title="Changes marked slide" data-dr-slide-id="keep-the-talk-beside-its-sources" data-src="what-changed-decks/after/slides/attention/slides.frame-clean-8.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false&amp;minScale=0.05#/keep-the-talk-beside-its-sources"></iframe></figure><figure data-view="clean"><figcaption>Clean</figcaption><iframe loading="lazy" sandbox="allow-scripts" title="Clean slide" data-dr-slide-id="keep-the-talk-beside-its-sources" data-src="what-changed-decks/after/slides/attention/slides.frame-clean-8.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false&amp;minScale=0.05#/keep-the-talk-beside-its-sources"></iframe></figure><figure data-view="before" class="dr-old"><figcaption>Before</figcaption><iframe loading="lazy" sandbox="allow-scripts" title="Before slide" data-dr-slide-id="keep-the-talk-beside-its-sources" data-src="what-changed-decks/before/slides/attention/slides.frame-before-8.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false&amp;minScale=0.05#/keep-the-talk-beside-its-sources"></iframe></figure><figure data-view="before" class="dr-new"><figcaption>After</figcaption><iframe loading="lazy" sandbox="allow-scripts" title="After slide" data-dr-slide-id="keep-the-talk-beside-its-sources" data-src="what-changed-decks/after/slides/attention/slides.frame-clean-8.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false&amp;minScale=0.05#/keep-the-talk-beside-its-sources"></iframe></figure></div></article><article class="dr-slide dr-unchanged"><h3>Slide 9: Read the original paper — unchanged</h3><div class="dr-pair"><figure data-view="marked"><figcaption>Changes marked</figcaption><iframe loading="lazy" sandbox="allow-scripts" title="Changes marked slide" data-dr-slide-id="read-the-original-paper" data-src="what-changed-decks/after/slides/attention/slides.frame-clean-9.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false&amp;minScale=0.05#/read-the-original-paper"></iframe></figure><figure data-view="clean"><figcaption>Clean</figcaption><iframe loading="lazy" sandbox="allow-scripts" title="Clean slide" data-dr-slide-id="read-the-original-paper" data-src="what-changed-decks/after/slides/attention/slides.frame-clean-9.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false&amp;minScale=0.05#/read-the-original-paper"></iframe></figure><figure data-view="before" class="dr-old"><figcaption>Before</figcaption><iframe loading="lazy" sandbox="allow-scripts" title="Before slide" data-dr-slide-id="read-the-original-paper" data-src="what-changed-decks/before/slides/attention/slides.frame-before-9.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false&amp;minScale=0.05#/read-the-original-paper"></iframe></figure><figure data-view="before" class="dr-new"><figcaption>After</figcaption><iframe loading="lazy" sandbox="allow-scripts" title="After slide" data-dr-slide-id="read-the-original-paper" data-src="what-changed-decks/after/slides/attention/slides.frame-clean-9.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false&amp;minScale=0.05#/read-the-original-paper"></iframe></figure></div></article><article class="dr-slide dr-unchanged"><h3>Slide 10: A figure carried inside the slide — unchanged</h3><div class="dr-pair"><figure data-view="marked"><figcaption>Changes marked</figcaption><iframe loading="lazy" sandbox="allow-scripts" title="Changes marked slide" data-dr-slide-id="a-figure-carried-inside-the-slide" data-src="what-changed-decks/after/slides/attention/slides.frame-clean-10.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false&amp;minScale=0.05#/a-figure-carried-inside-the-slide"></iframe></figure><figure data-view="clean"><figcaption>Clean</figcaption><iframe loading="lazy" sandbox="allow-scripts" title="Clean slide" data-dr-slide-id="a-figure-carried-inside-the-slide" data-src="what-changed-decks/after/slides/attention/slides.frame-clean-10.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false&amp;minScale=0.05#/a-figure-carried-inside-the-slide"></iframe></figure><figure data-view="before" class="dr-old"><figcaption>Before</figcaption><iframe loading="lazy" sandbox="allow-scripts" title="Before slide" data-dr-slide-id="a-figure-carried-inside-the-slide" data-src="what-changed-decks/before/slides/attention/slides.frame-before-10.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false&amp;minScale=0.05#/a-figure-carried-inside-the-slide"></iframe></figure><figure data-view="before" class="dr-new"><figcaption>After</figcaption><iframe loading="lazy" sandbox="allow-scripts" title="After slide" data-dr-slide-id="a-figure-carried-inside-the-slide" data-src="what-changed-decks/after/slides/attention/slides.frame-clean-10.html?view=slide&amp;scrollActivationWidth=0&amp;fragments=false&amp;keyboard=false&amp;touch=false&amp;controls=false&amp;mouseWheel=false&amp;overview=false&amp;help=false&amp;minScale=0.05#/a-figure-carried-inside-the-slide"></iframe></figure></div></article></template></details></div></section>
+<section class="page-diff changed" id="p-lit-review-index-html">
+<h2><a href="lit-review/index.html">A small literature review – Asta workspace example</a> <span class="tag changed">changed</span></h2>
+<p class="legend"><code>lit-review/index.html</code></p>
+<div class="diff-body">
+
+
+<header class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">A small literature review</h1>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<p>This literature review is the editable Quarto source. To get a PDF or LaTeX source, render it with Quarto (see the <a href="https://github.com/allenai/asta-plugins/blob/main/plugins/asta-tools/skills/workspace/assets/DEVELOPER.md#getting-a-latex-pdf">workspace guide</a>). This review cites the project-root <code>references.bib</code>. The separate <code>paper/main.tex</code> is edited directly and paired with Overleaf, so it keeps its own copy of the entries it cites.</p>
+<section class="level2">
+<h2 class="anchored">Example <del>claim</del><ins>claims</ins></h2>
+<p><span class="ev" tabindex="0" role="note" aria-description="“We propose a new simple network architecture, the Transformer, based solely on attention mechanisms” — citation vaswani2017attention (abstract)">Vaswani and colleagues proposed a Transformer architecture based <ins>solely </ins>on attention mechanisms<span class="ev-pop" role="note"><span class="ev-card"><span class="ev-pop-text ev-quote">“<em>We propose a new simple network architecture, the Transformer, based solely on attention mechanisms</em>”</span><span class="ev-pop-src">— <span class="citation">(<a href="lit-review/index.html#ref-vaswani2017attention" role="doc-biblioref">Vaswani et al. 2017</a>, abstract)</span></span></span></span></span> <span class="citation">(<a href="lit-review/index.html#ref-vaswani2017attention" role="doc-biblioref">Vaswani et al. 2017</a>)</span>. <del>The</del><span class="ev" tabindex="0" role="note" aria-description="“We introduce a new language representation model called BERT, which stands for Bidirectional Encoder Representations from Transformers.” — citation devlin2019bert (abstract)"><ins>BERT later applied the Transformer encoder to bidirectional language representation</ins><span class="wc-ev-chip wc-ev-add">evidence added</span><span class="ev-pop" role="note"><span class="ev-card"><span class="ev-pop-text ev-quote">“<em>We introduce a new language representation model called BERT, which stands for Bidirectional Encoder Representations from Transformers.</em>”</span><span class="ev-pop-src">— <span class="citation">(<a href="lit-review/index.html#ref-devlin2019bert" role="doc-biblioref">Devlin et al. 2019</a>, abstract)</span></span></span></span></span> <ins><span class="citation">(<a href="lit-review/index.html#ref-devlin2019bert" role="doc-biblioref">Devlin et al. 2019</a>)</span>. Each</ins> highlighted claim <del>exposes</del><ins>shows</ins> its source quote on hover or keyboard focus.</p>
+</section>
+<section class="level2">
+<h2 class="anchored">Background</h2>
+<p>Recurrent networks read a sequence one token at a time, carrying a hidden state from each token to the next.</p>
+<p>Gated cells, such as the <a class="wc-link-changed" href="https://doi.org/10.1162/neco.1997.9.8.1735" data-wc-was="https://www.bioinf.jku.at/publications/older/2604.pdf" title="was: https://www.bioinf.jku.at/publications/older/2604.pdf">LSTM’s</a>, let that state carry information across longer spans, but a signal between two distant tokens still passes through every step between them.</p>
+<p>Encoder–decoder models used one recurrent network to read a sentence and a second to write its translation, joined only by the final state of the first.</p>
+<p>That final state had to hold the whole sentence, so translations of long sentences lost detail from their beginnings.</p>
+<p>Attention was first added to these models to let the decoder look back at every encoder state, rather than at the last one alone.</p>
+<p>Convolutional sequence models shortened the path differently, stacking layers so that each widens the span a token can see.</p>
+
+</section>
+<section class="level2">
+<h2 class="anchored">Models compared</h2>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Model</th>
+<th>Year</th>
+<th>Recurrence</th>
+<th>Steps between distant tokens</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>LSTM encoder–decoder</td>
+<td>2014</td>
+<td>yes</td>
+<td>one per token between them</td>
+</tr>
+<tr class="even">
+<td>RNN with attention</td>
+<td>2015</td>
+<td>yes</td>
+<td>one, through attention</td>
+</tr>
+<tr class="odd">
+<td>Transformer</td>
+<td>2017</td>
+<td><del>no</del><ins>none</ins></td>
+<td>one</td>
+</tr>
+<tr class="even wc-block-added">
+<td><ins>BERT</ins></td>
+<td><ins>2019</ins></td>
+<td><ins>none</ins></td>
+<td><ins>one</ins></td>
+</tr>
+</tbody>
+</table>
+</section>
+<section class="level2">
+<h2 class="anchored">Encoder–decoder with attention</h2>
+<div class="cell">
+<div class="cell-output-display">
+<div>
+<p></p><figure class="figure"><p></p>
+<div>
+<del class="wc-unit"><pre class="mermaid mermaid-js">flowchart LR
+  src[Source sentence] --&gt; enc[Recurrent encoder]
+  enc --&gt; dec[Recurrent decoder]
+  enc -. every state .-&gt; att[Attention]
+  att --&gt; dec
+  dec --&gt; tgt[Translation]
+</pre></del><ins class="wc-unit"><pre class="mermaid mermaid-js">flowchart LR
+  src[Source sentence] --&gt; enc[Recurrent encoder]
+  enc --&gt; dec[Recurrent decoder]
+  enc -. every state .-&gt; att[Attention weights]
+  att --&gt; dec
+  dec -- query --&gt; att
+  dec --&gt; tgt[Translation]
+</pre></ins>
+</div>
+<p></p></figure><p></p>
+</div>
+</div>
+</div>
+</section>
+<section class="level2">
+<h2 class="anchored">Attention in one line</h2>
+<p>Each token’s output is a weighted average of every token’s <del>value:</del><ins>value, its weights scaled by the key size so the softmax stays smooth:</ins></p>
+<p class="wc-block-removed"><del class="wc-unit"><span class="math display">\[
+\operatorname{Attention}(Q,K,V) = \operatorname{softmax}\left(QK^T\right)V
+\]</span></del></p>
+<p class="wc-block-added"><ins class="wc-unit"><span class="math display">\[
+\operatorname{Attention}(Q,K,V) = \operatorname{softmax}\left(\frac{QK^T}{\sqrt{d_k}}\right)V
+\]</span></ins></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Reading the equation
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>Q, K and V <del>are</del><ins>hold</ins> the queries, keys and values, one row per <del>token.</del><ins>token, and </ins><ins class="wc-unit"><span class="math inline">\(d_k\)</span></ins> <ins>is the key size.</ins></p>
+</div>
+</div>
+<div class="sourceCode"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span><a href="#cb1-1" aria-hidden="true"></a>scores <span class="op">=</span> q <span class="op">@</span> k.T<ins> <span class="op">/</span> np.sqrt(k.shape[<span class="op">-</span><span class="dv">1</span>])</ins></span>
+<span><a href="#cb1-2" aria-hidden="true"></a>weights <span class="op">=</span> softmax(scores, axis<span class="op">=-</span><span class="dv">1</span>)</span>
+<span><a href="#cb1-3" aria-hidden="true"></a>out <span class="op">=</span> weights <span class="op">@</span> v</span></code></pre></div>
+</section>
+<section class="level2">
+<h2 class="anchored">How far a signal travels</h2>
+<div class="cell">
+<div class="cell-output-display">
+<div>
+<p></p><figure class="figure"><p></p>
+<div>
+<del class="wc-unit"><svg width="672" height="480" viewbox="0.00 0.00 358.47 76.10">
+<g class="graph" transform="scale(1 1) rotate(0) translate(4 72.1)">
+<title>path</title>
+<polygon fill="white" stroke="transparent" points="-4,4 -4,-72.1 354.47,-72.1 354.47,4 -4,4"></polygon>
+
+<g class="node">
+<title>t1</title>
+<ellipse fill="none" stroke="black" cx="18.55" cy="-18.55" rx="18.6" ry="18.6"></ellipse>
+<text text-anchor="middle" x="18.55" y="-14.35" font-family="Times,serif" font-size="14.00">t1</text>
+</g>
+
+<g class="node">
+<title>t2</title>
+<ellipse fill="none" stroke="black" cx="114.2" cy="-49.55" rx="18.6" ry="18.6"></ellipse>
+<text text-anchor="middle" x="114.2" y="-45.35" font-family="Times,serif" font-size="14.00">t2</text>
+</g>
+
+<g class="edge">
+<title>t1-&gt;t2</title>
+<path fill="none" stroke="black" d="M36.29,-24.09C50.19,-28.69 70.21,-35.32 86.35,-40.66"></path>
+<polygon fill="black" stroke="black" points="85.69,-44.13 96.28,-43.95 87.89,-37.48 85.69,-44.13"></polygon>
+<text text-anchor="middle" x="66.37" y="-41.75" font-family="Times,serif" font-size="14.00">step</text>
+</g>
+
+<g class="node">
+<title>t4</title>
+<ellipse fill="none" stroke="black" cx="331.93" cy="-18.55" rx="18.6" ry="18.6"></ellipse>
+<text text-anchor="middle" x="331.93" y="-14.35" font-family="Times,serif" font-size="14.00">t4</text>
+</g>
+
+<g class="edge">
+<title>t1-&gt;t4</title>
+<path fill="none" stroke="black" d="M37.18,-18.55C88.76,-18.55 239.68,-18.55 302.73,-18.55"></path>
+<polygon fill="black" stroke="black" points="303.1,-22.05 313.1,-18.55 303.1,-15.05 303.1,-22.05"></polygon>
+<text text-anchor="middle" x="175.24" y="-22.75" font-family="Times,serif" font-size="14.00">attention</text>
+</g>
+
+<g class="node">
+<title>t3</title>
+<ellipse fill="none" stroke="black" cx="236.28" cy="-49.55" rx="18.6" ry="18.6"></ellipse>
+<text text-anchor="middle" x="236.28" y="-45.35" font-family="Times,serif" font-size="14.00">t3</text>
+</g>
+
+<g class="edge">
+<title>t2-&gt;t3</title>
+<path fill="none" stroke="black" d="M132.91,-49.55C152.51,-49.55 184.36,-49.55 207.33,-49.55"></path>
+<polygon fill="black" stroke="black" points="207.49,-53.05 217.49,-49.55 207.49,-46.05 207.49,-53.05"></polygon>
+<text text-anchor="middle" x="175.24" y="-53.75" font-family="Times,serif" font-size="14.00">step</text>
+</g>
+
+<g class="edge">
+<title>t3-&gt;t4</title>
+<path fill="none" stroke="black" d="M254.02,-44.01C267.92,-39.41 287.94,-32.78 304.08,-27.44"></path>
+<polygon fill="black" stroke="black" points="305.62,-30.61 314.01,-24.15 303.42,-23.97 305.62,-30.61"></polygon>
+<text text-anchor="middle" x="284.1" y="-41.75" font-family="Times,serif" font-size="14.00">step</text>
+</g>
+</g>
+</svg></del><ins class="wc-unit"><svg width="672" height="480" viewbox="0.00 0.00 411.74 76.10">
+<g class="graph" transform="scale(1 1) rotate(0) translate(4 72.1)">
+<title>path</title>
+<polygon fill="white" stroke="transparent" points="-4,4 -4,-72.1 407.74,-72.1 407.74,4 -4,4"></polygon>
+
+<g class="node">
+<title>t1</title>
+<ellipse fill="none" stroke="black" cx="18.55" cy="-18.55" rx="18.6" ry="18.6"></ellipse>
+<text text-anchor="middle" x="18.55" y="-14.35" font-family="Times,serif" font-size="14.00">t1</text>
+</g>
+
+<g class="node">
+<title>t2</title>
+<ellipse fill="none" stroke="black" cx="114.2" cy="-49.55" rx="18.6" ry="18.6"></ellipse>
+<text text-anchor="middle" x="114.2" y="-45.35" font-family="Times,serif" font-size="14.00">t2</text>
+</g>
+
+<g class="edge">
+<title>t1-&gt;t2</title>
+<path fill="none" stroke="black" d="M36.29,-24.09C50.19,-28.69 70.21,-35.32 86.35,-40.66"></path>
+<polygon fill="black" stroke="black" points="85.69,-44.13 96.28,-43.95 87.89,-37.48 85.69,-44.13"></polygon>
+<text text-anchor="middle" x="66.37" y="-41.75" font-family="Times,serif" font-size="14.00">step</text>
+</g>
+
+<g class="node">
+<title>t4</title>
+<ellipse fill="none" stroke="black" cx="385.19" cy="-18.55" rx="18.6" ry="18.6"></ellipse>
+<text text-anchor="middle" x="385.19" y="-14.35" font-family="Times,serif" font-size="14.00">t4</text>
+</g>
+
+<g class="edge">
+<title>t1-&gt;t4</title>
+<path fill="none" stroke="black" d="M37.14,-18.55C95.73,-18.55 284.63,-18.55 356.28,-18.55"></path>
+<polygon fill="black" stroke="black" points="356.35,-22.05 366.35,-18.55 356.35,-15.05 356.35,-22.05"></polygon>
+<text text-anchor="middle" x="201.87" y="-22.75" font-family="Times,serif" font-size="14.00">attention, one step</text>
+</g>
+
+<g class="node">
+<title>t3</title>
+<ellipse fill="none" stroke="black" cx="289.54" cy="-49.55" rx="18.6" ry="18.6"></ellipse>
+<text text-anchor="middle" x="289.54" y="-45.35" font-family="Times,serif" font-size="14.00">t3</text>
+</g>
+
+<g class="edge">
+<title>t2-&gt;t3</title>
+<path fill="none" stroke="black" d="M132.77,-49.55C162.88,-49.55 224.56,-49.55 260.62,-49.55"></path>
+<polygon fill="black" stroke="black" points="260.92,-53.05 270.92,-49.55 260.92,-46.05 260.92,-53.05"></polygon>
+<text text-anchor="middle" x="201.87" y="-53.75" font-family="Times,serif" font-size="14.00">step</text>
+</g>
+
+<g class="edge">
+<title>t3-&gt;t4</title>
+<path fill="none" stroke="black" d="M307.29,-44.01C321.18,-39.41 341.21,-32.78 357.34,-27.44"></path>
+<polygon fill="black" stroke="black" points="358.88,-30.61 367.28,-24.15 356.68,-23.97 358.88,-30.61"></polygon>
+<text text-anchor="middle" x="337.37" y="-41.75" font-family="Times,serif" font-size="14.00">step</text>
+</g>
+</g>
+</svg></ins>
+</div>
+<p></p></figure><p></p>
+</div>
+</div>
+</div>
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><del class="wc-unit"><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2NDAiIGhlaWdodD0iMjMwIiB2aWV3Qm94PSIwIDAgNjQwIDIzMCIgZm9udC1mYW1pbHk9InN5c3RlbS11aSwgc2Fucy1zZXJpZiI+Cjx0ZXh0IHg9IjE5MCIgeT0iMjgiIGZvbnQtc2l6ZT0iMTUiIGZpbGw9IiM3YTg3OTQiPkxvbmdlc3QgcGF0aCBiZXR3ZWVuIHR3byB0b2tlbnMsIDUxMi10b2tlbiBzZXF1ZW5jZTwvdGV4dD4KPHRleHQgeD0iMTc4IiB5PSI3NS4xMiIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzdhODc5NCIgdGV4dC1hbmNob3I9ImVuZCI+UmVjdXJyZW50PC90ZXh0Pgo8cmVjdCB4PSIxOTAiIHk9IjUyIiB3aWR0aD0iMzYwLjAiIGhlaWdodD0iMzQiIHJ4PSIzIiBmaWxsPSIjNWI3ZmE2Ii8+Cjx0ZXh0IHg9IjU1OC4wIiB5PSI3NS4xMiIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzdhODc5NCI+NTEyPC90ZXh0Pgo8dGV4dCB4PSIxNzgiIHk9IjEyNy4xMiIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzdhODc5NCIgdGV4dC1hbmNob3I9ImVuZCI+Q29udm9sdXRpb24sIGtlcm5lbCA1PC90ZXh0Pgo8cmVjdCB4PSIxOTAiIHk9IjEwNCIgd2lkdGg9IjkwLjAiIGhlaWdodD0iMzQiIHJ4PSIzIiBmaWxsPSIjNWI3ZmE2Ii8+Cjx0ZXh0IHg9IjI4OC4wIiB5PSIxMjcuMTIiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiM3YTg3OTQiPjEyODwvdGV4dD4KPHRleHQgeD0iMTc4IiB5PSIxNzkuMTIiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiM3YTg3OTQiIHRleHQtYW5jaG9yPSJlbmQiPlNlbGYtYXR0ZW50aW9uPC90ZXh0Pgo8cmVjdCB4PSIxOTAiIHk9IjE1NiIgd2lkdGg9IjIuMCIgaGVpZ2h0PSIzNCIgcng9IjMiIGZpbGw9IiM1YjdmYTYiLz4KPHRleHQgeD0iMjAwLjAiIHk9IjE3OS4xMiIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzdhODc5NCI+MTwvdGV4dD4KPC9zdmc+Cg==" class="img-fluid figure-img"></del><ins class="wc-unit"><img src="lit-review/figures/path-length.svg" class="img-fluid figure-img"></ins></p>
+<figcaption>The longest path a signal takes between two tokens of a sequence, by layer type. The convolution has kernel 5, stride 1 and no dilation, so each layer widens a token’s view by 4 and its path is the number of layers needed to span the sequence.</figcaption>
+</figure>
+</div>
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><del class="wc-unit"><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2NDAiIGhlaWdodD0iMjkwIiB2aWV3Qm94PSIwIDAgNjQwIDI5MCIgZm9udC1mYW1pbHk9InN5c3RlbS11aSwgc2Fucy1zZXJpZiI+Cjx0ZXh0IHg9IjE5MCIgeT0iMjgiIGZvbnQtc2l6ZT0iMTUiIGZpbGw9IiM3YTg3OTQiPlRva2VucyBvbmUgcG9zaXRpb24gc2VlcywgNTEyLXRva2VuIHNlcXVlbmNlPC90ZXh0Pgo8dGV4dCB4PSIxNzgiIHk9Ijc1LjEyIiBmb250LXNpemU9IjE0IiBmaWxsPSIjN2E4Nzk0IiB0ZXh0LWFuY2hvcj0iZW5kIj5Db252b2x1dGlvbiwgbGF5ZXIgMTwvdGV4dD4KPHJlY3QgeD0iMTkwIiB5PSI1MiIgd2lkdGg9IjMuNSIgaGVpZ2h0PSIzNCIgcng9IjMiIGZpbGw9IiM1YjdmYTYiLz4KPHRleHQgeD0iMjAxLjUiIHk9Ijc1LjEyIiBmb250LXNpemU9IjE0IiBmaWxsPSIjN2E4Nzk0Ij41PC90ZXh0Pgo8dGV4dCB4PSIxNzgiIHk9IjEyNy4xMiIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzdhODc5NCIgdGV4dC1hbmNob3I9ImVuZCI+Q29udm9sdXRpb24sIGxheWVyIDI8L3RleHQ+CjxyZWN0IHg9IjE5MCIgeT0iMTA0IiB3aWR0aD0iNi4zIiBoZWlnaHQ9IjM0IiByeD0iMyIgZmlsbD0iIzViN2ZhNiIvPgo8dGV4dCB4PSIyMDQuMyIgeT0iMTI3LjEyIiBmb250LXNpemU9IjE0IiBmaWxsPSIjN2E4Nzk0Ij45PC90ZXh0Pgo8dGV4dCB4PSIxNzgiIHk9IjE3OS4xMiIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzdhODc5NCIgdGV4dC1hbmNob3I9ImVuZCI+Q29udm9sdXRpb24sIGxheWVyIDM8L3RleHQ+CjxyZWN0IHg9IjE5MCIgeT0iMTU2IiB3aWR0aD0iOS4xIiBoZWlnaHQ9IjM0IiByeD0iMyIgZmlsbD0iIzViN2ZhNiIvPgo8dGV4dCB4PSIyMDcuMSIgeT0iMTc5LjEyIiBmb250LXNpemU9IjE0IiBmaWxsPSIjN2E4Nzk0Ij4xMzwvdGV4dD4KPHRleHQgeD0iMTc4IiB5PSIyMzEuMTIiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiM3YTg3OTQiIHRleHQtYW5jaG9yPSJlbmQiPlNlbGYtYXR0ZW50aW9uLCBsYXllciAxPC90ZXh0Pgo8cmVjdCB4PSIxOTAiIHk9IjIwOCIgd2lkdGg9IjM2MC4wIiBoZWlnaHQ9IjM0IiByeD0iMyIgZmlsbD0iIzViN2ZhNiIvPgo8dGV4dCB4PSI1NTguMCIgeT0iMjMxLjEyIiBmb250LXNpemU9IjE0IiBmaWxsPSIjN2E4Nzk0Ij41MTI8L3RleHQ+Cjwvc3ZnPgo=" class="img-fluid figure-img"></del><ins class="wc-unit"><img src="lit-review/figures/seen-2048-by-layer.svg" class="img-fluid figure-img"></ins></p>
+<figcaption>The tokens one position can see after each layer of that convolution, in a <del>512-token</del><ins>2,048-token</ins> sequence.</figcaption>
+</figure>
+</div>
+</section>
+<section class="level2">
+<h2 class="anchored">Takeaways</h2>
+<ul>
+<li>Recurrence reads one token at a time, so the tokens of a sequence can’t be processed in parallel during training.</li>
+<li>Gating eases, but doesn’t remove, the long path between distant tokens.</li>
+<li>A fixed-size final state limits how much of a long input sentence a decoder can draw on.</li>
+<li>Convolutions shorten the path, but only by stacking more layers as the span grows.</li>
+<li>Attention connects every pair of tokens in one <del>step.</del><ins>step, however far apart they are.</ins></li>
+<li>The Transformer drops recurrence entirely.</li>
+<li class="wc-block-added"><ins>BERT pre-trains the Transformer’s encoder alone, reading in both directions.</ins></li>
+</ul>
+
+
+
+</section>
+
+<div class="default"><section class="quarto-appendix-contents" role="doc-bibliography"><h2 class="anchored quarto-appendix-heading">References</h2><div class="references csl-bib-body hanging-indent" role="list">
+<div class="csl-entry wc-block-added" role="listitem">
+<ins>Devlin, Jacob, Ming-Wei Chang, Kenton Lee, and Kristina Toutanova. 2019. <span>“<span>BERT</span>: Pre-Training of Deep Bidirectional Transformers for Language Understanding.”</span> <a href="https://arxiv.org/abs/1810.04805">https://arxiv.org/abs/1810.04805</a>.
+</ins></div>
+<div class="csl-entry" role="listitem">
+Vaswani, Ashish, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N. Gomez, Lukasz Kaiser, and Illia Polosukhin. 2017. <span>“Attention Is All You Need.”</span> <a href="https://arxiv.org/abs/1706.03762">https://arxiv.org/abs/1706.03762</a>.
+</div>
+</div></section></div></div>
+</section>
+</main>
+</div><script>
+(function () {
+  "use strict";
+  var STEP = 20;         // what one arrow opens
+  var MIN_CHARS = 260;   // don't bother folding a small gap of blocks
+  var MIN_BLOCKS = 1;    // a rendered block can contain an entire long section
+  var CONTEXT = 1;       // unchanged blocks kept visible beside a change
+  var MAX_CONTEXT_CHARS = 500; // fold large neighbors instead of treating them as context
+  var LINE_CONTEXT = 3;  // source lines kept visible beside a change
+  var MIN_LINES = 3;     // fewest source lines worth a strip
+  var strips = [];
+  var TAG_NAMES = {"section":"section","figure":"figure","p":"paragraph","h1":"heading","h2":"heading","h3":"heading","h4":"heading","h5":"heading","h6":"heading","li":"list item","dd":"list item","dt":"list item","wc-ln":"source line","ul":"list","ol":"list","dl":"list","tr":"table row","table":"table","thead":"table","tbody":"table","tfoot":"table","caption":"table","colgroup":"table","col":"table","td":"table","th":"table","div":"block","article":"block","aside":"block","blockquote":"block","details":"block","summary":"block","figcaption":"block","header":"block","footer":"block","main":"block","nav":"block","address":"block","hr":"block","pre":"code block"};
+  var CLASS_NAMES = {"callout":"callout","sourceCode":"code block","quarto-figure":"figure","cell":"cell"};
+
+  // What a hidden run is called in a reader's terms: "3 paragraphs", "2 list
+  // items", "3 paragraphs and 1 list item", "12 lines"; past two kinds, "parts".
+  function nameOf(el) {
+    for (var c in CLASS_NAMES) if (el.classList.contains(c)) return CLASS_NAMES[c];
+    return TAG_NAMES[el.tagName.toLowerCase()] || "part";
+  }
+  function count(n, name) { return n + " " + name + (n === 1 ? "" : "s"); }
+  function unchanged(hidden, lines) {
+    var counts = {}, order = [];
+    hidden.forEach(function (el) {
+      var name = lines ? "line" : nameOf(el);
+      if (!(name in counts)) { counts[name] = 0; order.push(name); }
+      counts[name]++;
+    });
+    var text = order.length > 2 ? count(hidden.length, "part") :
+      order.map(function (name) { return count(counts[name], name); }).join(" and ");
+    return text.replace(" ", " unchanged ");
+  }
+
+  // Be conservative about where we insert the block-level strip. A denylist is
+  // unsafe here: besides tables/lists, phrasing-only containers such as
+  // paragraphs, headings, and summaries cannot contain one. Unknown containers
+  // are therefore traversal-only. This allowlist covers the ordinary
+  // flow-content containers emitted by Quarto in which a strip is valid. A list
+  // and a table body take a strip of their own kind (`stripFor`): a div is not
+  // a valid child of either.
+  var FOLD_CONTAINERS = { BODY: 1, DIV: 1, MAIN: 1, ARTICLE: 1, SECTION: 1,
+    NAV: 1, ASIDE: 1, HEADER: 1, FOOTER: 1, BLOCKQUOTE: 1, FIGURE: 1,
+    FIGCAPTION: 1, LI: 1, DD: 1, TD: 1, TH: 1, UL: 1, OL: 1, TBODY: 1,
+    THEAD: 1, TFOOT: 1 };
+  var ROW_GROUPS = { TBODY: 1, THEAD: 1, TFOOT: 1 };
+
+  // Out-of-flow or hidden subtrees — an absolutely-positioned hover popover /
+  // tooltip, a display:none or visibility:hidden aside — are not part of the
+  // readable diff flow. Folding their "unchanged" inner blocks is pointless and
+  // corrupting: e.g. an inline hover-popover attached to a claim would have its
+  // quote folded away until the reader hovers. Skip such subtrees entirely
+  // (don't recurse into them, never fold them).
+  function inFlow(el) {
+    var view = el.ownerDocument.defaultView;
+    var s = view && view.getComputedStyle ? view.getComputedStyle(el) : null;
+    if (!s) return true;
+    if (s.display === "none" || s.visibility === "hidden") return false;
+    if (s.position === "absolute" || s.position === "fixed") return false;
+    return true;
+  }
+  // Every mark the engine puts on a change: words (ins, del), the old and new
+  // copy of an edited block, an added or removed block, a changed link target or
+  // formatting, a claim's evidence gained or lost. An edit with no word marks
+  // (a link's href) is still an edit.
+  var CHANGE = "ins, del, .wc-edit-old, .wc-edit-new, .wc-block-added, " +
+    ".wc-block-removed, .wc-link-was, .wc-link-changed, .wc-fmt-changed, " +
+    ".wc-ev-chip";
+  function hasChange(el) {
+    return el.matches(CHANGE) || !!el.querySelector(CHANGE);
+  }
+  function button(bar, label, title, onclick) {
+    var b = document.createElement("button");
+    b.type = "button";
+    b.textContent = label;
+    b.title = title;
+    b.addEventListener("click", onclick);
+    bar.appendChild(b);
+    return b;
+  }
+  // The strip's element and the one the buttons go in: an li in a list, a row
+  // with one cell across the table in a table body, a div anywhere else.
+  function stripFor(container) {
+    var tag = container.tagName;
+    var bar = document.createElement(tag === "UL" || tag === "OL" ? "li" :
+      ROW_GROUPS[tag] ? "tr" : "div");
+    bar.className = "wc-strip";
+    if (!ROW_GROUPS[tag]) return { bar: bar, host: bar };
+    var width = 1;
+    Array.prototype.forEach.call(container.children, function (row) {
+      var n = 0;
+      Array.prototype.forEach.call(row.children, function (cell) {
+        n += parseInt(cell.getAttribute("colspan"), 10) || 1;
+      });
+      width = Math.max(width, n);
+    });
+    var cell = document.createElement("td");
+    cell.setAttribute("colspan", String(width));
+    var inner = document.createElement("div");
+    inner.className = "wc-strip-bar";
+    cell.appendChild(inner);
+    bar.appendChild(cell);
+    return { bar: bar, host: inner };
+  }
+  // Hide `run` (sibling elements) behind one strip placed where they were.
+  // `above` / `below`: a change sits next to the run on that side, so the arrow
+  // that opens from it is offered.
+  function collapse(container, run, lines, above, below) {
+    var hidden = run.slice();
+    var made = stripFor(container);
+    var bar = made.bar;
+    var down = button(made.host, "↓", "Show " + STEP + " more below the change above",
+      function () { open(hidden.splice(0, STEP)); });
+    var up = button(made.host, "↑", "Show " + STEP + " more above the change below",
+      function () { open(hidden.splice(-STEP)); });
+    var more = button(made.host, "", "Show all", function () { open(hidden.splice(0)); });
+    more.className = "wc-more";
+    function show() {
+      var n = hidden.length;
+      more.textContent = "⋯ " + unchanged(hidden, lines);
+      down.hidden = !above;
+      up.hidden = !below;
+      if (n) container.insertBefore(bar, hidden[0]);
+      else bar.remove();
+    }
+    function open(els) {
+      els.forEach(function (el) { el.hidden = false; });
+      show();
+    }
+    strips.push({
+      all: function () { open(hidden.splice(0)); },
+      fold: function () {
+        run.forEach(function (el) { el.hidden = true; });
+        hidden = run.slice();
+        show();
+      }
+    });
+    strips[strips.length - 1].fold();
+  }
+  // Hidden items are not counted by an ordered list, so the item that follows a
+  // folded run says its own number.
+  function numberAfter(list, kids, at) {
+    if (list.tagName !== "OL" || at >= kids.length) return;
+    var reversed = list.hasAttribute("reversed");
+    var start = parseInt(list.getAttribute("start"), 10);
+    if (isNaN(start)) start = reversed ? kids.length : 1;
+    kids[at].setAttribute("value", String(reversed ? start - at : start + at));
+  }
+  function fold(container) {
+    var kids = Array.prototype.slice.call(container.children);
+    if (!kids.length) return;
+    var lines = container.classList.contains("wc-src");
+    var changed = kids.map(hasChange);
+    var flow = kids.map(inFlow);
+    var keep = kids.map(function () { return false; });
+    kids.forEach(function (el, k) {
+      if (!changed[k]) return;
+      var around = lines ? LINE_CONTEXT : CONTEXT;
+      for (var j = Math.max(0, k - around);
+           j <= Math.min(kids.length - 1, k + around); j++) {
+        // Rendered blocks are not source lines: a single sibling can contain a
+        // whole section. Keep compact neighbors as context, but fold large ones.
+        keep[j] = changed[j] || lines ||
+          kids[j].textContent.length <= MAX_CONTEXT_CHARS;
+      }
+    });
+    // Out-of-flow/hidden children are never folded and act as run boundaries.
+    // (After the context pass so it can't be undone by a neighbor's window.)
+    kids.forEach(function (el, k) { if (!flow[k]) keep[k] = true; });
+    // Recurse into changed, in-flow containers before folding sibling runs — but
+    // never into an <ins>/<del> wrapper. Those wrap a run of inserted/deleted
+    // inline content, inside which nothing is "unchanged"; recursing there makes
+    // hasChange() see every child as unchanged (no ins/del *descendant*) and fold
+    // real inserted text — e.g. hiding a claim's hover-popover quote behind a
+    // bogus "N unchanged blocks" strip.
+    kids.forEach(function (el, k) {
+      if (changed[k] && flow[k] && el.children.length && !lines &&
+          el.tagName !== "INS" && el.tagName !== "DEL") fold(el);
+    });
+    // Only fold sibling runs where a block-level strip is a valid child. Still
+    // recurse through other containers so a changed table cell or list item can
+    // fold its own flow-content children.
+    if (!FOLD_CONTAINERS[container.tagName]) return;
+    var start = 0;
+    while (start < kids.length) {
+      if (keep[start]) { start++; continue; }
+      var end = start;
+      while (end < kids.length && !keep[end]) end++;
+      var run = kids.slice(start, end);
+      var chars = run.reduce(function (a, el) { return a + el.textContent.length; }, 0);
+      if (lines ? run.length >= MIN_LINES
+                : run.length >= MIN_BLOCKS && chars >= MIN_CHARS) {
+        numberAfter(container, kids, end);
+        collapse(container, run, lines, start > 0, end < kids.length);
+      }
+      start = end;
+    }
+  }
+  var allOpen = false;
+  function setAll(open) {
+    allOpen = open;
+    strips.forEach(function (s) { open ? s.all() : s.fold(); });
+  }
+  function addToolbar() {
+    if (!strips.length) return;
+    var anchor = document.querySelector("section.page-diff");
+    if (!anchor) return;
+    var bar = document.createElement("div");
+    bar.className = "wc-toolbar";
+    var btn = button(bar, "Expand all unchanged", "", function () {
+      setAll(!allOpen);
+      btn.textContent = allOpen ? "Collapse all unchanged" : "Expand all unchanged";
+    });
+    anchor.parentNode.insertBefore(bar, anchor);
+  }
+  // A wholly added or removed block whose first line hangs out to the left of
+  // the rest (a reference: a negative text-indent) is shaded from its padding
+  // edge, so the first line would stand on no shade. Grow the block left by the
+  // overhang and pad it by the same, so that the text stays where it was and
+  // the shade covers the first line too.
+  function shadeHanging(root) {
+    Array.prototype.forEach.call(
+      root.querySelectorAll(".wc-block-added, .wc-block-removed"), function (block) {
+        var view = block.ownerDocument.defaultView;
+        var s = view && view.getComputedStyle ? view.getComputedStyle(block) : null;
+        var hang = s ? parseFloat(s.textIndent) : NaN;
+        if (!(hang < 0) || s.display !== "block" || block.hasAttribute("data-wc-hang")) return;
+        block.setAttribute("data-wc-hang", "");
+        block.style.marginLeft = (parseFloat(s.marginLeft) || 0) + hang + "px";
+        block.style.paddingLeft = (parseFloat(s.paddingLeft) || 0) - hang + "px";
+      });
+  }
+  function run() {
+    // The workspace page's diff bodies, source views, and any container a page
+    // outside the workspace marks with data-wc-fold. A container inside another
+    // is folded by the outer one's recursion, not twice.
+    var targets = Array.prototype.slice.call(document.querySelectorAll(
+      "section.page-diff.changed .diff-body, .wc-src, [data-wc-fold]"));
+    targets.filter(function (t) {
+      return !targets.some(function (o) { return o !== t && o.contains(t); });
+    }).forEach(fold);
+    addToolbar();
+    shadeHanging(document);
+  }
+  if (typeof window !== "undefined") window.wcFold = { fold: fold, setAll: setAll };
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", run);
+  } else { run(); }
+})();
+</script><script>
+(function () {
+  "use strict";
+  document.querySelectorAll(".paper-view").forEach(function (view) {
+    var frame = view.querySelector("object");
+    var expand = view.querySelector(".paper-expand");
+    var buttons = view.querySelectorAll(".paper-modes button");
+    buttons.forEach(function (button) {
+      button.addEventListener("click", function () {
+        var next = frame.cloneNode(true);
+        next.setAttribute("data", button.getAttribute("data-pdf") + "#navpanes=0&view=FitH");
+        // Where a browser can't show the PDF inline, its link opens the same one.
+        var fallback = next.querySelector("a");
+        if (fallback) fallback.setAttribute("href", button.getAttribute("data-pdf"));
+        frame.replaceWith(next);
+        frame = next;
+        buttons.forEach(function (other) {
+          other.setAttribute("aria-pressed", String(other === button));
+        });
+      });
+    });
+    // The reader's place is kept relative to the paper's section: while the
+    // paper has the whole window it leaves the page, the page gets shorter, and
+    // the PDF settles back in over a moment, so the browser would otherwise
+    // leave the reader elsewhere (scroll anchoring is off while it settles).
+    var section = view.closest("section") || view;
+    var offset = 0;
+    function top() {
+      return section.getBoundingClientRect().top + window.scrollY;
+    }
+    function setFull(full) {
+      if (full === view.classList.contains("paper-full")) return;
+      var root = document.documentElement;
+      if (full) offset = window.scrollY - top();
+      else root.style.overflowAnchor = "none";
+      view.classList.toggle("paper-full", full);
+      document.body.style.overflow = full ? "hidden" : "";
+      expand.setAttribute("aria-pressed", String(full));
+      expand.title = full ? "Back to the report" : "Give the paper the whole window";
+      // A key pressed inside the PDF goes to the browser's PDF viewer, not to
+      // the page: the focus stays on the bar's button, so that Escape reaches us.
+      expand.focus({ preventScroll: true });
+      if (full) return;
+      var back = function () { window.scrollTo(0, top() + offset); };
+      requestAnimationFrame(function () {
+        back();
+        setTimeout(back, 150);
+        setTimeout(function () { back(); root.style.overflowAnchor = ""; }, 500);
+      });
+    }
+    expand.addEventListener("click", function () {
+      setFull(!view.classList.contains("paper-full"));
+    });
+    document.addEventListener("keydown", function (event) {
+      if (event.key === "Escape" && view.classList.contains("paper-full")) setFull(false);
+    });
+  });
+})();
+</script><script>
+(function () {
+  "use strict";
+  var STACK = "wc-pair-stack";
+  function num(v) {
+    var n = parseFloat(v);
+    return isFinite(n) && n > 0 ? n : 0;
+  }
+  // A width written as a plain number of pixels (not a percentage or a unit).
+  function attrPx(el, name) {
+    var v = el.getAttribute(name);
+    return v && /^\s*[0-9.]+\s*(px)?\s*$/i.test(v) ? num(v) : 0;
+  }
+  // The width a figure is drawn at when nothing scales it, or 0 when not known.
+  function natural(unit) {
+    var el = unit.querySelector("img, svg");
+    if (!el) return 0;
+    if (el.localName === "img") return attrPx(el, "width") || num(el.naturalWidth);
+    var cap = /max-width:\s*([0-9.]+)px/i.exec(el.getAttribute("style") || "");
+    if (cap) return num(cap[1]);
+    var w = attrPx(el, "width");
+    if (w) return w;
+    var box = (el.getAttribute("viewBox") || "").trim().split(/[\s,]+/);
+    return box.length === 4 ? num(box[2]) : 0;
+  }
+  // The room one unit has side by side: its box less its padding.
+  function room(unit) {
+    var style = window.getComputedStyle ? window.getComputedStyle(unit) : null;
+    var pad = style ? num(style.paddingLeft) + num(style.paddingRight) : 0;
+    return unit.clientWidth - pad;
+  }
+  function units(parent) {
+    var out = [], ok = true;
+    Array.prototype.forEach.call(parent.children, function (c) {
+      var u = /^(del|ins)$/.test(c.localName) && c.classList.contains("wc-unit");
+      if (u) out.push(c); else ok = false;
+    });
+    var kinds = out.map(function (u) { return u.localName; });
+    return ok && kinds.indexOf("del") >= 0 && kinds.indexOf("ins") >= 0 ? out : null;
+  }
+  function pairs() {
+    var seen = [], found = [];
+    Array.prototype.forEach.call(
+      document.querySelectorAll("del.wc-unit, ins.wc-unit"), function (u) {
+        var parent = u.parentElement;
+        if (!parent || seen.indexOf(parent) >= 0) return;
+        seen.push(parent);
+        var list = /^(p|div|figure)$/.test(parent.localName) && units(parent);
+        if (list) found.push({ parent: parent, units: list });
+      });
+    return found;
+  }
+  function figures(pair) {
+    return pair.units.map(function (u) { return u.querySelector("img, svg"); })
+      .filter(Boolean);
+  }
+  function layout() {
+    var all = pairs();
+    // Side by side first, so that every measure is of that layout.
+    all.forEach(function (pair) {
+      pair.parent.classList.remove(STACK);
+      figures(pair).forEach(function (f) { f.style.width = ""; });
+    });
+    all.forEach(function (pair) {
+      pair.wide = pair.units.some(function (u) {
+        var w = natural(u), r = room(u);
+        return w > 0 && r > 0 && w > r;
+      });
+      pair.widths = pair.units.map(natural);
+    });
+    all.forEach(function (pair) {
+      if (!pair.wide) return;
+      pair.parent.classList.add(STACK);
+      pair.units.forEach(function (u, i) {
+        var f = u.querySelector("img, svg");
+        if (f && pair.widths[i]) f.style.width = "min(" + pair.widths[i] + "px, 100%)";
+      });
+    });
+  }
+  window.wcPairLayout = layout;
+  // An image with no size yet lays the pair out again when it has one.
+  Array.prototype.forEach.call(document.querySelectorAll(".wc-unit img"), function (img) {
+    if (!img.complete) img.addEventListener("load", layout);
+  });
+  var queued = false;
+  window.addEventListener("resize", function () {
+    if (queued) return;
+    queued = true;
+    (window.requestAnimationFrame || window.setTimeout)(function () {
+      queued = false;
+      layout();
+    });
+  });
+  if (document.readyState === "complete") layout();
+  else window.addEventListener("load", layout);
+})();
+</script><script>window.MathJax = {"tex": {"inlineMath": [["\\(", "\\)"]], "displayMath": [["\\[", "\\]"]]}, "options": {"ignoreHtmlClass": "wc-src", "safeOptions": {"allow": {"URLs": "safe", "classes": "safe", "cssIDs": "safe", "styles": "safe"}, "safeProtocols": {"http": true, "https": true, "file": false, "javascript": false, "data": false}}}, "startup": {"typeset": false}};window.MathJax.startup.ready = function () {};</script><script src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-chtml-full.js" integrity="sha384-NR8saakDju74wZ6sprPPhEoWbaP3iVtXVJH12mRSiaIgxMdi33mOQj8bnF2WxzY3" crossorigin="anonymous"></script><script src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/ui/safe.js" integrity="sha384-BAIqbtawDyB5QXh8BrGd4h2FmhlZB70FJqMpHt2LxKkPSRa29VXhrB/DV3xLP+/B" crossorigin="anonymous"></script><script>(function () { var m = window.MathJax; if (m && m.startup && m.startup.defaultReady && m._ && m._.ui && m._.ui.safe) { m.startup.defaultReady(); m.startup.promise = m.startup.promise.then(function () { return m.typesetPromise(); }); } })();</script><script src="https://cdn.jsdelivr.net/npm/mermaid@11.12.0/dist/mermaid.min.js" integrity="sha384-o+g/BxPwhi0C3RK7oQBxQuNimeafQ3GE/ST4iT2BxVI4Wzt60SH4pq9iXVYujjaS" crossorigin="anonymous"></script><script>
+(function () {
+  "use strict";
+  var mermaid = window.mermaid;
+  var pres = Array.prototype.slice.call(
+    document.querySelectorAll(".wc-unit > pre.mermaid"));
+  // No Mermaid (the script did not load), or nothing to draw: the text stays.
+  if (!mermaid || !pres.length || !mermaid.initialize || !mermaid.render) return;
+  var root = document.documentElement;
+  var mode = root.getAttribute("data-wc-mode");
+  var dark = mode ? mode === "dark" : !!(window.matchMedia &&
+    window.matchMedia("(prefers-color-scheme: dark)").matches);
+  var config = {"startOnLoad": false, "securityLevel": "strict", "suppressErrorRendering": true, "logLevel": "fatal", "secure": ["secure", "securityLevel", "startOnLoad", "maxTextSize", "suppressErrorRendering", "maxEdges", "themeCSS", "logLevel"]};
+  config.theme = dark ? "dark" : "default";
+  try { mermaid.initialize(config); } catch (e) { return; }
+  var DROP = /^(script|iframe|object|embed|animate|set|animatetransform|animatemotion)$/i;
+  // The SVG Mermaid returns was sanitized by its strict mode; this is a second,
+  // independent pass over it, in a document that runs nothing: no script, no
+  // event handler, and no link or reference but one inside the drawing.
+  function scrub(node) {
+    Array.prototype.slice.call(node.children).forEach(function (child) {
+      if (DROP.test(child.localName || "")) { child.remove(); return; }
+      Array.prototype.slice.call(child.attributes).forEach(function (a) {
+        var n = a.name.toLowerCase();
+        var ref = n === "href" || n === "xlink:href" || n === "src";
+        if (n.indexOf("on") === 0 || (ref && a.value.trim().charAt(0) !== "#"))
+          child.removeAttribute(a.name);
+      });
+      scrub(child);
+    });
+  }
+  function draw(pre, svg) {
+    var doc = new DOMParser().parseFromString(
+      "<!doctype html><html><body>" + svg + "</body></html>", "text/html");
+    scrub(doc.body);
+    var kept = Array.prototype.slice.call(doc.body.childNodes);
+    if (!doc.body.querySelector("svg")) return false;
+    while (pre.firstChild) pre.removeChild(pre.firstChild);
+    kept.forEach(function (n) { pre.appendChild(document.importNode(n, true)); });
+    pre.setAttribute("data-wc-drawn", "");
+    return true;
+  }
+  // One diagram at a time, each its own failure: a diagram that does not parse
+  // stays as its text. Drawn once the page and its fonts have loaded, as the
+  // site's own script draws, so that Mermaid measures the labels it will show.
+  function start() {
+    var chain = Promise.resolve();
+    pres.forEach(function (pre, i) {
+      chain = chain.then(function () {
+        var id = "wc-mermaid-" + i;
+        var text = pre.textContent.replace(/\u00a0/g, " ");
+        return Promise.resolve().then(function () { return mermaid.render(id, text); })
+          .then(function (out) { draw(pre, out && out.svg); })
+          .catch(function () {})
+          .then(function () {
+            var left = document.getElementById("d" + id) || document.getElementById(id);
+            if (left && !pre.contains(left)) left.remove();
+          });
+      });
+    });
+    // A drawing has a size now: a pair too wide for half the column is stacked.
+    chain.then(function () { if (window.wcPairLayout) window.wcPairLayout(); });
+  }
+  if (document.readyState === "complete") start();
+  else window.addEventListener("load", start);
+})();
+</script><style>
+.deck-live .dr-bar{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;margin:.5rem 0}
+.deck-live .dr-seg{margin-left:auto;display:inline-flex;border:1px solid rgba(127,127,127,.6);border-radius:8px;overflow:hidden}
+.deck-live .dr-seg button{font:inherit;background:none;color:inherit;border:0;padding:4px 12px;cursor:pointer;opacity:.7}
+.deck-live .dr-seg button[aria-pressed=true]{background:rgba(127,127,127,.3);font-weight:600;opacity:1}
+.deck-live .dr-pair{display:grid;grid-template-columns:minmax(0,1fr);gap:10px}
+.deck-live[data-view=before] .dr-pair{grid-template-columns:repeat(2,minmax(0,1fr))}
+/* Before and After side by side while each gets 320px, else one above the other;
+   the deck's own width decides, whatever page holds it. */
+.deck-live{container:deck-live / inline-size}
+@container deck-live (max-width: 649px){.deck-live[data-view=before] .dr-pair{grid-template-columns:minmax(0,1fr)}}
+.deck-live figure{margin:0;min-width:0}.deck-live figcaption{font-size:.8rem;opacity:.75}
+.deck-live[data-view=marked] figure:not([data-view~=marked]),
+.deck-live[data-view=clean] figure:not([data-view~=clean]),
+.deck-live[data-view=before] figure:not([data-view~=before]){display:none}
+.deck-live iframe{width:100%;aspect-ratio:16/9;border:1px solid #888;display:block}
+.deck-live figure.dr-old iframe,.deck-live figure.dr-new iframe{border-radius:6px}
+.deck-live figure.dr-old iframe{border-color:var(--wc-del-line,#c41d2c)}
+.deck-live figure.dr-new iframe{border-color:var(--wc-ins-line,#2a7a12)}
+.deck-live figure.dr-old figcaption,.deck-live figure.dr-new figcaption{font:600 .72rem/1.3 system-ui,sans-serif;letter-spacing:.02em;margin-bottom:.35rem;opacity:1}
+.deck-live figure.dr-old figcaption{color:var(--wc-del-line,#c41d2c)}
+.deck-live figure.dr-new figcaption{color:var(--wc-ins-line,#2a7a12)}
+.deck-live h3{font-size:1rem}
+.wc-expander{margin:8px 0}
+</style><script>
+document.querySelectorAll('.deck-live').forEach(root => {
+ // Load only shown frames, near the viewport and a few at a time, so that an
+ // opened fold does not start dozens at once. A frame is one slide's small
+ // document, so a few at a time keep the slides in view ahead of the scroll.
+ const shown = f => f.closest('figure').offsetParent !== null;
+ const queue = []; let active = 0;
+ const start = f => {
+  active++; let done = false;
+  const finish = () => { if (!done) { done = true; active--; pump(); } };
+  f.addEventListener('load', finish, {once: true}); setTimeout(finish, 8000);
+  f.src = f.dataset.src; f.removeAttribute('data-src');
+ };
+ const near = 'IntersectionObserver' in window && new IntersectionObserver(entries => entries.forEach(e => {
+  if (e.isIntersecting && e.target.dataset.src) { near.unobserve(e.target); queue.push(e.target); }
+ }) || pump(), {rootMargin: '300px 0px'});
+ const pump = () => {
+  queue.sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top);
+  while (active < 4 && queue.length) {
+   const f = queue.shift();
+   if (!f.dataset.src) continue;
+   if (shown(f)) start(f); else near.observe(f);
+  }
+ };
+ const load = () => root.querySelectorAll('iframe[data-src]').forEach(f => {
+  if (!near) { if (shown(f)) { f.src = f.dataset.src; f.removeAttribute('data-src'); } return; }
+  near.observe(f);
+ });
+ root.querySelectorAll('.dr-seg button').forEach(b => b.addEventListener('click', () => {
+  root.dataset.view = b.dataset.v;
+  root.querySelectorAll('.dr-seg button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+  load();
+  // A frame that finished loading while hidden laid out at no size: ask its
+  // Reveal to fit it now. Frames are sandboxed, so only a message reaches them.
+  root.querySelectorAll('iframe[src]').forEach(f => {
+   if (shown(f) && f.contentWindow) f.contentWindow.postMessage('{"method":"layout"}', '*');
+  });
+ }));
+ root.querySelectorAll('details').forEach(details => details.addEventListener('toggle', () => {
+  const template = details.querySelector('template');
+  if (details.open && template) template.replaceWith(template.content.cloneNode(true));
+  load();
+ }));
+ load();
+});
+</script></body></html>
