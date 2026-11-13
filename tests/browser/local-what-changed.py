@@ -89,6 +89,44 @@ SLIDE_FITS_JS = (
     f"() => {{ const [top, bottom, height, viewport] = ({SLIDE_BOX_JS})();"
     " return height > 0 && top >= -1 && bottom <= viewport + 1; }"
 )
+SLIDE_SIDES_JS = (
+    "() => { const r = Reveal.getCurrentSlide().getBoundingClientRect();"
+    " return [r.left, r.right, r.width, innerWidth]; }"
+)
+SLIDE_FITS_ACROSS_JS = (
+    f"() => {{ const [left, right, width, viewport] = ({SLIDE_SIDES_JS})();"
+    " return width > 0 && left >= -1 && right <= viewport + 1; }"
+)
+
+
+def check_pair_fits_narrow(browser, url):
+    """On a narrow screen a changed slide's Before and After stack, one above the
+    other, and each slide fits its frame rather than being cut at the sides, down
+    to a 320px phone."""
+    for width in (600, 320):
+        page = browser.new_page(viewport={"width": width, "height": 900})
+        page.goto(url)
+        page.locator(".deck-review").wait_for()
+        page.locator('.dr-seg button[data-v="before"]').first.click()
+        pairs = [
+            figures
+            for pair in page.locator(".deck-live .dr-pair:visible").all()
+            if len(figures := pair.locator("figure:visible").all()) == 2
+        ]
+        assert pairs, "no changed slide shows Before and After"
+        first, second = (figure.bounding_box() for figure in pairs[0])
+        assert second["y"] >= first["y"] + first["height"] - 1, (width, first, second)
+        for figure in pairs[0]:
+            frame = figure.locator("iframe")
+            frame.scroll_into_view_if_needed()
+            child = frame.element_handle().content_frame()
+            child.wait_for_function(READY_JS)
+            try:
+                child.wait_for_function(SLIDE_FITS_ACROSS_JS, timeout=5000)
+            except PlaywrightTimeoutError:
+                sides = child.evaluate(SLIDE_SIDES_JS)
+                raise AssertionError((width, sides)) from None
+        page.close()
 
 
 def shown_scales(page):
@@ -231,7 +269,8 @@ def check(project, artifacts):
             page.goto(f"http://127.0.0.1:{server.server_address[1]}/what-changed.html")
             page.locator(".deck-review").wait_for()
             assert page.locator(".dr-changed").count() > 0
-            assert page.locator(".dr-new").count() == 1
+            # A slide card's kind is its class; a figure's dr-new is its side.
+            assert page.locator("article.dr-new").count() == 1
             # Only the edited and added slides are shown; the rest fold away.
             looks = page.locator(".dr-look")
             if looks.count():
@@ -240,6 +279,10 @@ def check(project, artifacts):
             assert looks.count() == 0, looks.locator("h3").all_text_contents()
             assert page.locator("details.dr-unchanged").count() > 0
             check_frames_fit_after_view_switch(
+                browser,
+                f"http://127.0.0.1:{server.server_address[1]}/what-changed.html",
+            )
+            check_pair_fits_narrow(
                 browser,
                 f"http://127.0.0.1:{server.server_address[1]}/what-changed.html",
             )

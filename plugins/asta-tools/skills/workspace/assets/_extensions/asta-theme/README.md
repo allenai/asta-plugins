@@ -10,7 +10,11 @@ and [`asta/tokens.json`](https://github.com/allenai/design/blob/main/asta/tokens
   body links use its teal interactive token (8.00:1) for readable text.
 - `asta.css` — shared, mode-independent rules: one font (Manrope; Roboto Mono
   for code), one type scale, and a sticky section heading so a reader of a long
-  page can see where they are. Toggling modes changes colors only.
+  page can see where they are. Toggling modes changes colors only. It also
+  gives Mermaid edge labels the theme's label colors, which Mermaid's own grey
+  label boxes otherwise cover. Both SCSS files set `$mermaid-edge-color` to the
+  text color, so that edge lines and arrowheads reach 12:1 or more in each mode
+  (Quarto's default is 1.8:1 in dark and 1.4:1 in light).
 - `fonts/` — Manrope and Roboto Mono as variable WOFF2 files from
   [google/fonts](https://github.com/google/fonts), each beside its SIL Open
   Font License 1.1 text (no Reserved Font Names). Serving them from the site

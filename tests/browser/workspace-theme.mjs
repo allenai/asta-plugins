@@ -319,7 +319,7 @@ try {
     assert.equal(actual.background, scenario.mode === "dark" ? "rgb(3, 38, 41)" : "rgb(250, 242, 233)");
     assert.equal(actual.text, scenario.mode === "dark" ? "rgb(250, 242, 233)" : "rgb(10, 50, 53)");
     assert.match(actual.font, /Manrope/);
-    assert.equal(actual.insertedBackground, scenario.mode === "dark" ? "rgb(18, 52, 31)" : "rgb(215, 245, 221)");
+    assert.equal(actual.insertedBackground, scenario.mode === "dark" ? "rgb(27, 77, 15)" : "rgb(180, 228, 160)");
     assert.ok(contrast(rgba(actual.insertedText), rgba(actual.insertedBackground)) >= 4.5, "Diff insertions must be readable");
     assert.ok(contrast(rgba(actual.evidenceBorder), rgba(actual.background)) >= 3, "Diff evidence underline must be visible");
     assert.equal(actual.evidenceBorder, scenario.mode === "dark" ? "rgb(15, 203, 140)" : "rgb(16, 82, 87)");

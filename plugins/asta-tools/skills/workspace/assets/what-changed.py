@@ -14,10 +14,13 @@ Design notes:
   * Quarto's `date-modified: last-modified` stamps a fresh "Modified" date into
     every page on every render; that is normalized away so a page only shows up
     when its actual content changed.
+  * The diff itself (align blocks, then mark words) is diff-engine.py; its
+    header says what each kind of content is compared as and how it is drawn.
+    A source page that only needs the diff can load that file alone.
   * Inline diffing keeps the HTML valid: `<ins>`/`<del>` only ever wrap runs of
     words and inline formatting tags. Block/structural tags are emitted outside
-    the wrapper (insertions) or dropped with their fully-deleted subtree
-    (deletions), so list/table/section nesting is never corrupted.
+    the wrapper (insertions) or kept whole on a removed block, so
+    list/table/section nesting is never corrupted.
   * Long stretches of unchanged content are folded into GitHub-style "N
     unchanged blocks" toggles, so a reviewer lands on the changes instead of a
     wall of context. Folding is progressive enhancement done client-side on the
@@ -49,11 +52,13 @@ import html
 import importlib.util
 import json
 import os
-import posixpath
 import re
 import shutil
 import sys
+from collections import Counter
+from collections.abc import Callable
 from html.parser import HTMLParser
+from typing import NamedTuple
 from urllib.parse import quote, urlsplit
 
 
@@ -68,51 +73,39 @@ def _load_diff_engine():
 
 _engine = _load_diff_engine()
 (
-    INLINE_TAGS,
-    TOKEN_RE,
-    WORD_RE,
-    TAG_NAME_RE,
-    tokenize,
-    tag_name,
-    is_inline_tag,
-    EV_CLAIM_RE,
-    is_ev_claim,
-    balanced_inline,
-    emit_run,
-    EV_POP_OPEN_RE,
-    EV_POP_PLACEHOLDER,
-    EV_POP_OP_PLACEHOLDER,
-    EV_POP_RE,
-    EV_CHIP,
-    _matching_close,
-    extract_ev_popovers,
-    restore_ev_popovers,
-    diff_content,
     DIFF_STYLE,
     FOLD_JS,
+    STANDALONE_STYLE,
+    VOID_TAGS,
+    SiteImages,
+    diff_content,
+    has_mermaid_unit,
+    math_script,
+    mermaid_script,
+    pair_script,
+    rebase_relative_url,
+    regenerated_images,
+    safe_url,
+    sanitize_fragment,
+    source_diff,
+    strip_ids,
 ) = (
-    _engine.INLINE_TAGS,
-    _engine.TOKEN_RE,
-    _engine.WORD_RE,
-    _engine.TAG_NAME_RE,
-    _engine.tokenize,
-    _engine.tag_name,
-    _engine.is_inline_tag,
-    _engine.EV_CLAIM_RE,
-    _engine.is_ev_claim,
-    _engine.balanced_inline,
-    _engine.emit_run,
-    _engine.EV_POP_OPEN_RE,
-    _engine.EV_POP_PLACEHOLDER,
-    _engine.EV_POP_OP_PLACEHOLDER,
-    _engine.EV_POP_RE,
-    _engine.EV_CHIP,
-    _engine._matching_close,
-    _engine.extract_ev_popovers,
-    _engine.restore_ev_popovers,
-    _engine.diff_content,
     _engine.DIFF_STYLE,
     _engine.FOLD_JS,
+    _engine.STANDALONE_STYLE,
+    _engine.VOID_TAGS,
+    _engine.SiteImages,
+    _engine.diff_content,
+    _engine.has_mermaid_unit,
+    _engine.math_script,
+    _engine.mermaid_script,
+    _engine.pair_script,
+    _engine.rebase_relative_url,
+    _engine.regenerated_images,
+    _engine.safe_url,
+    _engine.sanitize_fragment,
+    _engine.source_diff,
+    _engine.strip_ids,
 )
 
 ID_RE = re.compile(r'(?is)\bid\s*=\s*["\']([^"\']+)["\']')
@@ -187,241 +180,50 @@ COMPUTED_MARKERS = re.compile(
 )
 
 
+_DIV_OPEN_RE = re.compile(r"(?is)<div\b[^>]*>")
+_COMPUTED_PARTS_RE = re.compile(r"(?is)<(?:img|table|script|iframe)\b")
+
+
+def without_diagram_cells(content):
+    """`content` without the output cells that hold a drawing and nothing
+    computed: a Graphviz cell's inline svg, a Mermaid cell's text. Both are
+    static (the engine's `inline svg` and `diagram text` kinds, which
+    `holds_drawing` recognises), so a page that holds one is compared like any
+    page, not linked. A cell is a `div` with `cell-output-display` among its
+    classes, whatever others it has."""
+    out, pos = [], 0
+    for m in _DIV_OPEN_RE.finditer(content):
+        if m.start() < pos or "cell-output-display" not in _engine.classes_of(
+            m.group(0)
+        ):
+            continue
+        end = _engine.matching_close(content, m.end(), "div")
+        if end is None:
+            continue
+        cell = content[m.start() : end]
+        if _engine.holds_drawing(cell) and not _COMPUTED_PARTS_RE.search(cell):
+            out += [content[pos : m.start()]]
+            pos = end
+    return "".join(out + [content[pos:]])
+
+
 def has_computed_output(content):
     """True when the rendered content embeds executable/computed output."""
-    return bool(COMPUTED_MARKERS.search(content))
+    return bool(COMPUTED_MARKERS.search(without_diagram_cells(content)))
 
 
 SCRIPT_STYLE_RE = re.compile(r"(?is)<(script|style)\b[^>]*>.*?</\1>")
 SCRIPT_RE = re.compile(r"(?is)<script\b[^>]*>.*?</script>")
 
-SAFE_TAGS = {
-    "a",
-    "abbr",
-    "address",
-    "article",
-    "aside",
-    "b",
-    "bdi",
-    "bdo",
-    "blockquote",
-    "br",
-    "caption",
-    "cite",
-    "code",
-    "col",
-    "colgroup",
-    "dd",
-    "del",
-    "details",
-    "dfn",
-    "div",
-    "dl",
-    "dt",
-    "em",
-    "figcaption",
-    "figure",
-    "footer",
-    "h1",
-    "h2",
-    "h3",
-    "h4",
-    "h5",
-    "h6",
-    "header",
-    "hr",
-    "i",
-    "img",
-    "ins",
-    "kbd",
-    "li",
-    "main",
-    "mark",
-    "nav",
-    "ol",
-    "p",
-    "pre",
-    "q",
-    "s",
-    "samp",
-    "section",
-    "small",
-    "span",
-    "strong",
-    "sub",
-    "summary",
-    "sup",
-    "table",
-    "tbody",
-    "td",
-    "tfoot",
-    "th",
-    "thead",
-    "time",
-    "tr",
-    "u",
-    "ul",
-    "var",
-    "wbr",
-}
-DROP_CONTENT_TAGS = {
-    "applet",
-    "audio",
-    "base",
-    "button",
-    "canvas",
-    "embed",
-    "form",
-    "iframe",
-    "input",
-    "link",
-    "math",
-    "meta",
-    "object",
-    "option",
-    "script",
-    "select",
-    "style",
-    "svg",
-    "template",
-    "textarea",
-    "video",
-}
-GLOBAL_SAFE_ATTRS = {"class", "dir", "lang", "role", "title"}
-TAG_SAFE_ATTRS = {
-    "a": {"href"},
-    "span": {"tabindex"},
-    "blockquote": {"cite"},
-    "col": {"span"},
-    "colgroup": {"span"},
-    "details": {"open"},
-    "img": {"alt", "height", "loading", "src", "width"},
-    "ol": {"reversed", "start", "type"},
-    "q": {"cite"},
-    "td": {"colspan", "headers", "rowspan"},
-    "th": {"abbr", "colspan", "headers", "rowspan", "scope"},
-    "time": {"datetime"},
-}
-URL_ATTRS = {"cite", "href", "src"}
-
-
-def rebase_relative_url(value, source):
-    """Resolve a page-relative URL from `source`, the page's site path, to one
-    relative to the site root, where the diff page lives."""
-    parts = urlsplit(value)
-    if not source or parts.scheme or parts.netloc:
-        return value
-    if not parts.path and not parts.query:
-        return value
-    if parts.path.startswith("/"):
-        return value
-    path = posixpath.normpath(
-        posixpath.join(posixpath.dirname(source), parts.path) if parts.path else source
-    )
-    if path == ".." or path.startswith("../"):
-        return value
-    if parts.path.endswith("/") and not path.endswith("/"):
-        path += "/"
-    # A colon in the first segment would read as a scheme ("../javascript:x").
-    if ":" in path.split("/", 1)[0]:
-        path = "./" + path
-    return parts._replace(path=path).geturl()
-
-
-def safe_url(value):
-    """Allow ordinary links/resources, never executable URL schemes."""
-    compact = re.sub(r"[\x00-\x20\x7f]+", "", html.unescape(value))
-    scheme = urlsplit(compact).scheme.lower()
-    return not scheme or scheme in {"http", "https", "mailto"}
-
-
-class _SafeFragmentParser(HTMLParser):
-    """Small strict-allowlist sanitizer for rendered page fragments."""
-
-    def __init__(self, base=""):
-        super().__init__(convert_charrefs=False)
-        self.out = []
-        self.drop_stack = []
-        self.base = base
-
-    def handle_starttag(self, tag, attrs):
-        tag = tag.lower()
-        if self.drop_stack:
-            if tag in DROP_CONTENT_TAGS:
-                self.drop_stack.append(tag)
-            return
-        if tag in DROP_CONTENT_TAGS:
-            self.drop_stack.append(tag)
-            return
-        if tag not in SAFE_TAGS:
-            return
-        allowed = GLOBAL_SAFE_ATTRS | TAG_SAFE_ATTRS.get(tag, set())
-        clean = []
-        for name, value in attrs:
-            name = name.lower()
-            if name not in allowed and not name.startswith("aria-"):
-                continue
-            if name == "tabindex" and value not in ("0", "-1"):
-                continue  # focusable evidence claims only; no tab-order jumps
-            if value is None:
-                clean.append(name)
-                continue
-            if name in URL_ATTRS:
-                if not safe_url(value):
-                    continue
-                value = rebase_relative_url(value, self.base)
-                if not safe_url(value):
-                    continue
-            clean.append(f'{name}="{html.escape(value, quote=True)}"')
-        suffix = (" " + " ".join(clean)) if clean else ""
-        self.out.append(f"<{tag}{suffix}>")
-
-    def handle_startendtag(self, tag, attrs):
-        if tag.lower() in DROP_CONTENT_TAGS:
-            return
-        self.handle_starttag(tag, attrs)
-        if not self.drop_stack and tag.lower() in SAFE_TAGS:
-            self.out[-1] = self.out[-1][:-1] + ">"
-
-    def handle_endtag(self, tag):
-        tag = tag.lower()
-        if self.drop_stack:
-            if tag == self.drop_stack[-1]:
-                self.drop_stack.pop()
-            return
-        if tag in SAFE_TAGS:
-            self.out.append(f"</{tag}>")
-
-    def handle_data(self, data):
-        if not self.drop_stack:
-            self.out.append(html.escape(data, quote=False))
-
-    def handle_entityref(self, name):
-        if not self.drop_stack:
-            self.out.append(f"&{name};")
-
-    def handle_charref(self, name):
-        if not self.drop_stack:
-            self.out.append(f"&#{name};")
-
-
-def sanitize_fragment(content, rel=""):
-    """Return inert static HTML suitable for embedding in the diff page.
-
-    `rel` is the source page's site path; its relative links are rebased to
-    the site root so they resolve from the diff page."""
-    parser = _SafeFragmentParser(rel)
-    parser.feed(content)
-    parser.close()
-    return "".join(parser.out)
-
 
 def strip_volatile(content, rel=""):
-    """Sanitize an embedded body to inert, allowlisted static HTML.
+    """Sanitize an embedded body to inert, allowlisted static HTML: what the
+    engine's table of kinds keeps (`sanitize_fragment`), relative links rebased
+    from `rel`, ids dropped.
 
     The diff page ships its own single script and styles. Source markup must not
-    execute here through scripts, event handlers, active elements, SVG, CSS, or
-    executable URLs; duplicate source ids are omitted as well.
+    execute here through scripts, event handlers, active elements, CSS, or
+    executable URLs; a drawing is kept only as a safe subset.
     """
     return sanitize_fragment(content, rel)
 
@@ -469,8 +271,19 @@ def summary_card(main_content, link, note):
     return head + f'<p class="wc-preview">{html.escape(snippet)}</p>'
 
 
-_ID_ATTR_RE = re.compile(r'(?is)\s+id\s*=\s*["\'][^"\']*["\']')
 _EMPTY_EL_RE = re.compile(r"(?is)<([a-zA-Z0-9]+)\b[^>]*>\s*</\1>")
+
+
+_PRE_RE = re.compile(r"(?is)<pre\b.*?</pre>")
+
+
+def code_text(content):
+    """The text of each code block of a fragment, whitespace exactly as written:
+    in a code block whitespace is part of the code, unlike elsewhere."""
+    return [
+        html.unescape(re.sub(r"(?s)<[^>]+>", "", block))
+        for block in _PRE_RE.findall(content)
+    ]
 
 
 def markup_signature(content):
@@ -484,7 +297,7 @@ def markup_signature(content):
     markup — the case that should be annotated, not word-diffed.
     """
     s = re.sub(r"(?is)<(script|style)\b[^>]*>.*?</\1>", " ", content)
-    s = _ID_ATTR_RE.sub("", s)
+    s = strip_ids(s)
     prev = None
     while prev != s:  # collapse nested empties too
         prev = s
@@ -616,11 +429,34 @@ PAPER_JS = r"""
         });
       });
     });
+    // The reader's place is kept relative to the paper's section: while the
+    // paper has the whole window it leaves the page, the page gets shorter, and
+    // the PDF settles back in over a moment, so the browser would otherwise
+    // leave the reader elsewhere (scroll anchoring is off while it settles).
+    var section = view.closest("section") || view;
+    var offset = 0;
+    function top() {
+      return section.getBoundingClientRect().top + window.scrollY;
+    }
     function setFull(full) {
+      if (full === view.classList.contains("paper-full")) return;
+      var root = document.documentElement;
+      if (full) offset = window.scrollY - top();
+      else root.style.overflowAnchor = "none";
       view.classList.toggle("paper-full", full);
       document.body.style.overflow = full ? "hidden" : "";
       expand.setAttribute("aria-pressed", String(full));
       expand.title = full ? "Back to the report" : "Give the paper the whole window";
+      // A key pressed inside the PDF goes to the browser's PDF viewer, not to
+      // the page: the focus stays on the bar's button, so that Escape reaches us.
+      expand.focus({ preventScroll: true });
+      if (full) return;
+      var back = function () { window.scrollTo(0, top() + offset); };
+      requestAnimationFrame(function () {
+        back();
+        setTimeout(back, 150);
+        setTimeout(function () { back(); root.style.overflowAnchor = ""; }, 500);
+      });
     }
     expand.addEventListener("click", function () {
       setFull(!view.classList.contains("paper-full"));
@@ -668,16 +504,12 @@ MODE_JS = """
 })();
 """
 
-# Body typography for the fallback path, when no site theme could be reused.
-STANDALONE_STYLE = """
+
+# The page around the wrapper when what-changed.py writes the whole document.
+PAGE_STYLE = """
 :root { color-scheme: light dark; }
-body { font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-       Helvetica, Arial, sans-serif; margin: 0; padding: 0 1.5rem 4rem;
-       max-width: 60rem; margin-inline: auto; color: #1b1b1b; }
-.wc-scope section.page-diff table { border-collapse: collapse; }
-.wc-scope section.page-diff td, .wc-scope section.page-diff th {
-    border: 1px solid var(--wc-border); padding: .3em .5em; }
-@media (prefers-color-scheme: dark) { body { background: #0d1117; color: #e6edf3; } }
+body { margin: 0; background: #fff; }
+@media (prefers-color-scheme: dark) { body { background: #0d1117; } }
 """
 
 
@@ -849,6 +681,162 @@ def anchor_id(rel):
     return "p-" + re.sub(r"[^a-zA-Z0-9]+", "-", rel).strip("-")
 
 
+class TocEntry(NamedTuple):
+    """One line of the overview at the top: a page, a deck or a paper.
+
+    anchor  the id of its section
+    title   its title as a reader names it, plain text
+    state   `changed`, `new` or `removed`
+    label   what the tag beside the title says; empty for a plain change, whose
+            count says it
+    file    the file it is shown from
+    detail  how much changed, as a reader counts it ("14 changes"); empty when
+            the page has none to count (a new page, a card)"""
+
+    anchor: str
+    title: str
+    state: str
+    label: str
+    file: str
+    detail: str
+
+
+# What marks a change in a diff body: the engine's own marks (see FOLD_JS).
+_CHANGE_TAGS = {"ins", "del"}
+_CHANGE_CLASSES = {
+    "wc-edit-old",
+    "wc-edit-new",
+    "wc-block-added",
+    "wc-block-removed",
+    "wc-link-was",
+    "wc-link-changed",
+    "wc-fmt-changed",
+    "wc-ev-chip",
+}
+# The blocks a change is counted by: one count for each of these that holds a
+# mark and holds no other of these that does (a list item whose paragraph is
+# edited is that paragraph's change, a row is one change however many cells, and
+# whatever its cells hold: the row owns the marks inside it).
+_LEAF_TAGS = {"p", "li", "h1", "h2", "h3", "h4", "h5", "h6", "tr", "pre"} | {
+    "figcaption",
+    "dt",
+    "dd",
+}
+
+
+class _ChangeCounter(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.count = 0
+        self.any = False
+        self.stack = []  # [tag, marked, holds_marked_leaf]
+
+    def handle_starttag(self, tag, attrs):
+        if tag in VOID_TAGS:
+            if _marked(tag, attrs):
+                self._mark()
+            return
+        self.stack.append([tag, False, False])
+        if _marked(tag, attrs):
+            self._mark()
+
+    def handle_startendtag(self, tag, attrs):
+        if _marked(tag, attrs):
+            self._mark()
+
+    def _mark(self):
+        self.any = True
+        for frame in self.stack:
+            frame[1] = True
+
+    def handle_endtag(self, tag):
+        for index in range(len(self.stack) - 1, -1, -1):
+            if self.stack[index][0] != tag:
+                continue
+            _, marked, holds = self.stack[index]
+            del self.stack[index:]
+            if tag in _LEAF_TAGS and marked:
+                # A row owns the marks inside it: its cells' paragraphs are the
+                # row's one change, not each their own.
+                if any(frame[0] == "tr" for frame in self.stack):
+                    break
+                if not holds:
+                    self.count += 1
+                for frame in self.stack:
+                    frame[2] = True
+            break
+
+
+def _marked(tag, attrs):
+    classes = set((dict(attrs).get("class") or "").split())
+    return tag in _CHANGE_TAGS or bool(classes & _CHANGE_CLASSES)
+
+
+def count_changes(body):
+    """How many changes a diff body holds, as a reader counts them: the blocks
+    that hold a mark (a paragraph, a list item, a row, a figure's paragraph),
+    each once; at least one when anything is marked."""
+    counter = _ChangeCounter()
+    counter.feed(body)
+    counter.close()
+    return counter.count or int(counter.any)
+
+
+_TITLE_SPLIT_RE = re.compile(r"\s[\u2013\u2014-]\s")
+
+
+def site_name(titles):
+    """The name Quarto adds to every page's title ("Page – Site"): the ending
+    that two or more pages share, else None (one page cannot say which part of
+    its title is the site's)."""
+    endings = Counter(
+        _TITLE_SPLIT_RE.split(t)[-1].strip()
+        for t in titles
+        if _TITLE_SPLIT_RE.search(t)
+    )
+    for name, n in endings.most_common(1):
+        if n > 1 and name:
+            return name
+    return None
+
+
+def short_title(title, site):
+    """A page's title without the site's name, which every page repeats."""
+    if site:
+        # "Page – Site" for a page, "Site – Page" for a deck ("Slides · Site – Page")
+        title = re.sub(rf"\s[\u2013\u2014-]\s{re.escape(site)}\s*$", "", title)
+        title = re.sub(rf"(^|·\s*){re.escape(site)}\s[\u2013\u2014-]\s", r"\1", title)
+    return title.strip()
+
+
+def head_title(path, rel):
+    """The <title> of the rendered page at `path` (read from its head)."""
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            return page_title(f.read(16384), rel)
+    except OSError:
+        return rel
+
+
+def overview(entries):
+    """The overview at the top: what this edit changed, a line to each page, deck
+    or paper (its short title, its file, how much changed), as a list."""
+    n = len(entries)
+    items = []
+    for e in entries:
+        line = f'<a href="#{e.anchor}">{html.escape(e.title)}</a>'
+        if e.label:
+            line += f' <span class="tag {e.state}">{html.escape(e.label)}</span>'
+        line += f' &middot; <code class="toc-file">{html.escape(e.file)}</code>'
+        if e.detail:
+            line += f' &middot; <span class="toc-count">{html.escape(e.detail)}</span>'
+        items.append(f"<li>{line}</li>")
+    return (
+        f'<nav class="toc"><p class="toc-head">This edit changed {n} '
+        f"thing{'' if n == 1 else 's'}:</p><ul>{''.join(items)}</ul></nav>"
+    )
+
+
 def _is_slide_deck(doc):
     # A site's own CSS may use a class named "reveal". Quarto reveal.js decks
     # carry the runtime's stylesheet, which identifies the actual deck format.
@@ -903,7 +891,8 @@ def paper_identity(paper_dir):
     return label, section_id
 
 
-def paper_preview(old_root, new_root, paper_dir="paper"):
+def paper_state(new_root, paper_dir):
+    """The paper preview's manifest (preview.json) as a dict, or None."""
     manifest = os.path.join(new_root, "paper-previews", paper_dir, "preview.json")
     if not os.path.isfile(manifest):
         return None
@@ -912,7 +901,19 @@ def paper_preview(old_root, new_root, paper_dir="paper"):
             state = json.load(f)
     except (OSError, json.JSONDecodeError):
         return None
-    if not isinstance(state, dict):
+    return state if isinstance(state, dict) else None
+
+
+def paper_file(new_root, paper_dir):
+    """The paper's main document, as the viewer and the overview name it: what
+    the manifest says (`main`), else main.tex, which the preview takes first."""
+    main = (paper_state(new_root, paper_dir) or {}).get("main")
+    return f"{paper_dir}/{main if isinstance(main, str) and main else 'main.tex'}"
+
+
+def paper_preview(old_root, new_root, paper_dir="paper"):
+    state = paper_state(new_root, paper_dir)
+    if state is None:
         return None
     if not state.get("changed"):
         return None
@@ -937,7 +938,7 @@ def paper_preview(old_root, new_root, paper_dir="paper"):
     elif state.get("diff") and state.get("other_inputs"):
         note = "LaTeX edits are highlighted; other paper inputs may not be."
     elif state.get("diff"):
-        note = "LaTeX edits are highlighted in the diff PDF."
+        note = ""  # the marked PDF says what changed
     elif state.get("unhighlighted"):
         note = "LaTeX inputs changed, but the diff has no marked text; the current PDF is available without highlights."
     elif state.get("other_inputs"):
@@ -954,42 +955,30 @@ def paper_preview(old_root, new_root, paper_dir="paper"):
         modes = (
             '<span class="paper-modes" role="group" aria-label="Which PDF">'
             f'<button type="button" data-pdf="{paper_url("what-changed.pdf")}" '
-            'aria-pressed="true">This PR\'s changes marked</button>'
+            'aria-pressed="true">Changes marked</button>'
             f'<button type="button" data-pdf="{paper_url("main.pdf")}" '
             'aria-pressed="false">Clean</button></span>'
         )
+    # The bar reads the same in the page and in the whole window: the paper's
+    # title and file on the left; the switch and the whole-window button at the
+    # far right.
+    file = html.escape(paper_file(new_root, paper_dir))
     viewer = (
         '<div class="paper-view"><div class="paper-bar">'
+        f'<strong class="paper-title">{label}</strong>'
+        f'<code class="paper-file">{file}</code>{modes}'
         '<button type="button" class="paper-expand" aria-pressed="false" '
-        'title="Give the paper the whole window">&#x2922;</button>'
-        f'<strong class="paper-title">{label}</strong>{modes}</div>'
+        'title="Give the paper the whole window">&#x2922;</button></div>'
         f'<object data="{pdf}#navpanes=0&amp;view=FitH" type="application/pdf" '
         f'title="{label}"><a href="{pdf}">Open the paper PDF</a></object></div>'
     )
+    note_html = f'<p class="wc-note">{note}</p>' if note else ""
     section = (
         f'<section class="page-diff {status}" id="{section_id}">'
         f'<h2>{label} <span class="tag {status}">{status}</span></h2>'
-        f'<p class="wc-note">{note}</p>{viewer}</section>'
+        f"{note_html}{viewer}</section>"
     )
     return section, status
-
-
-VOID_TAGS = {
-    "area",
-    "base",
-    "br",
-    "col",
-    "embed",
-    "hr",
-    "img",
-    "input",
-    "link",
-    "meta",
-    "param",
-    "source",
-    "track",
-    "wbr",
-}
 
 
 class SlideParser(HTMLParser):
@@ -1358,7 +1347,18 @@ class DeckRenderer:
         pass
 
 
-def slide_diff(old_doc, new_doc, rel, link, old=None, new=None, decks=None):
+def slides_changed(edited, total, state, reordered):
+    """What the overview says of a deck's changes: "1 of 10 slides changed"."""
+    if state != "changed":
+        return ""
+    if edited:
+        return f"{edited} of {total} slide{'' if total == 1 else 's'} changed"
+    return "slides reordered" if reordered else ""
+
+
+def slide_diff(
+    old_doc, new_doc, rel, link, old=None, new=None, decks=None, images=None
+):
     old = (reveal_slides(old_doc) if old is None else old) or []
     new = (reveal_slides(new_doc) if new is None else new) or []
     pairs = match_slides(old, new)
@@ -1375,7 +1375,17 @@ def slide_diff(old_doc, new_doc, rel, link, old=None, new=None, decks=None):
     for old_index, new_index in entries:
         before = old[old_index] if old_index is not None else None
         after = new[new_index] if new_index is not None else None
-        if before and after and before["body"] == after["body"]:
+        if (
+            before
+            and after
+            and before["body"] == after["body"]
+            # a figure redrawn under its name leaves the slide's HTML as it was
+            and not regenerated_images(
+                strip_volatile(before["body"], rel),
+                strip_volatile(after["body"], rel),
+                images,
+            )
+        ):
             continue
         index, content = (
             (new_index, after["body"]) if after else (old_index, before["body"])
@@ -1389,7 +1399,9 @@ def slide_diff(old_doc, new_doc, rel, link, old=None, new=None, decks=None):
             heading = f'<a href="{html.escape(link + "#/" + after["anchor"], quote=True)}">{heading}</a>'
         if before and after:
             body, changed = diff_content(
-                strip_volatile(before["body"], rel), strip_volatile(after["body"], rel)
+                strip_volatile(before["body"], rel),
+                strip_volatile(after["body"], rel),
+                images,
             )
             if not changed:
                 body = '<p class="wc-note">Slide markup changed. Open the slide to inspect it.</p>'
@@ -1401,6 +1413,7 @@ def slide_diff(old_doc, new_doc, rel, link, old=None, new=None, decks=None):
         changes.append(
             f'<article class="slide-diff {state}"><h3>{heading} <span class="tag {state}">{state}</span></h3><div class="diff-body">{body}</div></article>'
         )
+    edited = len(changes)
     if rendered is None:
         changes = []
     elif rendered:
@@ -1417,7 +1430,14 @@ def slide_diff(old_doc, new_doc, rel, link, old=None, new=None, decks=None):
     aid = anchor_id(rel)
     return (
         f'<section class="page-diff {state}" id="{aid}"><h2>{heading} <span class="tag {state}">{state}</span></h2>{"".join(changes)}</section>',
-        f'<a href="#{aid}">{html.escape(label)} <span class="tag {state}">{state}</span></a>',
+        TocEntry(
+            aid,
+            label,
+            state,
+            "",
+            rel,
+            slides_changed(edited, len(new) if new else len(old), state, reordered),
+        ),
     )
 
 
@@ -1444,6 +1464,147 @@ def prefix_theme_urls(css, prefix):
     return rewrite_style_urls(css, prefixed)
 
 
+def _squash(content):
+    return re.sub(r"\s+", " ", content).strip()
+
+
+def script_page(old_c, new_c, rel, link, images):
+    """A page whose content is made by running script, as (state, label, body),
+    or None when it did not change. Its visible content is produced by its own
+    scripts, so an inline word diff is meaningless and embedding it would run
+    foreign markup here: a card with a link to the full page, for new, removed
+    and changed alike. Any normalized content difference is material enough to
+    report: comparing static text alone can hide changed data or client-side
+    logic."""
+    if old_c is not None and new_c is not None:
+        if _squash(old_c) == _squash(new_c):
+            return None
+        return (
+            "changed",
+            "changed · interactive page (linked)",
+            summary_card(
+                new_c, link, "This page renders its content with client-side scripts"
+            ),
+        )
+    if new_c is not None:
+        return (
+            "new",
+            "new page · interactive (linked)",
+            summary_card(
+                new_c,
+                link,
+                "New page; renders its content with client-side scripts",
+            ),
+        )
+    return (
+        "removed",
+        "removed · interactive page",
+        summary_card(
+            old_c,
+            "",
+            "Removed page; had rendered its content with client-side scripts",
+        ),
+    )
+
+
+def site_page(old_c, new_c, rel, link, images):
+    """A page of ordinary content (prose, tables, figures, equations) as
+    (state, label, body), or None when no reader would see a change: the
+    engine's diff of the sanitized pages (diff-engine.py)."""
+    if old_c is not None and new_c is not None:
+        old_s, new_s = (
+            (strip_volatile(old_c, rel), strip_volatile(new_c, rel))
+            if _engine.names_files(new_c)
+            else ("", "")
+        )
+        # A plot redrawn under its old name leaves the page's HTML as it was.
+        redrawn = regenerated_images(old_s, new_s, images)
+        # Spacing is no change, except in a code block.
+        spaced = code_text(old_c) != code_text(new_c)
+        if not redrawn and not spaced and _squash(old_c) == _squash(new_c):
+            return None  # unchanged
+        if (
+            not redrawn
+            and not spaced
+            and markup_signature(old_c) == markup_signature(new_c)
+        ):
+            # Only non-visible markup changed (a Quarto cross-ref anchor, an
+            # id/attribute edit): the rendered text is identical, so an inline
+            # word diff would highlight nothing and embedding the whole page
+            # reads as a dropped diff. Annotate + link instead.
+            return (
+                "changed",
+                "changed · non-visible markup only (linked)",
+                markup_only_summary(old_c, new_c, link),
+            )
+        body, changed = diff_content(
+            old_s or strip_volatile(old_c, rel),
+            new_s or strip_volatile(new_c, rel),
+            images,
+        )
+        return ("changed", "changed", body) if changed else None
+    if new_c is not None:
+        return "new", "new page", strip_volatile(new_c, rel)
+    return "removed", "removed", strip_volatile(old_c, rel)
+
+
+class Output(NamedTuple):
+    """One kind of output: one entry of OUTPUT_KINDS.
+
+    name        what the header calls it
+    recognised  how it is found, in words
+    compare     its comparer
+    found       for a page of the site: whether a page's content (old, new; None
+                for a side that has none) is this kind, else None"""
+
+    name: str
+    recognised: str
+    compare: Callable
+    found: Callable | None = None
+
+
+# The one table of outputs: what What changed can show a change of, and the
+# comparer for each (the kinds of content inside a page are diff-engine.py's
+# KINDS). A page is the first of the entries with `found` that finds it.
+_OUTPUTS = (
+    Output(
+        "page made by script",
+        "content made by running script: computed output (Plotly, widgets, "
+        "notebook cells), or script that is most of the page",
+        script_page,
+        lambda *contents: any(is_self_contained(c) for c in contents if c is not None),
+    ),
+    Output(
+        "site page",
+        "any other rendered .html page of the site",
+        site_page,
+        lambda *contents: True,
+    ),
+    Output(
+        "slide deck",
+        "a page of reveal.js slides, matched slide by slide",
+        slide_diff,
+    ),
+    Output(
+        "LaTeX paper",
+        "a folder paper-previews/<name>/ holding preview.json, built by the paper preview",
+        paper_preview,
+    ),
+    Output(
+        "data file",
+        "text of a CSV, JSON, YAML or BibTeX file, which no site page shows: a "
+        "caller that has both versions compares them",
+        source_diff,
+    ),
+)
+OUTPUT_KINDS = {output.name: output for output in _OUTPUTS}
+
+
+def page_output(old_c, new_c):
+    """The output kind of a page of the site, from its old and new content."""
+    return next(o for o in _OUTPUTS if o.found and o.found(old_c, new_c))
+
+
 def build(
     old_root,
     new_root,
@@ -1457,6 +1618,7 @@ def build(
 ):
     sections = []
     toc = []
+    images = SiteImages(old_root, new_root)
     paper_root = os.path.join(new_root, "paper-previews")
     paper_dirs = []
     if os.path.isdir(paper_root):
@@ -1467,15 +1629,24 @@ def build(
                 )
     old_pages = list_pages(old_root, out_path, paper_dirs, reserved_local_output)
     new_pages = list_pages(new_root, out_path, paper_dirs, reserved_local_output)
+    every_page = [*old_pages.items(), *new_pages.items()]
     for paper_dir in sorted(paper_dirs, key=lambda name: (name != "paper", name)):
-        paper_section = paper_preview(old_root, new_root, paper_dir)
+        paper_section = OUTPUT_KINDS["LaTeX paper"].compare(
+            old_root, new_root, paper_dir
+        )
         if paper_section:
             section, paper_status = paper_section
             sections.append(section)
             label, section_id = paper_identity(paper_dir)
             toc.append(
-                f'<a href="#{section_id}">{label} <span class="tag {paper_status}">'
-                f"{paper_status}</span></a>"
+                TocEntry(
+                    section_id,
+                    html.unescape(label),
+                    paper_status,
+                    "" if paper_status == "changed" else paper_status,
+                    paper_file(new_root, paper_dir),
+                    "",
+                )
             )
     slide_sections, slide_toc = [], []
     documents = {}
@@ -1502,7 +1673,9 @@ def build(
             if preview_url
             else quote(rel, safe="/")
         )
-        result = slide_diff(old_doc, new_doc, rel, link, old_slides, new_slides, decks)
+        result = OUTPUT_KINDS["slide deck"].compare(
+            old_doc, new_doc, rel, link, old_slides, new_slides, decks, images
+        )
         if result:
             section, entry = result
             slide_sections.append(section)
@@ -1516,77 +1689,16 @@ def build(
         # The generated page lives inside the preview dir, so a bare relative
         # path deep-links to a sibling page without needing the absolute base.
         link = (preview_url.rstrip("/") + "/" + rel) if preview_url else rel
-        if new_doc is not None and old_doc is not None:
-            old_c = normalize(extract_main(old_doc))
-            new_c = normalize(extract_main(new_doc))
-            if is_self_contained(old_c) or is_self_contained(new_c):
-                # Self-contained/computed page: its visible content is produced
-                # by its own scripts, so an inline word diff is meaningless and
-                # embedding it would run foreign markup here. Any normalized
-                # content difference is material enough to report: comparing
-                # static text alone can hide changed data or client-side logic.
-                if (
-                    re.sub(r"\s+", " ", old_c).strip()
-                    == re.sub(r"\s+", " ", new_c).strip()
-                ):
-                    continue
-                state = "changed"
-                label = "changed · interactive page (linked)"
-                body = summary_card(
-                    new_c,
-                    link,
-                    "This page renders its content with client-side scripts",
-                )
-                title_txt = page_title(new_doc, rel)
-            else:
-                if (
-                    re.sub(r"\s+", " ", old_c).strip()
-                    == re.sub(r"\s+", " ", new_c).strip()
-                ):
-                    continue  # unchanged
-                if markup_signature(old_c) == markup_signature(new_c):
-                    # Only non-visible markup changed (a Quarto cross-ref anchor,
-                    # an id/attribute edit): the rendered text is identical, so an
-                    # inline word diff would highlight nothing and embedding the
-                    # whole page reads as a dropped diff. Annotate + link instead.
-                    state = "changed"
-                    label = "changed · non-visible markup only (linked)"
-                    body = markup_only_summary(old_c, new_c, link)
-                    title_txt = page_title(new_doc, rel)
-                else:
-                    body, changed = diff_content(
-                        strip_volatile(old_c, rel), strip_volatile(new_c, rel)
-                    )
-                    if not changed:
-                        continue
-                    state, label = "changed", "changed"
-                    title_txt = page_title(new_doc, rel)
-        elif new_doc is not None:
-            new_c = normalize(extract_main(new_doc))
-            title_txt = page_title(new_doc, rel)
-            if is_self_contained(new_c):
-                state, label = "new", "new page · interactive (linked)"
-                body = summary_card(
-                    new_c,
-                    link,
-                    "New page; renders its content with client-side scripts",
-                )
-            else:
-                state, label = "new", "new page"
-                body = strip_volatile(new_c, rel)
-        else:
-            old_c = normalize(extract_main(old_doc))
-            title_txt = page_title(old_doc, rel)
-            if is_self_contained(old_c):
-                state, label = "removed", "removed · interactive page"
-                body = summary_card(
-                    old_c,
-                    "",
-                    "Removed page; had rendered its content with client-side scripts",
-                )
-            else:
-                state, label = "removed", "removed"
-                body = strip_volatile(old_c, rel)
+        old_c = normalize(extract_main(old_doc)) if old_doc is not None else None
+        new_c = normalize(extract_main(new_doc)) if new_doc is not None else None
+        result = page_output(old_c, new_c).compare(old_c, new_c, rel, link, images)
+        if result is None:
+            continue  # no reader would see a change
+        state, label, body = result
+        title_txt = page_title(new_doc if new_doc is not None else old_doc, rel)
+        detail = ""
+        if state == "changed" and (n := count_changes(body)):
+            detail = f"{n} change{'' if n == 1 else 's'}"
         aid = anchor_id(rel)
         h2 = html.escape(title_txt)
         if state != "removed":
@@ -1600,14 +1712,28 @@ def build(
             f'<div class="diff-body">{body}</div>\n</section>'
         )
         toc.append(
-            f'<a href="#{aid}">{html.escape(title_txt)} '
-            f'<span class="tag {state_class}">{label}</span></a>'
+            TocEntry(
+                aid,
+                title_txt,
+                state_class,
+                "" if label == "changed" else label,
+                rel,
+                detail,
+            )
         )
 
+    theme_pages = (
+        list_pages(theme_root, out_path, reserved_local_output=reserved_local_output)
+        if theme_root
+        else {}
+    )
     if sections:
         n = len(sections)
         summary = f"{n} page{'s' if n != 1 else ''} changed"
-        toc_html = f'<nav class="toc">{"".join(toc)}</nav>'
+        site = site_name(
+            head_title(path, rel) for rel, path in [*every_page, *theme_pages.items()]
+        )
+        toc_html = overview([e._replace(title=short_title(e.title, site)) for e in toc])
         body_html = "\n".join(sections)
     else:
         summary = "No rendered content changed"
@@ -1620,24 +1746,17 @@ def build(
 
     legend = (
         '<p class="legend">Legend: <ins>added</ins> &middot; '
-        "<del>removed</del>. Page titles link to the full preview.</p>"
+        "<del>removed</del> words, the removed ones right before the added ones. "
+        "A wholly added or removed block is shaded; a whole equation, figure or "
+        "diagram is framed, the old in red, the new in green. "
+        "Page titles link to the full preview.</p>"
     )
     escaped_title = html.escape(title)
 
     # A partial render holds only the changed pages, so the caller can name the
     # full site this page is served from as the theme source.
     template_doc, theme_css = None, None
-    for root, pages in (
-        (
-            theme_root,
-            list_pages(
-                theme_root, out_path, reserved_local_output=reserved_local_output
-            )
-            if theme_root
-            else {},
-        ),
-        (new_root, new_pages),
-    ):
+    for root, pages in ((theme_root, theme_pages), (new_root, new_pages)):
         template_doc, depth = pick_template(pages)
         theme_css = extract_theme_css(template_doc, depth) if template_doc else None
         if theme_css:
@@ -1669,7 +1788,7 @@ def build(
             f"{inner}\n</main>\n</div>"
         )
     else:
-        head = f"<style>{STANDALONE_STYLE}{DIFF_STYLE}</style>"
+        head = f"<style>{PAGE_STYLE}{STANDALONE_STYLE}{DIFF_STYLE}</style>"
         body = f'<div class="wc-scope wc-standalone">{inner}</div>'
         html_attrs = body_attrs = mode_js = ""
 
@@ -1685,7 +1804,11 @@ def build(
         f"{WHAT_CHANGED_META}"
         f"<title>What changed &middot; {escaped_title}</title>"
         f"{head}</head><body{body_attrs}>{mode_js}{body}"
-        f"<script>{FOLD_JS}</script><script>{PAPER_JS}</script>{deck_assets}</body></html>"
+        f"<script>{FOLD_JS}</script><script>{PAPER_JS}</script>"
+        f"{pair_script(body_html)}"
+        f"{math_script(body_html)}"
+        f"{mermaid_script(body_html)}"
+        f"{deck_assets}</body></html>"
     )
 
 

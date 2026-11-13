@@ -614,7 +614,10 @@ def test_live_preview_rebuild_cannot_change_diff_input(project: Path) -> None:
     )
     assert result.exit_code == 0, result.output
     owned = project / workspace_module.COMPARISON_DIR
-    assert "<ins>newly</ins>" in (owned / "what-changed.html").read_text()
+    assert (
+        "<ins>A newly drafted paragraph.</ins>"
+        in (owned / "what-changed.html").read_text()
+    )
     assert "Live preview rebuild" not in (owned / "what-changed.html").read_text()
     assert "newly drafted paragraph" in (owned / "index.html").read_text()
 
