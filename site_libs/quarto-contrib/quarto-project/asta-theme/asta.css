@@ -22,6 +22,16 @@ h3 { font-size: 1.25rem; font-weight: 600; line-height: 1.4; }
 h4, h5, h6 { font-size: 1rem; font-weight: 600; }
 pre, code { font-size: 14px; }
 
+/* Mermaid edge labels: Quarto's mermaid theme colors the label's span from the
+   theme (--mermaid-label-*), but Mermaid's own light-grey boxes on the label's
+   div and paragraph show through, so light text sat on grey in dark mode.
+   Mermaid scopes those rules to the diagram's id, hence !important. */
+.edgeLabel p,
+.labelBkg {
+  background-color: var(--mermaid-label-bg-color) !important;
+  color: var(--mermaid-label-fg-color) !important;
+}
+
 /* Keep the current section heading in view while reading a long page. */
 body { --asta-heading-top: 0px; }
 body:has(#quarto-header:not(.headroom--unpinned)) {

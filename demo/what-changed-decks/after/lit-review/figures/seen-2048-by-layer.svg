@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="342" viewBox="0 0 640 342" font-family="system-ui, sans-serif">
+<text x="190" y="28" font-size="15" fill="#7a8794">Tokens one position sees, 2,048-token sequence, by layer</text>
+<text x="178" y="75.12" font-size="14" fill="#7a8794" text-anchor="end">Convolution, layer 1</text>
+<rect x="190" y="52" width="2.0" height="34" rx="3" fill="#5b7fa6"/>
+<text x="200.0" y="75.12" font-size="14" fill="#7a8794">5</text>
+<text x="178" y="127.12" font-size="14" fill="#7a8794" text-anchor="end">Convolution, layer 2</text>
+<rect x="190" y="104" width="2.0" height="34" rx="3" fill="#5b7fa6"/>
+<text x="200.0" y="127.12" font-size="14" fill="#7a8794">9</text>
+<text x="178" y="179.12" font-size="14" fill="#7a8794" text-anchor="end">Convolution, layer 3</text>
+<rect x="190" y="156" width="2.3" height="34" rx="3" fill="#5b7fa6"/>
+<text x="200.3" y="179.12" font-size="14" fill="#7a8794">13</text>
+<text x="178" y="231.12" font-size="14" fill="#7a8794" text-anchor="end">Convolution, layer 4</text>
+<rect x="190" y="208" width="3.0" height="34" rx="3" fill="#5b7fa6"/>
+<text x="201.0" y="231.12" font-size="14" fill="#7a8794">17</text>
+<text x="178" y="283.12" font-size="14" fill="#7a8794" text-anchor="end">Self-attention, layer 1</text>
+<rect x="190" y="260" width="360.0" height="34" rx="3" fill="#5b7fa6"/>
+<text x="558.0" y="283.12" font-size="14" fill="#7a8794">2,048</text>
+</svg>

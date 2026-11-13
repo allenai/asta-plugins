@@ -62,6 +62,66 @@
     ]
   },
   {
+    "objectID": "lit-review/index.html#background",
+    "href": "lit-review/index.html#background",
+    "title": "A small literature review",
+    "section": "Background",
+    "text": "Background\nRecurrent networks read a sequence one token at a time, carrying a hidden state from each token to the next.\nGated cells, such as the LSTM’s, let that state carry information across longer spans, but a signal between two distant tokens still passes through every step between them.\nEncoder–decoder models used one recurrent network to read a sentence and a second to write its translation, joined only by the final state of the first.\nThat final state had to hold the whole sentence, so translations of long sentences lost detail from their beginnings.\nAttention was first added to these models to let the decoder look back at every encoder state, rather than at the last one alone.\nConvolutional sequence models shortened the path differently, stacking layers so that each widens the span a token can see.",
+    "crumbs": [
+      "A small literature review"
+    ]
+  },
+  {
+    "objectID": "lit-review/index.html#models-compared",
+    "href": "lit-review/index.html#models-compared",
+    "title": "A small literature review",
+    "section": "Models compared",
+    "text": "Models compared\n\n\n\nModel\nYear\nRecurrence\nSteps between distant tokens\n\n\n\n\nLSTM encoder–decoder\n2014\nyes\none per token between them\n\n\nRNN with attention\n2015\nyes\none, through attention\n\n\nTransformer\n2017\nnone\none\n\n\nBERT\n2019\nnone\none",
+    "crumbs": [
+      "A small literature review"
+    ]
+  },
+  {
+    "objectID": "lit-review/index.html#encoderdecoder-with-attention",
+    "href": "lit-review/index.html#encoderdecoder-with-attention",
+    "title": "A small literature review",
+    "section": "Encoder–decoder with attention",
+    "text": "Encoder–decoder with attention\n\n\n\n\n\nflowchart LR\n  src[Source sentence] --&gt; enc[Recurrent encoder]\n  enc --&gt; dec[Recurrent decoder]\n  enc -. every state .-&gt; att[Attention weights]\n  att --&gt; dec\n  dec -- query --&gt; att\n  dec --&gt; tgt[Translation]",
+    "crumbs": [
+      "A small literature review"
+    ]
+  },
+  {
+    "objectID": "lit-review/index.html#attention-in-one-line",
+    "href": "lit-review/index.html#attention-in-one-line",
+    "title": "A small literature review",
+    "section": "Attention in one line",
+    "text": "Attention in one line\nEach token’s output is a weighted average of every token’s value, its weights scaled by the key size so the softmax stays smooth:\n\\[\n\\operatorname{Attention}(Q,K,V) = \\operatorname{softmax}\\left(\\frac{QK^T}{\\sqrt{d_k}}\\right)V\n\\]\n\n\n\n\n\n\nReading the equation\n\n\n\nQ, K and V hold the queries, keys and values, one row per token, and \\(d_k\\) is the key size.\n\n\nscores = q @ k.T / np.sqrt(k.shape[-1])\nweights = softmax(scores, axis=-1)\nout = weights @ v",
+    "crumbs": [
+      "A small literature review"
+    ]
+  },
+  {
+    "objectID": "lit-review/index.html#how-far-a-signal-travels",
+    "href": "lit-review/index.html#how-far-a-signal-travels",
+    "title": "A small literature review",
+    "section": "How far a signal travels",
+    "text": "How far a signal travels\n\n\n\n\n\n\n\npath\n\n\n\nt1\n\nt1\n\n\n\nt2\n\nt2\n\n\n\nt1-&gt;t2\n\n\nstep\n\n\n\nt4\n\nt4\n\n\n\nt1-&gt;t4\n\n\nattention, one step\n\n\n\nt3\n\nt3\n\n\n\nt2-&gt;t3\n\n\nstep\n\n\n\nt3-&gt;t4\n\n\nstep\n\n\n\n\n\n\n\n\n\n\n\nThe longest path a signal takes between two tokens of a sequence, by layer type. The convolution has kernel 5, stride 1 and no dilation, so each layer widens a token’s view by 4 and its path is the number of layers needed to span the sequence.\n\n\n\n\n\nThe tokens one position can see after each layer of that convolution, in a 2,048-token sequence.",
+    "crumbs": [
+      "A small literature review"
+    ]
+  },
+  {
+    "objectID": "lit-review/index.html#takeaways",
+    "href": "lit-review/index.html#takeaways",
+    "title": "A small literature review",
+    "section": "Takeaways",
+    "text": "Takeaways\n\nRecurrence reads one token at a time, so the tokens of a sequence can’t be processed in parallel during training.\nGating eases, but doesn’t remove, the long path between distant tokens.\nA fixed-size final state limits how much of a long input sentence a decoder can draw on.\nConvolutions shorten the path, but only by stacking more layers as the span grows.\nAttention connects every pair of tokens in one step, however far apart they are.\nThe Transformer drops recurrence entirely.\nBERT pre-trains the Transformer’s encoder alone, reading in both directions.",
+    "crumbs": [
+      "A small literature review"
+    ]
+  },
+  {
     "objectID": "index.html",
     "href": "index.html",
     "title": "Attention in sequence models",

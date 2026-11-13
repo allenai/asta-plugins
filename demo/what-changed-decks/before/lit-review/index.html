@@ -20,6 +20,41 @@ ul.task-list li input[type="checkbox"] {
   margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
   vertical-align: middle;
 }
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
 /* CSS for citations */
 div.csl-bib-body { }
 div.csl-entry {
@@ -60,8 +95,8 @@ div.csl-indent {
 <link href="../site_libs/quarto-html/quarto-syntax-highlighting-dark-388f8d67df6149ff0c4f0d88f9153ee2.css" rel="stylesheet" class="quarto-color-scheme quarto-color-alternate" id="quarto-text-highlighting-styles">
 <script src="../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../site_libs/bootstrap/bootstrap-8145d8355b979a01ddd9b03d64e761af.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme" id="quarto-bootstrap" data-mode="light">
-<link href="../site_libs/bootstrap/bootstrap-dark-d199ef7fd1bceb41208d1c0a49a0f084.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme quarto-color-alternate" id="quarto-bootstrap" data-mode="dark">
+<link href="../site_libs/bootstrap/bootstrap-e3ca7ee9c60a43d1ee136884c9699ba1.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme" id="quarto-bootstrap" data-mode="light">
+<link href="../site_libs/bootstrap/bootstrap-dark-6e1df6cfb8532c3c2cd2e7defc4b396c.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme quarto-color-alternate" id="quarto-bootstrap" data-mode="dark">
 <script id="quarto-search-options" type="application/json">{
   "location": "sidebar",
   "copy-button": false,
@@ -262,7 +297,39 @@ document.addEventListener("DOMContentLoaded", () => {
     color: var(--bs-link-color, #0d6efd);
   }
 </style>
+<script src="../site_libs/quarto-diagram/mermaid.min.js"></script>
+<script src="../site_libs/quarto-diagram/mermaid-init.js"></script>
+<link href="../site_libs/quarto-diagram/mermaid.css" rel="stylesheet">
 
+  <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js" type="text/javascript"></script>
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN") {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
 
 <link rel="stylesheet" href="../site_libs/quarto-contrib/quarto-project/asta-theme/asta.css">
 <link rel="stylesheet" href="../styles.css">
@@ -493,6 +560,12 @@ document.addEventListener("DOMContentLoaded", () => {
    
   <ul>
   <li><a href="#example-claim" id="toc-example-claim" class="nav-link active" data-scroll-target="#example-claim">Example claim</a></li>
+  <li><a href="#background" id="toc-background" class="nav-link" data-scroll-target="#background">Background</a></li>
+  <li><a href="#models-compared" id="toc-models-compared" class="nav-link" data-scroll-target="#models-compared">Models compared</a></li>
+  <li><a href="#encoderdecoder-with-attention" id="toc-encoderdecoder-with-attention" class="nav-link" data-scroll-target="#encoderdecoder-with-attention">Encoder–decoder with attention</a></li>
+  <li><a href="#attention-in-one-line" id="toc-attention-in-one-line" class="nav-link" data-scroll-target="#attention-in-one-line">Attention in one line</a></li>
+  <li><a href="#how-far-a-signal-travels" id="toc-how-far-a-signal-travels" class="nav-link" data-scroll-target="#how-far-a-signal-travels">How far a signal travels</a></li>
+  <li><a href="#takeaways" id="toc-takeaways" class="nav-link" data-scroll-target="#takeaways">Takeaways</a></li>
   </ul>
 </nav>
 </nav>
@@ -527,6 +600,185 @@ document.addEventListener("DOMContentLoaded", () => {
 <section id="example-claim" class="level2">
 <h2 class="anchored" data-anchor-id="example-claim">Example claim</h2>
 <p><span class="ev" tabindex="0" role="note" aria-description="“We propose a new simple network architecture, the Transformer, based solely on attention mechanisms” — citation vaswani2017attention (abstract)">Vaswani and colleagues proposed a Transformer architecture based on attention mechanisms<span class="ev-pop" role="note"><span class="ev-card"><span class="ev-pop-text ev-quote">“<em>We propose a new simple network architecture, the Transformer, based solely on attention mechanisms</em>”</span><span class="ev-pop-src">— <span class="citation" data-cites="vaswani2017attention">(<a href="#ref-vaswani2017attention" role="doc-biblioref">Vaswani et al. 2017</a>, abstract)</span></span></span></span></span> <span class="citation" data-cites="vaswani2017attention">(<a href="#ref-vaswani2017attention" role="doc-biblioref">Vaswani et al. 2017</a>)</span>. The highlighted claim exposes its source quote on hover or keyboard focus.</p>
+</section>
+<section id="background" class="level2">
+<h2 class="anchored" data-anchor-id="background">Background</h2>
+<p>Recurrent networks read a sequence one token at a time, carrying a hidden state from each token to the next.</p>
+<p>Gated cells, such as the <a href="https://www.bioinf.jku.at/publications/older/2604.pdf">LSTM’s</a>, let that state carry information across longer spans, but a signal between two distant tokens still passes through every step between them.</p>
+<p>Encoder–decoder models used one recurrent network to read a sentence and a second to write its translation, joined only by the final state of the first.</p>
+<p>That final state had to hold the whole sentence, so translations of long sentences lost detail from their beginnings.</p>
+<p>Attention was first added to these models to let the decoder look back at every encoder state, rather than at the last one alone.</p>
+<p>Convolutional sequence models shortened the path differently, stacking layers so that each widens the span a token can see.</p>
+</section>
+<section id="models-compared" class="level2">
+<h2 class="anchored" data-anchor-id="models-compared">Models compared</h2>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Model</th>
+<th>Year</th>
+<th>Recurrence</th>
+<th>Steps between distant tokens</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>LSTM encoder–decoder</td>
+<td>2014</td>
+<td>yes</td>
+<td>one per token between them</td>
+</tr>
+<tr class="even">
+<td>RNN with attention</td>
+<td>2015</td>
+<td>yes</td>
+<td>one, through attention</td>
+</tr>
+<tr class="odd">
+<td>Transformer</td>
+<td>2017</td>
+<td>no</td>
+<td>one</td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="encoderdecoder-with-attention" class="level2">
+<h2 class="anchored" data-anchor-id="encoderdecoder-with-attention">Encoder–decoder with attention</h2>
+<div class="cell" data-layout-align="default">
+<div class="cell-output-display">
+<div>
+<p></p><figure class="figure"><p></p>
+<div>
+<pre class="mermaid mermaid-js">flowchart LR
+  src[Source sentence] --&gt; enc[Recurrent encoder]
+  enc --&gt; dec[Recurrent decoder]
+  enc -. every state .-&gt; att[Attention]
+  att --&gt; dec
+  dec --&gt; tgt[Translation]
+</pre>
+</div>
+<p></p></figure><p></p>
+</div>
+</div>
+</div>
+</section>
+<section id="attention-in-one-line" class="level2">
+<h2 class="anchored" data-anchor-id="attention-in-one-line">Attention in one line</h2>
+<p>Each token’s output is a weighted average of every token’s value:</p>
+<p><span class="math display">\[
+\operatorname{Attention}(Q,K,V) = \operatorname{softmax}\left(QK^T\right)V
+\]</span></p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Reading the equation
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>Q, K and V are the queries, keys and values, one row per token.</p>
+</div>
+</div>
+<div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>scores <span class="op">=</span> q <span class="op">@</span> k.T</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>weights <span class="op">=</span> softmax(scores, axis<span class="op">=-</span><span class="dv">1</span>)</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>out <span class="op">=</span> weights <span class="op">@</span> v</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</section>
+<section id="how-far-a-signal-travels" class="level2">
+<h2 class="anchored" data-anchor-id="how-far-a-signal-travels">How far a signal travels</h2>
+<div class="cell" data-layout-align="default">
+<div class="cell-output-display">
+<div>
+<p></p><figure class="figure"><p></p>
+<div>
+<svg width="672" height="480" viewbox="0.00 0.00 358.47 76.10" xmlns="http://www.w3.org/2000/svg" xlink="http://www.w3.org/1999/xlink" style="; max-width: none; max-height: none">
+<g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(4 72.1)">
+<title>path</title>
+<polygon fill="white" stroke="transparent" points="-4,4 -4,-72.1 354.47,-72.1 354.47,4 -4,4"></polygon>
+<!-- t1 -->
+<g id="node1" class="node">
+<title>t1</title>
+<ellipse fill="none" stroke="black" cx="18.55" cy="-18.55" rx="18.6" ry="18.6"></ellipse>
+<text text-anchor="middle" x="18.55" y="-14.35" font-family="Times,serif" font-size="14.00">t1</text>
+</g>
+<!-- t2 -->
+<g id="node2" class="node">
+<title>t2</title>
+<ellipse fill="none" stroke="black" cx="114.2" cy="-49.55" rx="18.6" ry="18.6"></ellipse>
+<text text-anchor="middle" x="114.2" y="-45.35" font-family="Times,serif" font-size="14.00">t2</text>
+</g>
+<!-- t1&#45;&gt;t2 -->
+<g id="edge1" class="edge">
+<title>t1-&gt;t2</title>
+<path fill="none" stroke="black" d="M36.29,-24.09C50.19,-28.69 70.21,-35.32 86.35,-40.66"></path>
+<polygon fill="black" stroke="black" points="85.69,-44.13 96.28,-43.95 87.89,-37.48 85.69,-44.13"></polygon>
+<text text-anchor="middle" x="66.37" y="-41.75" font-family="Times,serif" font-size="14.00">step</text>
+</g>
+<!-- t4 -->
+<g id="node4" class="node">
+<title>t4</title>
+<ellipse fill="none" stroke="black" cx="331.93" cy="-18.55" rx="18.6" ry="18.6"></ellipse>
+<text text-anchor="middle" x="331.93" y="-14.35" font-family="Times,serif" font-size="14.00">t4</text>
+</g>
+<!-- t1&#45;&gt;t4 -->
+<g id="edge4" class="edge">
+<title>t1-&gt;t4</title>
+<path fill="none" stroke="black" d="M37.18,-18.55C88.76,-18.55 239.68,-18.55 302.73,-18.55"></path>
+<polygon fill="black" stroke="black" points="303.1,-22.05 313.1,-18.55 303.1,-15.05 303.1,-22.05"></polygon>
+<text text-anchor="middle" x="175.24" y="-22.75" font-family="Times,serif" font-size="14.00">attention</text>
+</g>
+<!-- t3 -->
+<g id="node3" class="node">
+<title>t3</title>
+<ellipse fill="none" stroke="black" cx="236.28" cy="-49.55" rx="18.6" ry="18.6"></ellipse>
+<text text-anchor="middle" x="236.28" y="-45.35" font-family="Times,serif" font-size="14.00">t3</text>
+</g>
+<!-- t2&#45;&gt;t3 -->
+<g id="edge2" class="edge">
+<title>t2-&gt;t3</title>
+<path fill="none" stroke="black" d="M132.91,-49.55C152.51,-49.55 184.36,-49.55 207.33,-49.55"></path>
+<polygon fill="black" stroke="black" points="207.49,-53.05 217.49,-49.55 207.49,-46.05 207.49,-53.05"></polygon>
+<text text-anchor="middle" x="175.24" y="-53.75" font-family="Times,serif" font-size="14.00">step</text>
+</g>
+<!-- t3&#45;&gt;t4 -->
+<g id="edge3" class="edge">
+<title>t3-&gt;t4</title>
+<path fill="none" stroke="black" d="M254.02,-44.01C267.92,-39.41 287.94,-32.78 304.08,-27.44"></path>
+<polygon fill="black" stroke="black" points="305.62,-30.61 314.01,-24.15 303.42,-23.97 305.62,-30.61"></polygon>
+<text text-anchor="middle" x="284.1" y="-41.75" font-family="Times,serif" font-size="14.00">step</text>
+</g>
+</g>
+</svg>
+</div>
+<p></p></figure><p></p>
+</div>
+</div>
+</div>
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="figures/path-length.svg" class="img-fluid figure-img" style="width:80.0%"></p>
+<figcaption>The longest path a signal takes between two tokens of a sequence, by layer type. The convolution has kernel 5, stride 1 and no dilation, so each layer widens a token’s view by 4 and its path is the number of layers needed to span the sequence.</figcaption>
+</figure>
+</div>
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="figures/seen-512.svg" class="img-fluid figure-img" style="width:80.0%"></p>
+<figcaption>The tokens one position can see after each layer of that convolution, in a 512-token sequence.</figcaption>
+</figure>
+</div>
+</section>
+<section id="takeaways" class="level2">
+<h2 class="anchored" data-anchor-id="takeaways">Takeaways</h2>
+<ul>
+<li>Recurrence reads one token at a time, so the tokens of a sequence can’t be processed in parallel during training.</li>
+<li>Gating eases, but doesn’t remove, the long path between distant tokens.</li>
+<li>A fixed-size final state limits how much of a long input sentence a decoder can draw on.</li>
+<li>Convolutions shorten the path, but only by stacking more layers as the span grows.</li>
+<li>Attention connects every pair of tokens in one step.</li>
+<li>The Transformer drops recurrence entirely.</li>
+</ul>
 
 
 
