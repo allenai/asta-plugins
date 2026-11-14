@@ -1,0 +1,52 @@
+/*-- scss:defaults --*/
+// The workspace's Asta palette and open fonts; deck-local SCSS can override these.
+$asta-bg: #032629 !default;
+$asta-fg: #faf2e9 !default;
+$asta-link: #0fcb8c !default;
+$asta-font: Manrope, Arial, sans-serif !default;
+$asta-mono-font: "Roboto Mono", monospace !default;
+$asta-heading-font: $asta-font !default;
+$asta-subtle: rgba($asta-fg, 0.1) !default;
+$asta-border: rgba($asta-fg, 0.2) !default;
+$asta-secondary: rgba($asta-fg, 0.55) !default;
+// The window around the slide, a shade darker so the slide's edges show.
+$asta-surround: darken($asta-bg, 4%) !default;
+// Every slide's inner padding, in slide units (the 1600x900 slide); the headline,
+// slide number and arrows sit inside it too.
+$asta-slide-padding: 48px !default;
+$asta-scroll-margin: $asta-slide-padding !default;
+
+// Let Quarto derive its code, table, callout and title styles from this palette.
+$body-bg: $asta-bg !default;
+$body-color: $asta-fg !default;
+$link-color: $asta-link !default;
+$presentation-heading-color: $asta-fg !default;
+$presentation-heading-font: $asta-heading-font !default;
+$font-family-sans-serif: $asta-font !default;
+$font-family-monospace: $asta-mono-font !default;
+$code-color: $asta-fg !default;
+$code-bg: $asta-subtle !default;
+$code-block-bg: $asta-bg !default;
+$code-block-color: $asta-fg !default;
+$code-block-border-color: $asta-border !default;
+$table-border-color: $asta-border !default;
+$border-color: $asta-border !default;
+
+/*-- scss:rules --*/
+.reveal {
+  --asta-slide-padding: #{$asta-slide-padding};
+  .controls { color: $asta-link; }
+  .asta-slides-section { color: $asta-secondary; }
+  .asta-slides-section .current { color: $asta-link; }
+  .slide-number { background: transparent; color: $asta-secondary; }
+}
+
+.reveal-viewport { background: $asta-surround; }
+.reveal-viewport:not(.reveal-scroll) .reveal:not(.has-dark-background):not(.has-light-background) .slides { background: $asta-bg; }
+// Below Reveal's scrollActivationWidth, paint only slide panels, not nested sections.
+// Keep these exclusions in sync with Reveal's custom background attributes.
+// Zero specificity lets deck CSS override the default without stronger selectors.
+:where(.reveal-scroll .scroll-page-content > section:not(.asta-slides-inherited-background):not([data-background]):not([data-background-color]):not([data-background-image]):not([data-background-gradient]):not([data-background-video]):not([data-background-iframe])) { background-color: $asta-bg; }
+
+// Phone scroll view: keep slide text off the panel's edges.
+.reveal-scroll .scroll-page-content > section { padding-inline: $asta-scroll-margin; box-sizing: border-box; }
