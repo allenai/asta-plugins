@@ -73,13 +73,16 @@ def _load_diff_engine():
 
 _engine = _load_diff_engine()
 (
+    DEFAULT_VIEW,
     DIFF_STYLE,
     FOLD_JS,
     STANDALONE_STYLE,
+    VIEWS,
     VIEWS_JS,
     VOID_TAGS,
     SiteImages,
     diff_content,
+    diff_header,
     has_mermaid_unit,
     math_script,
     mermaid_script,
@@ -91,14 +94,18 @@ _engine = _load_diff_engine()
     source_diff,
     strip_ids,
     version_of,
+    views_control,
 ) = (
+    _engine.DEFAULT_VIEW,
     _engine.DIFF_STYLE,
     _engine.FOLD_JS,
     _engine.STANDALONE_STYLE,
+    _engine.VIEWS,
     _engine.VIEWS_JS,
     _engine.VOID_TAGS,
     _engine.SiteImages,
     _engine.diff_content,
+    _engine.diff_header,
     _engine.has_mermaid_unit,
     _engine.math_script,
     _engine.mermaid_script,
@@ -110,6 +117,7 @@ _engine = _load_diff_engine()
     _engine.source_diff,
     _engine.strip_ids,
     _engine.version_of,
+    _engine.views_control,
 )
 
 ID_RE = re.compile(r'(?is)\bid\s*=\s*["\']([^"\']+)["\']')
@@ -841,19 +849,9 @@ def head_title(path, rel):
         return rel
 
 
-# The views of a diff's control, in order: the diffs (Source, where there is one,
-# Changes marked, Before / after), then Clean, the one view that is no diff; and the
-# one it opens on.
-VIEWS = (
-    ("source", "Source"),
-    ("marked", "Changes marked"),
-    ("before", "Before / after"),
-    ("clean", "Clean"),
-)
 # What the header and the overview say of a page whose rendered content no reader
 # sees change but whose source did.
 SOURCE_ONLY = "only its source changed"
-DEFAULT_VIEW = "marked"
 # What a page's own source may be called, by the rendered page's name, and the
 # most of it that is read (a notebook's JSON can be megabytes). The workspace's
 # workflow lists the same suffixes where it reads the committed sources; a test
@@ -978,54 +976,6 @@ def unchanged_page(output, old_c, new_c, rel, link, sources):
         "changed: open Source.</p>"
     )
     return "changed", "changed", note + strip_volatile(new_c, rel)
-
-
-def views_control(views):
-    """The control: one button to each of `views` (names of VIEWS), in the order
-    of VIEWS, with DEFAULT_VIEW pressed."""
-    return (
-        '<span class="wc-views" role="group" aria-label="View">'
-        + "".join(
-            f'<button type="button" data-wc-view="{v}" '
-            f'aria-pressed="{"true" if v == DEFAULT_VIEW else "false"}">{label}</button>'
-            for v, label in VIEWS
-            if v in views
-        )
-        + "</span>"
-    )
-
-
-def diff_header(
-    title, link, state, label, file, controls="", source_file="", detail=""
-):
-    """The one header of a diff, on one line: the page's short title (linking
-    to the page, with a tag when it is more than plain `changed`), its file, a
-    plain `detail` after the file, then `controls`, the control (views_control)
-    and any button.
-
-    title, label, file, source_file and detail are plain text, escaped here."""
-    name = html.escape(title)
-    if link:
-        name = f'<a href="{html.escape(link, quote=True)}">{name}</a>'
-    tag = (
-        ""
-        if label == "changed"
-        else f' <span class="tag {state}">{html.escape(label)}</span>'
-    )
-    detail_html = (
-        f'<span class="wc-detail">{html.escape(detail)}</span>' if detail else ""
-    )
-    shown = html.escape(file, quote=True)
-    source = (
-        f' data-source="{html.escape(source_file, quote=True)}"' if source_file else ""
-    )
-    return (
-        '<div class="wc-head"><span class="wc-head-left">'
-        f'<h2 class="wc-title">{name}{tag}</h2>'
-        f'<code class="wc-file" data-rendered="{shown}"{source}>{html.escape(file)}</code>'
-        f"{detail_html}"
-        f'</span><span class="wc-head-right">{controls}</span></div>'
-    )
 
 
 def source_part(found):

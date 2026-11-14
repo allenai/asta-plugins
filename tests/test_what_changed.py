@@ -2678,6 +2678,18 @@ def test_outside_page_gets_fragments_from_both_entry_points(tmp_path):
     assert wc.FOLD_JS.strip()
 
 
+def test_outside_page_gets_the_header_and_view_switch_from_the_engine(tmp_path):
+    wc = _load_like_an_outside_page(tmp_path)
+    control = wc.views_control(("clean", "marked"))
+    assert re.findall(r'data-wc-view="(\w+)"', control) == ["marked", "clean"]
+    assert re.findall(r'aria-pressed="(\w+)"', control) == ["true", "false"]
+    header = wc.diff_header("A & B", "a.html", "added", "new", "a.qmd", control)
+    assert '<a href="a.html">A &amp; B</a>' in header
+    assert '<span class="tag added">new</span>' in header
+    assert header.endswith(f'<span class="wc-head-right">{control}</span></div>')
+    assert wc.VIEWS_JS.strip()
+
+
 def test_the_documented_outside_page_wrapper_is_the_one_the_fold_script_selects():
     # The DOM test (tests/dom) runs it; here the header and the script agree.
     assert '<div class="wc-scope wc-standalone" data-wc-fold>' in ENGINE.__doc__
