@@ -78,10 +78,14 @@ deck, a LaTeX paper, a data file, a page made by script) is one entry of
     drawn     aligned child by child and never marked itself, so the words,
               lists and tables inside are drawn as in rows 1, 2 and 5; a
               paragraph wrapped in, or taken out of, a new `div` still pairs with
-              its old self
-    why       a callout's box is the site's styling, its content is the edit
+              its old self; a collapsed section (`<details>`: a folded code
+              cell, a Markdown fold) that holds a change is drawn open, the
+              others as the author left them
+    why       a callout's box is the site's styling, its content is the edit;
+              a change inside a closed section would be counted and not seen
     tests     test_paragraph_wrapped_in_a_new_div_pairs_with_its_old_self
               test_wrapped_paragraph_with_an_edit_diffs_the_words_inside_the_wrapper
+              test_a_collapsed_section_with_a_change_is_drawn_open
  4. Footnotes
     entry     `list`, `list item`, `link`
     compared  the rendered page: the note list and the reference links
@@ -2760,6 +2764,25 @@ def _whole_row_cells(node, wrapper, cols, images):
     )
 
 
+def _opened(tag):
+    """A `<details>` start tag drawn open: a collapsed section (a folded code
+    cell, a Markdown fold) holding a change, so that the change is seen and not
+    only counted. One the author left open is kept as it is."""
+    names = {m.group(1).lower() for m in _ATTR_RE.finditer(_START_RE.sub("", tag))}
+    if "open" in names:
+        return tag
+    return _START_RE.sub(lambda s: f"{s.group(0)} open", tag, count=1)
+
+
+def _around(node, inner, changed):
+    """`node.around(inner)`, a `<details>` drawn open when `changed` (something
+    inside it changed, as the walk counts it); the others as the author left
+    them."""
+    if changed and node.name == "details":
+        return node.ws + _opened(node.open) + inner + node.tail + node.close
+    return node.around(inner)
+
+
 def _render_whole(node, wrapper, top=True, images=None, cols=None):
     """An added or removed block: its own tags kept, its words marked.
 
@@ -2772,6 +2795,8 @@ def _render_whole(node, wrapper, top=True, images=None, cols=None):
     if node.kind == "run":
         return node._run(emit_run(node.tokens, wrapper, images))
     open_ = _add_class(node.open, BLOCK_CLASS[wrapper]) if top else node.open
+    if node.name == "details":
+        open_ = _opened(open_)  # everything in it is added or removed
     if node.void:
         return node.ws + open_
     inner = None
@@ -2862,7 +2887,7 @@ def _diff_children(olds, news, parent, images=None, mode=BOTH, rows=False, cols=
                 inner_mode,
             )
             if into and blocks == "inter":
-                inner = n.around(inner)
+                inner = _around(n, inner, ch)
             out.append(inner)
             changed |= ch
             own |= o_own
@@ -2907,7 +2932,7 @@ def _diff_children(olds, news, parent, images=None, mode=BOTH, rows=False, cols=
                     inner, ch, _, o_in = _diff_children(
                         o.children, n.children, n.name, images, inner_mode, cols=sub
                     )
-                    out.append(n.around(inner))
+                    out.append(_around(n, inner, ch))
                 changed |= ch
                 inplace |= o_in
         else:
