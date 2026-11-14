@@ -2219,6 +2219,87 @@ def test_wrapped_paragraph_with_an_edit_diffs_the_words_inside_the_wrapper():
     )
 
 
+def test_a_collapsed_section_with_a_change_is_drawn_open():
+    def fold(title, *paragraphs, attrs=""):
+        inner = "".join(f"<p>{p}</p>" for p in paragraphs)
+        return f"<details{attrs}><summary>{title}</summary>{inner}</details>"
+
+    def drawn_open(body, title):
+        tag = re.search(rf"<details([^>]*)><summary>(?:<(?:ins|del)>)?{title}\b", body)
+        return " open" in tag.group(1)
+
+    same = fold("Background", "Nothing here moves.")
+    old = (
+        same
+        + fold("Plan", "The plan is set.")
+        + "<details><summary>Outer</summary><p>Kept.</p>"
+        + fold("Inner", "A value of three.")
+        + "</details>"
+        + fold("Old", "Gone soon.")
+    )
+    new = (
+        same
+        + fold("Plan", "The plan is set.", "A new requirement.")
+        + "<details><summary>Outer</summary><p>Kept.</p>"
+        + fold("Inner", "A value of four.")
+        + "</details>"
+    )
+    body, changed = WHAT_CHANGED.diff_content(old, new)
+    assert changed
+    assert {
+        title: drawn_open(body, title)
+        for title in ("Background", "Plan", "Outer", "Inner", "Old")
+    } == {"Background": False, "Plan": True, "Outer": True, "Inner": True, "Old": True}
+    # One the author left open stays open, with one `open`.
+    body, _ = WHAT_CHANGED.diff_content(
+        fold("Plan", "Set.", attrs=" open"), fold("Plan", "Set again.", attrs=" open")
+    )
+    assert body.count(" open") == 1
+
+
+def test_a_collapsed_section_opens_for_every_kind_of_change_and_only_then():
+    def fold(title, inner, attrs=""):
+        return f"<details{attrs}><summary>{title}</summary>{inner}</details>"
+
+    def drawn_open(old, new):
+        body, changed = WHAT_CHANGED.diff_content(old, new)
+        assert changed
+        tag = re.search(r"<details([^>]*)><summary>Fold</summary>", body)
+        return re.search(r"\sopen\b", tag.group(1)) is not None
+
+    # Changes that mark no words: evidence added to a claim, a link taken off.
+    claim = '<span class="ev" role="note">42,000 lines</span>'
+    quote = (
+        '<span class="ev-pop" role="note"><span class="ev-card">'
+        '<span class="ev-pop-text ev-quote">“<em>an average of 42,000</em>”'
+        "</span></span></span>"
+    )
+    with_quote = claim.replace("</span>", quote + "</span>", 1)
+    assert drawn_open(
+        fold("Fold", f"<p>Kosmos averages {claim} per run.</p>"),
+        fold("Fold", f"<p>Kosmos averages {with_quote} per run.</p>"),
+    )
+    assert drawn_open(
+        fold("Fold", '<p>see <a href="old-paper">alpha beta</a> now</p>'),
+        fold("Fold", "<p>see alpha beta now</p>"),
+    )
+    # The word `open` in another attribute is not the attribute.
+    assert drawn_open(
+        fold("Fold", "<p>Old value.</p>", ' title="keep open please"'),
+        fold("Fold", "<p>New value.</p>", ' title="keep open please"'),
+    )
+    # Unchanged sections stay closed beside a change elsewhere, even holding the
+    # author's own <ins>/<del> or code that names a mark's class.
+    for inner in (
+        "<p><del>5 mg</del> <ins>10 mg</ins></p>",
+        '<pre><code>class="wc-block-added"</code></pre>',
+    ):
+        assert not drawn_open(
+            fold("Fold", inner) + "<p>Before.</p>",
+            fold("Fold", inner) + "<p>After.</p>",
+        )
+
+
 MATH_OLD = '<p>Let <span class="math inline">\\(x^2 + y\\)</span> be small.</p>'
 MATH_NEW = '<p>Let <span class="math inline">\\(x^3 + y\\)</span> be small.</p>'
 
