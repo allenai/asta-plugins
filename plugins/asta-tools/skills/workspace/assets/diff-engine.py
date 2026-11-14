@@ -581,6 +581,19 @@ Use from a page outside the workspace
     `diff_content` takes `images`, a callable `images(side, src)` returning a
     digest of the file an `<img>` names on the "old" or "new" site (None if
     unknown); `SiteImages(old_root, new_root)` is one over two rendered trees.
+  * The header and the view switch are the workspace's own, so that a page draws
+    the same ones: `diff_header(title, link, state, label, file, controls="",
+    source_file="", detail="")` returns the one-line header of a diff (the
+    page's `title`, linking to `link` when given, with a tag `label` styled as
+    `state` unless `label` is "changed"; `file`; a plain `detail`; then
+    `controls`, HTML placed at the right; every text argument is plain text,
+    escaped here), and `views_control(views)` returns the control, one button to
+    each name of `views` that is in `VIEWS` ("source", "marked", "before",
+    "clean"), in the order of `VIEWS`, `DEFAULT_VIEW` ("marked") pressed. Put
+    `VIEWS_JS` (in a <script>) in the page for the buttons to switch the views
+    of the `section.page-diff` that holds them (the section carries each
+    version in a `<template data-wc-version="old|new">`, made by `version_of`);
+    `controls` is usually `views_control(...)`.
   * The page includes `DIFF_STYLE`, `STANDALONE_STYLE` (each in a <style>) and
     `FOLD_JS` (in a <script>, after the fragment; `math_script(fragment)` too
     when it has equations: it returns "" when it has none; `mermaid_script(fragment)`
@@ -4011,6 +4024,65 @@ VIEWS_JS = r"""
   Array.prototype.forEach.call(document.querySelectorAll("section.page-diff"), wire);
 })();
 """
+
+# The views of a diff's control, in order: the diffs (Source, where there is one,
+# Changes marked, Before / after), then Clean, the one view that is no diff; and the
+# one it opens on.
+VIEWS = (
+    ("source", "Source"),
+    ("marked", "Changes marked"),
+    ("before", "Before / after"),
+    ("clean", "Clean"),
+)
+DEFAULT_VIEW = "marked"
+
+
+def views_control(views):
+    """The control: one button to each of `views` (names of VIEWS), in the order
+    of VIEWS, with DEFAULT_VIEW pressed."""
+    return (
+        '<span class="wc-views" role="group" aria-label="View">'
+        + "".join(
+            f'<button type="button" data-wc-view="{v}" '
+            f'aria-pressed="{"true" if v == DEFAULT_VIEW else "false"}">{label}</button>'
+            for v, label in VIEWS
+            if v in views
+        )
+        + "</span>"
+    )
+
+
+def diff_header(
+    title, link, state, label, file, controls="", source_file="", detail=""
+):
+    """The one header of a diff, on one line: the page's short title (linking
+    to the page, with a tag when it is more than plain `changed`), its file, a
+    plain `detail` after the file, then `controls`, the control (views_control)
+    and any button.
+
+    title, label, file, source_file and detail are plain text, escaped here."""
+    name = html.escape(title)
+    if link:
+        name = f'<a href="{html.escape(link, quote=True)}">{name}</a>'
+    tag = (
+        ""
+        if label == "changed"
+        else f' <span class="tag {state}">{html.escape(label)}</span>'
+    )
+    detail_html = (
+        f'<span class="wc-detail">{html.escape(detail)}</span>' if detail else ""
+    )
+    shown = html.escape(file, quote=True)
+    source = (
+        f' data-source="{html.escape(source_file, quote=True)}"' if source_file else ""
+    )
+    return (
+        '<div class="wc-head"><span class="wc-head-left">'
+        f'<h2 class="wc-title">{name}{tag}</h2>'
+        f'<code class="wc-file" data-rendered="{shown}"{source}>{html.escape(file)}</code>'
+        f"{detail_html}"
+        f'</span><span class="wc-head-right">{controls}</span></div>'
+    )
 
 
 # Body typography for the fallback path, when no site theme could be reused, and
