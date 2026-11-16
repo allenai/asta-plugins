@@ -1,4 +1,4 @@
-"""asta-pages autolink: links in a page's text open a card of what they point at, and mentions
+"""asta-templates autolink: links in a page's text open a card of what they point at, and mentions
 of tests, theories, gaps and experiments become such links. All names and data here are
 invented for the test."""
 
@@ -104,13 +104,13 @@ Q1 in a new section, and Q9 is no gap.
 def site(tmp_path_factory):
     assert shutil.which("quarto")
     project = tmp_path_factory.mktemp("autolink") / "ws"
-    for ext in ("asta-pages", "evidence"):
+    for ext in ("asta-templates", "evidence"):
         shutil.copytree(ASSETS / "_extensions" / ext, project / "_extensions" / ext)
     _write(
         project / "_quarto.yml",
         'project:\n  type: website\n  output-dir: _site\n  render: [index.qmd, "pages/*.qmd"]\n'
         "website:\n  title: Demo\nformat: html\n"
-        "filters:\n  - _extensions/evidence/snippet.lua\n  - asta-pages\n",
+        "filters:\n  - _extensions/evidence/snippet.lua\n  - asta-templates\n",
     )
     _write(project / "index.qmd", REVIEW)
     _write(project / "references.bib", BIB)
@@ -510,12 +510,12 @@ def deep(tmp_path_factory):
     assert shutil.which("quarto")
     project = tmp_path_factory.mktemp("deeplinks") / "ws"
     shutil.copytree(
-        ASSETS / "_extensions" / "asta-pages", project / "_extensions" / "asta-pages"
+        ASSETS / "_extensions" / "asta-templates", project / "_extensions" / "asta-templates"
     )
     _write(
         project / "_quarto.yml",
         'project:\n  type: website\n  output-dir: _site\n  render: [index.qmd, about.md, "pages/*.qmd"]\n'
-        "website:\n  title: Demo\nformat: html\nfilters:\n  - asta-pages\n",
+        "website:\n  title: Demo\nformat: html\nfilters:\n  - asta-templates\n",
     )
     _write(project / "index.qmd", DEEP_REVIEW)
     _write(project / "about.md", "# About\n")

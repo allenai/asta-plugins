@@ -1,4 +1,4 @@
-"""The asta-pages widgets that link to files on disk: asta-files, asta-doc, asta-tests and
+"""The asta-templates widgets that link to files on disk: asta-files, asta-doc, asta-tests and
 asta-theories tests=. A workflow page sits in pages/, renders into _site/pages/, and links each
 file under .asta/flows/ relative to the rendered page, without Quarto copying the files."""
 
@@ -32,7 +32,7 @@ def _project(tmp_path: Path) -> Path:
     assert shutil.which("quarto")
     project = tmp_path / "ws"
     shutil.copytree(
-        ASSETS / "_extensions/asta-pages", project / "_extensions/asta-pages"
+        ASSETS / "_extensions/asta-templates", project / "_extensions/asta-templates"
     )
     _write(
         project / "_quarto.yml",

@@ -37,7 +37,7 @@ import re
 import sys
 from pathlib import Path
 
-FORMAT = "asta-pages/theorizer@1"
+FORMAT = "asta-templates/theorizer@1"
 SAVE_RE = re.compile(r"^(\d+)-(.+)\.json$")
 
 

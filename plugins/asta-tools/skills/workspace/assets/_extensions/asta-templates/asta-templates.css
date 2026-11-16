@@ -1,4 +1,4 @@
-/* asta-pages: the theory page (the product's Theorizer panel) and the literature page (its
+/* asta-templates: the theory page (the product's Theorizer panel) and the literature page (its
    Paper Finder panel). Colours are Asta design tokens: the light set is the cream theme, and
    Quarto's dark toggle (body.quarto-dark) switches to the dark set. Type comes from the
    asta-theme extension (Manrope). */
@@ -440,7 +440,7 @@ body.quarto-dark .asta-autods { --ap-surprise: #ffa31c; }   /* --color-warning-o
 .ap-ad-dataset p { margin-top: 8px; padding: 12px 14px; background: var(--ap-sunk); border-radius: var(--ap-r); font-size: 14px; }
 
 /* The run's workflow diagram: a long left-to-right chain scrolls sideways rather than shrinking
-   until its labels cannot be read (asta-pages.lua sizes it once Mermaid has drawn it). */
+   until its labels cannot be read (asta-templates.lua sizes it once Mermaid has drawn it). */
 .asta-workflow { overflow-x: auto; margin: 0.5rem 0 1.5rem; }
 .asta-workflow pre.mermaid { background: transparent; border: 0; padding: 0; margin: 0; }
 
@@ -599,7 +599,7 @@ body.quarto-dark .ap-ts-table tr.ap-ts-row.ap-open td:first-child { box-shadow: 
 .ap-tt-unmatched { margin-top: 12px; }
 .ap-ad-files { margin-top: 8px; font-size: 13px; }
 
-/* ---- a flow's feed (asta-pages.js): the next workflow pages of the flow, appended below ---- */
+/* ---- a flow's feed (asta-templates.js): the next workflow pages of the flow, appended below ---- */
 .asta-flow {
   --ap-text: #0a3235; --ap-muted: #3f7274; --ap-faint: #6e9291; --ap-line: #cbd2cc;
   --ap-link: #105257; --ap-link-hover: #3f7274; --ap-accent: #f0529c;
@@ -652,11 +652,11 @@ body #quarto-document-content .asta-flow .asta-flow-divider h1.asta-flow-title a
   font-family: Manrope, Arial, sans-serif; font-size: 0.85rem; color: var(--ap-faint);
 }
 
-/* ---- autolink (autolink.lua): links and the cards they open (asta-pages.js) ---- */
+/* ---- autolink (autolink.lua): links and the cards they open (asta-templates.js) ---- */
 /* A mention that names several things is marked by a dotted underline. */
 a.asta-al-many { text-decoration-style: dotted; }
-/* Where a card stands in for the evidence popover (asta-pages.js sets html.asta-cards), the
-   popover evidence draws with CSS stays shut; without asta-pages.js it shows as before. */
+/* Where a card stands in for the evidence popover (asta-templates.js sets html.asta-cards), the
+   popover evidence draws with CSS stays shut; without asta-templates.js it shows as before. */
 html.asta-cards .ev[data-asta-card] > .ev-pop { display: none !important; }
 .asta-panel.asta-al-card {
   position: absolute; z-index: 1080; width: min(380px, calc(100vw - 16px));

@@ -14,7 +14,7 @@ def _render(tmp_path: Path, shortcode: str) -> str:
     assert shutil.which("quarto")
     project = tmp_path / "site"
     shutil.copytree(
-        ASSETS / "_extensions/asta-pages", project / "_extensions/asta-pages"
+        ASSETS / "_extensions/asta-templates", project / "_extensions/asta-templates"
     )
     (project / "data").mkdir()
     for name, theory in (("theorizer.json", "One"), ("theorizer-v2.json", "Two")):

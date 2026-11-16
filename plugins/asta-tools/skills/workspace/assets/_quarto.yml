@@ -22,7 +22,7 @@ metadata-files:
 filters:
   - _extensions/evidence/snippet.lua
   # Links mentions of theories, tests, gaps, experiments and figures, with a card for each.
-  - asta-pages
+  - asta-templates
 
 website:
   title: "{{TITLE}}"

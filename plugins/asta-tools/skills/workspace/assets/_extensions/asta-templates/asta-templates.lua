@@ -1,4 +1,4 @@
--- asta-pages: shortcodes that turn a run's files into page panels. A workflow page
+-- asta-templates: shortcodes that turn a run's files into page panels. A workflow page
 -- (pages/<NNNN>-<workflow>.qmd) holds a title, a heading per step and these widgets, nothing
 -- else: every widget links to the files on disk it was built from, so what was run is read
 -- from the files, not from prose on the page.
@@ -79,7 +79,7 @@ local function read_data(kwargs)
   local path = pandoc.path.join({ page_dir(), rel })
   local f = io.open(path, "r")
   if f == nil then
-    quarto.log.warning("asta-pages: cannot read " .. path)
+    quarto.log.warning("asta-templates: cannot read " .. path)
     return nil, "cannot read the data file " .. rel ..
       ". Write it with the workflow's data script, then render again.", rel
   end
@@ -88,17 +88,17 @@ local function read_data(kwargs)
   return text, nil, rel
 end
 
--- The stylesheet and asta-pages.js, which every widget script shares (a panel's start, the
+-- The stylesheet and asta-templates.js, which every widget script shares (a panel's start, the
 -- address it owns) and which draws a flow's feed. Added before any widget script.
 local function css_dep()
-  quarto.doc.add_html_dependency({ name = "asta-pages", version = "0.1.0", stylesheets = { "asta-pages.css" } })
-  quarto.doc.add_html_dependency({ name = "asta-pages-core", version = "0.1.0", scripts = { "asta-pages.js" } })
+  quarto.doc.add_html_dependency({ name = "asta-templates", version = "0.1.0", stylesheets = { "asta-templates.css" } })
+  quarto.doc.add_html_dependency({ name = "asta-templates-core", version = "0.1.0", scripts = { "asta-templates.js" } })
 end
 
 local function add_deps(script)
   css_dep()
   quarto.doc.add_html_dependency({
-    name = "asta-pages-" .. script,
+    name = "asta-templates-" .. script,
     version = "0.1.0",
     scripts = { script .. ".js" },
   })
@@ -352,7 +352,7 @@ local function figure_src(abs)
   pcall(pandoc.system.make_directory, pandoc.path.directory(dest), true)
   local out = io.open(dest, "wb")
   if out == nil then
-    quarto.log.warning("asta-pages: cannot copy " .. rel .. " into the site")
+    quarto.log.warning("asta-templates: cannot copy " .. rel .. " into the site")
     copied[abs] = href_to(abs)
     return copied[abs], size
   end
@@ -667,7 +667,7 @@ end
 local function tests_panel(kwargs)
   if not quarto.doc.is_format("html") then return pandoc.Null() end
   css_dep()
-  quarto.doc.add_html_dependency({ name = "asta-pages-tests", version = "0.1.0", scripts = { "tests.js" } })
+  quarto.doc.add_html_dependency({ name = "asta-templates-tests", version = "0.1.0", scripts = { "tests.js" } })
   local dirs, bar, errors = {}, {}, {}
   for _, rel in ipairs(split_list(kwarg(kwargs, "dir"), ",")) do
     local abs, clean = project_path(rel)
@@ -704,7 +704,7 @@ local function tests_panel(kwargs)
   return pandoc.RawBlock("html", table.concat(boxes, "\n") .. (#boxes > 0 and "\n" or "") .. files_bar(bar) ..
     '<div class="asta-panel asta-tests" data-asta-data="' .. id .. '"' ..
     (title ~= "" and (' data-asta-title="' .. attr_escape(title) .. '"') or "") .. "></div>\n" ..
-    json_script('class="asta-tests-data" id="' .. id .. '"', { format = "asta-pages/tests@1", tests = tests, others = others }))
+    json_script('class="asta-tests-data" id="' .. id .. '"', { format = "asta-templates/tests@1", tests = tests, others = others }))
 end
 
 -- asta-theories tests="a/tests.json,b/tests.json": each index's tests, their folders under
@@ -809,7 +809,7 @@ local function theories_panel(kwargs)
   -- tests.js draws a theory's tests (the Tests tab); it goes before theories.js.
   if kwarg(kwargs, "tests") ~= "" then
     css_dep()
-    quarto.doc.add_html_dependency({ name = "asta-pages-tests", version = "0.1.0", scripts = { "tests.js" } })
+    quarto.doc.add_html_dependency({ name = "asta-templates-tests", version = "0.1.0", scripts = { "tests.js" } })
   end
   add_deps("theories")
   local rels = split_list(pandoc.utils.stringify(kwargs["data"] or ""), ",")
@@ -852,7 +852,7 @@ local function theories_panel(kwargs)
   for _, e in ipairs(test_errors) do
     errors[#errors + 1] = error_box("theories", "Some tests are missing: " .. e).text
   end
-  local tests_script = tests and ("\n" .. json_script('class="asta-theories-tests"', { format = "asta-pages/tests@1", tests = tests })) or ""
+  local tests_script = tests and ("\n" .. json_script('class="asta-theories-tests"', { format = "asta-templates/tests@1", tests = tests })) or ""
   for _, b in ipairs(bar) do data_bar[#data_bar + 1] = b end
   return pandoc.RawBlock("html", table.concat(errors, "\n") .. (#errors > 0 and "\n" or "") .. files_bar(data_bar) ..
     '<div class="asta-panel asta-theories" data-asta-source="' .. attr_escape(table.concat(read, ",")) .. '"' ..
@@ -1063,7 +1063,7 @@ local function autods(kwargs)
   end
   local name = pandoc.utils.stringify(kwargs["name"] or "")
   if name ~= "" and #runs == 1 then runs[1].name = name end
-  local text = quarto.json.encode({ format = "asta-pages/autods@1", runs = runs })
+  local text = quarto.json.encode({ format = "asta-templates/autods@1", runs = runs })
   local safe = text:gsub("</", "<\\/")
   local src = page_abs((rel:gsub("/$", "")))
   return pandoc.RawBlock("html", files_bar({ { abs = src, folder = is_dir(src) } }) ..
@@ -1324,8 +1324,8 @@ end
 
 -- ---- the feed, and each page's sections in the sidebar -----------------------------------
 --
--- Every page the asta-pages filter or one of its shortcodes runs on carries two small JSON blocks
--- for asta-pages.js:
+-- Every page the asta-templates filter or one of its shortcodes runs on carries two small JSON blocks
+-- for asta-templates.js:
 --   script#asta-flow      where the site's root is. The feed's pages are the sidebar's links into
 --                         the site, in the sidebar's order: in a workspace the front page, then
 --                         the workflow pages (pages/<NNNN>-<workflow>.qmd, listed flat with
@@ -1334,7 +1334,7 @@ end
 --   script#asta-sections  each page's sections: its level-2 headings and the ids Quarto gives
 --                         them, keyed by the page's place in the site, for the pages the project
 --                         renders. Listed under each page's sidebar link. Off with
---                         `asta-pages: {sidebar-sections: false}` in _quarto.yml.
+--                         `asta-templates: {sidebar-sections: false}` in _quarto.yml.
 
 local function meta_text(v)
   if v == nil then return "" end
@@ -1446,7 +1446,7 @@ local function page_sections(path)
 end
 
 local function option(meta, name)
-  local o = meta and meta["asta-pages"]
+  local o = meta and meta["asta-templates"]
   if type(o) ~= "table" then return nil end
   local v = o[name]
   if v == nil or type(v) == "boolean" then return v end
@@ -1457,8 +1457,8 @@ end
 -- The feed's and the sidebar's data, once per page (the shortcodes and the filter each load
 -- this file; the page renders in one Lua state, so the mark is kept in package.loaded).
 local function page_extras(meta)
-  local state = package.loaded["asta-pages/page"] or {}
-  package.loaded["asta-pages/page"] = state
+  local state = package.loaded["asta-templates/page"] or {}
+  package.loaded["asta-templates/page"] = state
   if state.done then return end
   state.done = true
   if not quarto.doc.is_format("html") or quarto.doc.is_format("revealjs") then return end
@@ -1466,7 +1466,7 @@ local function page_extras(meta)
   local rel = relative(site, rendered_dir())
   local to_root = rel == "" and "./" or (url_path(rel) .. "/")
   css_dep()
-  quarto.doc.include_text("after-body", json_script('id="asta-flow"', { format = "asta-pages/flow@3", site = to_root }))
+  quarto.doc.include_text("after-body", json_script('id="asta-flow"', { format = "asta-templates/flow@3", site = to_root }))
   if option(meta, "sidebar-sections") == false then return end
   local pages, any = {}, false
   for _, src in ipairs(render_list()) do
@@ -1478,7 +1478,7 @@ local function page_extras(meta)
   end
   if any then
     quarto.doc.include_text("after-body", json_script('id="asta-sections"',
-      { format = "asta-pages/sections@1", site = to_root, pages = pages }))
+      { format = "asta-templates/sections@1", site = to_root, pages = pages }))
   end
 end
 
@@ -1520,7 +1520,7 @@ local function figure_provenance(id, image_abs, quiet)
   local dir = pandoc.path.directory(file)
   local function one(abs, label)
     if file_size(abs) == nil then
-      if not quiet then quarto.log.warning("asta-pages: figure " .. id .. ": " .. label .. " " .. project_rel(abs) .. " not found") end
+      if not quiet then quarto.log.warning("asta-templates: figure " .. id .. ": " .. label .. " " .. project_rel(abs) .. " not found") end
       return { name = pandoc.path.filename(abs), rel = project_rel(abs), missing = true }
     end
     return { name = pandoc.path.filename(abs), rel = project_rel(abs), href = href_to(abs) }
@@ -1534,7 +1534,7 @@ local function figure_provenance(id, image_abs, quiet)
       elseif rel:match("^/") or rel:match("^%a[%w+.-]*://") then
         -- Data outside the workspace (a mounted dataset, an archive URL): named, never linked.
         out.inputs[#out.inputs + 1] = { name = pandoc.path.filename((rel:gsub("/$", ""))), rel = rel, outside = true }
-      elseif not quiet then quarto.log.warning("asta-pages: figure " .. id .. ": input " .. clean) end
+      elseif not quiet then quarto.log.warning("asta-templates: figure " .. id .. ": input " .. clean) end
     end
   end
   if type(data.audit) == "string" and data.audit ~= "" then
@@ -1581,9 +1581,9 @@ local function datasets_panel(kwargs)
   return blocks
 end
 
--- The helpers autolink.lua and provenance.lua (the asta-pages filters) share with the
+-- The helpers autolink.lua and provenance.lua (the asta-templates filters) share with the
 -- shortcodes: they load this file and read them from here.
-ASTA_PAGES_LIB = {
+ASTA_TEMPLATES_LIB = {
   project_root = project_root, project_path = project_path, absolute = absolute, normalize = normalize,
   relative = relative, rendered_dir = rendered_dir, rendered_file = rendered_file, url_path = url_path,
   list_dir = list_dir, is_dir = is_dir, read_file = read_file, decode_json = decode_json,

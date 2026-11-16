@@ -1,4 +1,4 @@
-/* asta-pages literature page: the product's Paper Finder panel, read-only.
+/* asta-templates literature page: the product's Paper Finder panel, read-only.
    Reads the JSON the asta-literature shortcode embedded (#asta-literature-data: the run's
    papers and searches, written by the theory-generation workflow's data script) and draws the paper cards with a text
    filter, and a facets column: sort, fetch status, year, venue, author.
@@ -15,9 +15,9 @@
   }
   function plural(n, one, many) { return n + " " + (n === 1 ? one : many); }
   function baseAnchor(p) { return "paper-" + (p.corpusId || p.key); }
-  // The address as this panel's page sees it: asta-pages.js knows which page of a flow's feed
+  // The address as this panel's page sees it: asta-templates.js knows which page of a flow's feed
   // the panel came from (null when the address is another page's); without it, the page's own.
-  function hashOf(el) { var A = window.AstaPages; return A && A.hashOf ? A.hashOf(el) : location.hash; }
+  function hashOf(el) { var A = window.AstaTemplates; return A && A.hashOf ? A.hashOf(el) : location.hash; }
   function byId(root, id) {
     var found = null;
     root.querySelectorAll(".ap-paper[id]").forEach(function (el) { if (!found && el.id === id) found = el; });
@@ -224,11 +224,11 @@
         "). Write it again with the workflow's data script and render again.</div>";
     }
   }
-  window.AstaPages = window.AstaPages || {};
-  window.AstaPages.literature = safeRender;
+  window.AstaTemplates = window.AstaTemplates || {};
+  window.AstaTemplates.literature = safeRender;
 
   // Each paper list in scope draws itself, once, from the data script that follows it.
-  // asta-pages.js calls start on a page appended to a flow's feed, so a document can hold
+  // asta-templates.js calls start on a page appended to a flow's feed, so a document can hold
   // several pages' panels.
   function start(scope) {
     scope = scope || document;
@@ -243,8 +243,8 @@
       safeRender(root, function () { return JSON.parse(src.textContent); }, { searchFiles: files });
     });
   }
-  window.AstaPages.widgets = window.AstaPages.widgets || [];
-  window.AstaPages.widgets.push({ name: "literature", order: 1, start: start });
+  window.AstaTemplates.widgets = window.AstaTemplates.widgets || [];
+  window.AstaTemplates.widgets.push({ name: "literature", order: 1, start: start });
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", function () { start(document); });
   else start(document);
 })();

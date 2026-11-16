@@ -5,16 +5,16 @@ import vm from "node:vm";
 
 import { DOMParser, Event, parseHTML } from "linkedom";
 
-const dir = new URL("../../plugins/asta-tools/skills/workspace/assets/_extensions/asta-pages/", import.meta.url);
+const dir = new URL("../../plugins/asta-tools/skills/workspace/assets/_extensions/asta-templates/", import.meta.url);
 const read = name => fs.readFileSync(new URL(name, dir), "utf8");
-const CORE = read("asta-pages.js");
+const CORE = read("asta-templates.js");
 const TESTS = read("tests.js");
 const THEORIES = read("theories.js");
 
 const ORIGIN = "http://site.test";
 const PAGES = `${ORIGIN}/_site/pages/`;
 
-// A test folder's row, in the shape asta-pages.lua embeds (links relative to the rendered page).
+// A test folder's row, in the shape asta-templates.lua embeds (links relative to the rendered page).
 const testRow = id => ({ id, href: `../../.asta/flows/0001-demo/04-tests/${id}/`, summary: { meets_threshold: true } });
 const testsPanel = (id, tests) =>
   `<div class="asta-panel asta-tests" data-asta-data="${id}"></div>\n` +
@@ -34,10 +34,10 @@ const sidebar = (up = "../", extra = []) => `<nav id="quarto-sidebar"><ul>` + si
   extra.map(([h, t]) => sidebarItem(h, t)).join("") + "</ul></nav>";
 
 // A rendered page: Quarto's title block, a step's heading, the panels, and the feed's and the
-// sidebar's data (asta-pages.lua writes them on every page it runs on).
+// sidebar's data (asta-templates.lua writes them on every page it runs on).
 function pageHtml(title, body, flow, { up = "../", extra = [], sections = null, toc = "" } = {}) {
   return `<!doctype html><html><head><title>${title} – Demo</title>` +
-    `<script src="${up}site_libs/quarto-contrib/asta-pages-core-0.1.0/asta-pages.js"></script></head><body>` + sidebar(up, extra) +
+    `<script src="${up}site_libs/quarto-contrib/asta-templates-core-0.1.0/asta-templates.js"></script></head><body>` + sidebar(up, extra) +
     (toc ? `<nav id="TOC" role="doc-toc"><ul>${toc}</ul></nav>` : "") +
     `<main class="content" id="quarto-document-content"><header id="title-block-header"><h1 class="title">${title}</h1></header>` +
     `<section id="tests" class="level2"><h2>Tests</h2>${body}</section></main>` +
@@ -90,11 +90,11 @@ function browse(url, html, site = {}) {
   const settle = () => new Promise(r => setTimeout(r, 0)).then(() => new Promise(r => setTimeout(r, 0)));
   // Reaching the end of what is loaded: the sentinel's observer fires, then the fetch settles.
   const reachEnd = async () => { observed[observed.length - 1].fire(); for (let i = 0; i < 5; i++) await settle(); };
-  return { document, window, location, history, entries, fetched, visit, back, reachEnd, AstaPages: window.AstaPages };
+  return { document, window, location, history, entries, fetched, visit, back, reachEnd, AstaTemplates: window.AstaTemplates };
 }
 
 // What every page carries: where the site's root is, from the page.
-const FLOW = (up = "../") => ({ format: "asta-pages/flow@3", site: up });
+const FLOW = (up = "../") => ({ format: "asta-templates/flow@3", site: up });
 const ROOT = `${ORIGIN}/_site/`;
 
 const SITE = {
@@ -173,7 +173,7 @@ test("panels of several pages in one document: each drawn once, ids kept apart, 
   assert.equal(theories.querySelectorAll(".ap-tt tbody tr").length, 2);
 
   // Drawing again (as for another appended page) leaves drawn panels alone.
-  b.AstaPages.init(document);
+  b.AstaTemplates.init(document);
   assert.equal(tests[1].querySelectorAll("tr.ap-ts-row").length, 2);
 
   // A relative link in an appended page points where it did on its own page, whatever the address.
@@ -197,8 +197,8 @@ test("a panel of an appended page pushes its own page's address; Back returns to
   // The address is still A's (the page in view): choosing C's theory goes to C's address.
   rows[1].dispatchEvent(new Event("click"));
   assert.equal(b.location.href, PAGES + "0003-gaps.html#theory-2");
-  assert.equal(b.AstaPages.hashOf(theories), "#theory-2");
-  assert.equal(b.AstaPages.hashOf(b.document.querySelector("#quarto-document-content")), null, "not A's address");
+  assert.equal(b.AstaTemplates.hashOf(theories), "#theory-2");
+  assert.equal(b.AstaTemplates.hashOf(b.document.querySelector("#quarto-document-content")), null, "not A's address");
   assert.deepEqual(b.entries, [PAGES + "0001-explore.html", PAGES + "0003-gaps.html#theory-2"]);
   const selected = () => [...rows].map(r => r.classList.contains("ap-selected"));
   assert.deepEqual(selected(), [false, true]);
@@ -222,7 +222,7 @@ test("a reading position in the address is no panel's anchor; a panel's anchor s
   const b = browse(PAGES + "0001-explore.html#flow-at=tests~120",
     pageHtml("A", testsPanel("asta-tests-1", [testRow("T1"), testRow("T2")]), FLOW()), SITE);
   const panel = b.document.querySelector(".asta-panel.asta-tests");
-  assert.equal(b.AstaPages.hashOf(panel), "");
+  assert.equal(b.AstaTemplates.hashOf(panel), "");
   assert.equal(panel.querySelectorAll("tr.ap-ts-row.ap-open").length, 0);
   b.visit("#test-T2");
   assert.deepEqual([...panel.querySelectorAll("tr.ap-ts-row.ap-open")].map(r => r.id), ["test-T2"]);
@@ -277,9 +277,9 @@ test("scrolling a panel's own list is kept in the address before a click can lea
   }
 });
 
-// What asta-pages.lua lists of each page's sections: its level-2 headings and their ids.
+// What asta-templates.lua lists of each page's sections: its level-2 headings and their ids.
 const SECTIONS = (up = "../") => ({
-  format: "asta-pages/sections@1", site: up,
+  format: "asta-templates/sections@1", site: up,
   pages: {
     "index.html": [{ id: "mission", title: "Mission" }, { id: "found", title: "Findings" }],
     "pages/0001-explore.html": [{ id: "tests", title: "Tests" }],

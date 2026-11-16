@@ -1,4 +1,6 @@
-# asta-pages — widgets for a workspace's workflow pages
+# Asta Templates
+
+Enable users to embed Asta's widgets for theories, literature, and discovery in html.
 
 Shortcodes that turn a run's files into page panels, the way the Asta app shows Theorizer's
 results, and that link every panel to the files on disk it was built from:
@@ -202,14 +204,14 @@ reader opens them.
 next page in the sidebar's order below it, to the last: in a workspace the front page, then the
 workflow pages in run order.
 
-- **Which page comes next:** every page the asta-pages filter or a shortcode runs on carries
-  where the site's root is (`script#asta-flow`), and `asta-pages.js` takes the sidebar's links
+- **Which page comes next:** every page the asta-templates filter or a shortcode runs on carries
+  where the site's root is (`script#asta-flow`), and `asta-templates.js` takes the sidebar's links
   into the site, once each (links elsewhere and repeats skipped), in the sidebar's order.
 - **Sections in the sidebar:** under each page's sidebar link, its level-2 headings (read from
   each page's source with the ids Quarto gives them, `script#asta-sections`), folded with
   Quarto's chevron, the page in view open and its section in view marked; "On this page" hides
-  while it lists just those. `asta-pages: {sidebar-sections: false}` in `_quarto.yml` turns it off.
-- **Loading** (`asta-pages.js`, loaded with every widget script): about a screen before the end
+  while it lists just those. `asta-templates: {sidebar-sections: false}` in `_quarto.yml` turns it off.
+- **Loading** (`asta-templates.js`, loaded with every widget script): about a screen before the end
   of what is loaded, the next page is fetched (same origin), its main content appended under a
   divider (its title linking the page itself, and "2 of 4"), any widget script or
   stylesheet it needs and this page lacks loaded, and its panels drawn. A light "Loading…" line
@@ -236,7 +238,7 @@ workflow pages in run order.
   left. The address is used, not `history.state`, because the app's site frame keeps the
   frame's address but not its state (it moves the frame with `location.replace`).
 - **Panels of several pages in one document.** Each panel draws itself from the data script that
-  follows it and only once (`data-asta-drawn`); `AstaPages.init(root)` draws the panels in
+  follows it and only once (`data-asta-drawn`); `AstaTemplates.init(root)` draws the panels in
   `root`. An appended page's ids, and the `data-asta-data` that names them, are prefixed
   (`asta-f3-`); its headings answer to their own ids on its address (`…/0004-x.html#tests`).
   A panel's anchors belong to its page: `#theory-2`, `#test-G2-T1`, `#experiment-7`,
@@ -264,13 +266,13 @@ it is listed:
 # _quarto.yml (after the evidence filter, if the project has one)
 filters:
   - _extensions/evidence/snippet.lua
-  - asta-pages
+  - asta-templates
 ```
 
 It runs on every page (`asta-autolink: false` in a page's front matter turns it off there),
 after Quarto has expanded the shortcodes and cross-references and before citations are
 formatted (the extension declares `at: pre-render`). When a page renders, it reads the workflow
-pages (`pages/*.qmd`), their asta-pages shortcodes and the
+pages (`pages/*.qmd`), their asta-templates shortcodes and the
 files those name, the site's render list (`project.render` in `_quarto.yml`), and the page's own
 figures, tables, bibliography and evidence. Nothing is
 fetched when a card opens: the page carries its cards once (`script.asta-cards-data`, keyed) and
@@ -321,7 +323,7 @@ that does not exist is a render warning and is shown as "(missing)", never as a 
 figure's card links the same files: the script, the first three inputs ("+N more" opens the
 folder), and the audit.
 
-**The cards.** One renderer (`asta-pages.js`) draws every card from the same parts: sections,
+**The cards.** One renderer (`asta-templates.js`) draws every card from the same parts: sections,
 each with any of a role, a linked title, a sub line, a thumbnail, a quote, text clamped to some
 lines, a test's verdict, tests' verdict chips, a tally, facts and links, then a footer. A new
 kind of link needs an adapter in `autolink.lua` that returns such a card, and no card code.
@@ -335,12 +337,12 @@ take the theme's colours (light and dark), and work in the app's site frame, on 
 and in the feed (a page appended there brings its own cards; their links resolve from it). An AutoDS hypothesis, a theory's name and summary, and the theory a test belongs to show up to four lines (`DESCRIPTION_LINES` in `autolink.lua`).
 
 **With the evidence extension.** Evidence keeps owning the claims and their quotes (its filter
-writes them as a hidden popover, `.ev > .ev-pop`, shown with CSS). The asta-pages filter runs
-after it and reads that markup; where it gives a claim a card, `asta-pages.js` marks the page
-(`html.asta-cards`) and `asta-pages.css` keeps evidence's popover shut on those claims. Without
-asta-pages, or where its script does not run (the what-changed diff page), evidence's popover
+writes them as a hidden popover, `.ev > .ev-pop`, shown with CSS). The asta-templates filter runs
+after it and reads that markup; where it gives a claim a card, `asta-templates.js` marks the page
+(`html.asta-cards`) and `asta-templates.css` keeps evidence's popover shut on those claims. Without
+asta-templates, or where its script does not run (the what-changed diff page), evidence's popover
 shows as before.
 
 `make workspace-assets` fetches this extension when a page uses one of its shortcodes, like the
-evidence extension. To customize it, commit a copy of `_extensions/asta-pages` and remove its
+evidence extension. To customize it, commit a copy of `_extensions/asta-templates` and remove its
 line from `.gitignore`.

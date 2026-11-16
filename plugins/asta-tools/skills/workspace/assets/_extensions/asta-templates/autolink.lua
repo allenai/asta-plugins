@@ -1,4 +1,4 @@
--- asta-pages autolink: links in a page's text open a card of what they point at, and
+-- asta-templates autolink: links in a page's text open a card of what they point at, and
 -- mentions of tests, theories, gaps and experiments become such links.
 --
 -- The filter is the extension's, listed once in _quarto.yml; it runs on every page, after
@@ -6,7 +6,7 @@
 -- (`at: pre-render`). `asta-autolink: false` in a page's front matter turns it off there:
 --
 --   filters:
---     - asta-pages
+--     - asta-templates
 --
 -- Mentions linked (the index is read when the page renders, from the workflow pages,
 -- pages/*.qmd: their shortcodes and the files those name). Tests, theories, experiments and figures: the first mention in a paragraph; a
@@ -27,13 +27,13 @@
 -- reference's URL; a dataset: one of a dataset's links in .asta/datasets.json; any other site),
 -- citations ([@key], with the quote of an evidence claim in the same paragraph citing it; a
 -- paper of the run's paper set links to it there, #paper-<corpus id or key>), evidence claims
--- ([...]{.ev}; asta-pages.js then shows this card instead of the evidence popover), figure
+-- ([...]{.ev}; asta-templates.js then shows this card instead of the evidence popover), figure
 -- cross-references, links to the site's pages (pages/0001-x.qmd#experiment-3: the card of the
 -- item the fragment names, never a file), and links to workspace files.
 --
 -- Every card is built here, as data: sections (a role, a title and its link, a sub line, a
 -- thumbnail, text clamped to some lines, a quote, a test's verdict, tests' verdicts, a tally,
--- facts, links) and a footer. asta-pages.js draws any card the same way: a new kind of link
+-- facts, links) and a footer. asta-templates.js draws any card the same way: a new kind of link
 -- needs an adapter here and no card code. The page carries its cards once
 -- (script.asta-cards-data, keyed); a link names its card (data-asta-card). A mention that
 -- names several things (a node id that is both an AutoDS experiment and its reproduction
@@ -46,9 +46,9 @@ local DESCRIPTION_LINES = 4
 
 local function load_lib()
   local env = setmetatable({}, { __index = _ENV })
-  local chunk = assert(loadfile(quarto.utils.resolve_path("asta-pages.lua"), "t", env))
+  local chunk = assert(loadfile(quarto.utils.resolve_path("asta-templates.lua"), "t", env))
   chunk()
-  return env.ASTA_PAGES_LIB
+  return env.ASTA_TEMPLATES_LIB
 end
 
 local L -- the shared helpers, once loaded
@@ -950,7 +950,7 @@ local function external_card(url, text)
   end)
 end
 
--- A workspace file (outside the site): its name (linked to the file, like the mention), folder and size. asta-pages.js says where it
+-- A workspace file (outside the site): its name (linked to the file, like the mention), folder and size. asta-templates.js says where it
 -- opens: the app's Files tab, or GitHub once a deployed site's links point there. `from` is the
 -- folder the link is relative to (the rendered page's for an inline document's raw links, the
 -- source page's for links in the text).
@@ -1303,12 +1303,12 @@ return {
       local store = {}
       for k, v in pairs(cards) do if v then store[k] = v end end
       -- The cards, once, inside the page's content (so a page appended to a flow's feed brings
-      -- its own), and the scripts that draw them (asta-pages.js; tests.js for verdicts).
+      -- its own), and the scripts that draw them (asta-templates.js; tests.js for verdicts).
       doc.blocks:insert(pandoc.RawBlock("html", '<script type="application/json" class="asta-cards-data">' ..
         quarto.json.encode(store):gsub("</", "<\\/") .. "</script>"))
-      quarto.doc.add_html_dependency({ name = "asta-pages", version = "0.1.0", stylesheets = { "asta-pages.css" } })
-      quarto.doc.add_html_dependency({ name = "asta-pages-core", version = "0.1.0", scripts = { "asta-pages.js" } })
-      quarto.doc.add_html_dependency({ name = "asta-pages-tests", version = "0.1.0", scripts = { "tests.js" } })
+      quarto.doc.add_html_dependency({ name = "asta-templates", version = "0.1.0", stylesheets = { "asta-templates.css" } })
+      quarto.doc.add_html_dependency({ name = "asta-templates-core", version = "0.1.0", scripts = { "asta-templates.js" } })
+      quarto.doc.add_html_dependency({ name = "asta-templates-tests", version = "0.1.0", scripts = { "tests.js" } })
       local parts = {}
       for k, v in pairs(counts) do parts[#parts + 1] = k .. " " .. v end
       table.sort(parts)

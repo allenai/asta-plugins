@@ -1,24 +1,24 @@
-/* asta-pages core: what the widget scripts share, and a flow's feed.
+/* asta-templates core: what the widget scripts share, and a flow's feed.
 
    Widgets. Each widget script (theories.js, tests.js, autods.js, literature.js) adds its start
-   function to AstaPages.widgets; start(scope) draws the panels in scope that are not drawn yet.
-   AstaPages.init(scope) runs them all (tests first, which the theories' Tests tab links to), so
+   function to AstaTemplates.widgets; start(scope) draws the panels in scope that are not drawn yet.
+   AstaTemplates.init(scope) runs them all (tests first, which the theories' Tests tab links to), so
    a page appended below this one draws its panels the same way the page itself did.
 
    Addresses. A panel's anchors (#theory-2, #test-G2-T1, #experiment-7, #paper-…) belong to the
-   page it came from. AstaPages.hashOf(el) is the address's fragment when the address is that
-   page's (null otherwise), and AstaPages.urlOf(el, "#x") the URL a panel pushes for a step of
+   page it came from. AstaTemplates.hashOf(el) is the address's fragment when the address is that
+   page's (null otherwise), and AstaTemplates.urlOf(el, "#x") the URL a panel pushes for a step of
    its own: the fragment alone on its own page, the page's URL with it on another. So a panel
    of an appended page answers only to its own page's address, and Back steps through each
    page's panels as before.
 
    Sections. Under each sidebar link to a page, that page's sections (script#asta-sections,
-   written by asta-pages.lua: its level-2 headings and their ids), folded with Quarto's chevron:
+   written by asta-templates.lua: its level-2 headings and their ids), folded with Quarto's chevron:
    the page the reader is on open, the others shut. The section in view is marked as the reader
    scrolls, on the page in view. "On this page" is hidden while it lists exactly those sections,
    and shows when it has more (a page's subsections).
 
-   Feed. A page says where the site's root is (script#asta-flow, written by asta-pages.lua); the
+   Feed. A page says where the site's root is (script#asta-flow, written by asta-templates.lua); the
    feed's pages are the sidebar's links into the site, once each, in the sidebar's order: in a
    workspace the front page, then the workflow pages in run order.
    When the reader is about a screen from the end of the page, the next page is fetched (same
@@ -32,7 +32,7 @@
 (function () {
   "use strict";
 
-  var A = window.AstaPages = window.AstaPages || {};
+  var A = window.AstaTemplates = window.AstaTemplates || {};
   A.widgets = A.widgets || [];
   if (A.flow) return; // loaded once
 
@@ -278,7 +278,7 @@
     window.addEventListener("resize", function () { if (owner) place(owner); });
     // The link's own hover gives way: a native title, Quarto's reference and cross-reference
     // previews (tippy, set up when the page loads), and the evidence popover, which evidence
-    // draws with CSS and which html.asta-cards hides (asta-pages.css) where a card stands in.
+    // draws with CSS and which html.asta-cards hides (asta-templates.css) where a card stands in.
     function quiet_links() {
       document.querySelectorAll("[data-asta-card]").forEach(function (el) {
         [el].concat([].slice.call(el.querySelectorAll ? el.querySelectorAll("a, [title]") : [])).forEach(function (n) {

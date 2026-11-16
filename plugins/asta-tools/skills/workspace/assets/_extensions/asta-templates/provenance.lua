@@ -1,18 +1,18 @@
--- asta-pages provenance: under each figure whose folder carries a figure.json, a small line of
+-- asta-templates provenance: under each figure whose folder carries a figure.json, a small line of
 -- what it was made from: "Made from make_figure.py · 3 inputs · audit PASS", each linking its
 -- file (relative to the rendered page, so it opens in the app's Files tab, or on GitHub once a
 -- deployed site's links point there); "3 inputs" opens to list them. A figure made of
 -- sub-figures gets one line, an entry per sub-figure that has a figure.json: "(a) …; (b) …".
--- A figure without one gets nothing. figure.json and where it is looked for: asta-pages.lua,
+-- A figure without one gets nothing. figure.json and where it is looked for: asta-templates.lua,
 -- figure_provenance. The filter runs before Quarto turns the page's `::: {#fig-…}` blocks into
 -- figures (`at: pre-ast`), and puts the line after the block, so it shows under the figure and
 -- its caption.
 
 local function load_lib()
   local env = setmetatable({}, { __index = _ENV })
-  local chunk = assert(loadfile(quarto.utils.resolve_path("asta-pages.lua"), "t", env))
+  local chunk = assert(loadfile(quarto.utils.resolve_path("asta-templates.lua"), "t", env))
   chunk()
-  return env.ASTA_PAGES_LIB
+  return env.ASTA_TEMPLATES_LIB
 end
 
 local L
@@ -94,7 +94,7 @@ return {
       local blocks = walk(doc.blocks, here)
       if #blocks == #doc.blocks then return nil end
       doc.blocks = blocks
-      quarto.doc.add_html_dependency({ name = "asta-pages", version = "0.1.0", stylesheets = { "asta-pages.css" } })
+      quarto.doc.add_html_dependency({ name = "asta-templates", version = "0.1.0", stylesheets = { "asta-templates.css" } })
       return doc
     end,
   },

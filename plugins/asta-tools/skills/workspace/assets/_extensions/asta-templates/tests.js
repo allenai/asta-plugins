@@ -1,10 +1,10 @@
-/* asta-pages tests: a run's tests, one row per test folder, read-only.
+/* asta-templates tests: a run's tests, one row per test folder, read-only.
    Reads the JSON the asta-tests shortcode embedded (script.asta-tests-data, one per panel: each
    test's index entry, the fields of its result_summary.json the table shows, and links to its
-   files, which asta-pages.lua found on disk) and draws a sortable, filterable table: test, what
+   files, which asta-templates.lua found on disk) and draws a sortable, filterable table: test, what
    it tests, verdict, effect, p, animals and links; a row opens to its direction, the full effect,
    its figures and its files. theories.js uses the same verdicts and test cards for a theory's
-   Tests tab (window.AstaPages.testsLib).
+   Tests tab (window.AstaTemplates.testsLib).
    Verdict: the summary's `verdict` if it has one; else ran: false is "not run"; meets_threshold
    true is "met", false "not met", an object of per-region booleans "met in X of Y"; anything
    else "undecided". A folder with no summary yet is "running"; an index entry with no folder
@@ -20,9 +20,9 @@
   }
   function plural(n, one, many) { return n + " " + (n === 1 ? one : many); }
   function arr(x) { return Array.isArray(x) ? x : []; }
-  // The address as this panel's page sees it: asta-pages.js knows which page of a flow's feed
+  // The address as this panel's page sees it: asta-templates.js knows which page of a flow's feed
   // the panel came from (null when the address is another page's); without it, the page's own.
-  function hashOf(el) { var A = window.AstaPages; return A && A.hashOf ? A.hashOf(el) : location.hash; }
+  function hashOf(el) { var A = window.AstaTemplates; return A && A.hashOf ? A.hashOf(el) : location.hash; }
   function isNum(v) { return typeof v === "number" && isFinite(v); }
   function minus(s) { return String(s).replace(/^-/, "−"); }
   var CHEVRON = '<svg class="ap-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
@@ -255,8 +255,8 @@
     return { text: text, key: key, counts: c };
   }
 
-  window.AstaPages = window.AstaPages || {};
-  window.AstaPages.testsLib = { verdict: verdict, verdictChip: verdictChip, card: card, tally: tally, numbers: numbers, what: what, fmtNum: fmtNum, fmtP: fmtP };
+  window.AstaTemplates = window.AstaTemplates || {};
+  window.AstaTemplates.testsLib = { verdict: verdict, verdictChip: verdictChip, card: card, tally: tally, numbers: numbers, what: what, fmtNum: fmtNum, fmtP: fmtP };
 
   // ---- the asta-tests panel ------------------------------------------------------------------
 
@@ -411,10 +411,10 @@
       root.innerHTML = '<div class="ap-error">The tests could not be read (' + esc(e.message) + "). Render the page again.</div>";
     }
   }
-  window.AstaPages.tests = safeRender;
+  window.AstaTemplates.tests = safeRender;
 
   // Each asta-tests panel in scope draws itself, once, from its own data (data-asta-data names
-  // it; the script follows the panel). asta-pages.js calls start on a page appended to a flow's
+  // it; the script follows the panel). asta-templates.js calls start on a page appended to a flow's
   // feed, so a document can hold several pages' panels.
   function start(scope) {
     scope = scope || document;
@@ -427,8 +427,8 @@
       safeRender(root, function () { return JSON.parse(src.textContent); });
     });
   }
-  window.AstaPages.widgets = window.AstaPages.widgets || [];
-  window.AstaPages.widgets.push({ name: "tests", order: 0, start: start });
+  window.AstaTemplates.widgets = window.AstaTemplates.widgets || [];
+  window.AstaTemplates.widgets.push({ name: "tests", order: 0, start: start });
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", function () { start(document); });
   else start(document);
 })();

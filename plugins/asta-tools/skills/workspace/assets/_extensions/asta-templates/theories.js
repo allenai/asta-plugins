@@ -1,4 +1,4 @@
-/* asta-pages theory page: the product's Theorizer panel.
+/* asta-templates theory page: the product's Theorizer panel.
    Reads the JSON the asta-theories shortcode embedded (script.asta-theories-data, one per data
    file, written by the theory-generation workflow's data script) and draws the list of theories
    with supporting and conflicting counts, then the selected theory's statements, predictions,
@@ -15,9 +15,9 @@
 (function () {
   "use strict";
 
-  // The address as this panel's page sees it: asta-pages.js knows which page of a flow's feed
+  // The address as this panel's page sees it: asta-templates.js knows which page of a flow's feed
   // the panel came from (null when the address is another page's); without it, the page's own.
-  function api() { return typeof window !== "undefined" ? window.AstaPages : null; }
+  function api() { return typeof window !== "undefined" ? window.AstaTemplates : null; }
   function hashOf(el) { var A = api(); return A && A.hashOf ? A.hashOf(el) : location.hash; }
   function urlOf(el, hash) { var A = api(); return A && A.urlOf ? A.urlOf(el, hash) : hash; }
   function scopeOf(el) { var A = api(); return A && A.scope ? A.scope(el) : (typeof document !== "undefined" ? document : null); }
@@ -185,7 +185,7 @@
   // The tests run on a theory, each as a card: its verdict, effect, p and animals, and links to
   // its files (tests.js draws the card, as for an opened row of a tests table).
   function testsTab(tests, scope) {
-    var lib = window.AstaPages.testsLib;
+    var lib = window.AstaTemplates.testsLib;
     if (!tests.length) return empty("No tests", "No test in the test index names this theory.");
     var t = lib.tally(tests);
     return '<p class="ap-legend">' + esc(t.text) + ". Each test's verdict is read from its result_summary.json; open its files for the design, code and result.</p>" +
@@ -251,7 +251,7 @@
   // needs to drive it: select(i, scroll), and whether a theory is selected yet.
   function drawGroup(box, group, prefix, link, visit, withTests) {
     var theories = group.entries.map(function (e) { return e.t; });
-    var lib = window.AstaPages && window.AstaPages.testsLib;
+    var lib = window.AstaTemplates && window.AstaTemplates.testsLib;
     withTests = withTests && !!lib;
     function testsCell(e) {
       if (!e.tests.length) return '<td class="ap-tt-tests"><span class="ap-muted">\u2014</span></td>';
@@ -578,12 +578,12 @@
         "). Write it again with the workflow's data script and render again.</div>";
     }
   }
-  window.AstaPages = window.AstaPages || {};
-  window.AstaPages.theories = safeRender;
+  window.AstaTemplates = window.AstaTemplates || {};
+  window.AstaTemplates.theories = safeRender;
 
   // Each theories panel in scope draws itself, once: one embedded data file per Theorizer
   // project the shortcode names (script.asta-theories-data, in the shortcode's order) and its
-  // tests (script.asta-theories-tests), the scripts that follow the panel. asta-pages.js calls
+  // tests (script.asta-theories-tests), the scripts that follow the panel. asta-templates.js calls
   // start on a page appended to a flow's feed, so a document can hold several pages' panels.
   var drawn = 0;
   function start(scope) {
@@ -625,8 +625,8 @@
       tests: tests
     });
   }
-  window.AstaPages.widgets = window.AstaPages.widgets || [];
-  window.AstaPages.widgets.push({ name: "theories", order: 1, start: start });
+  window.AstaTemplates.widgets = window.AstaTemplates.widgets || [];
+  window.AstaTemplates.widgets.push({ name: "theories", order: 1, start: start });
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", function () { start(document); });
   else start(document);
 })();

@@ -1,8 +1,8 @@
 """Workflow pages, flat: pages/<NNNN>-<workflow>.qmd with only a title. The scaffold's sidebar
-lists the front page, then the pages by file name (run order). Every page the asta-pages filter
+lists the front page, then the pages by file name (run order). Every page the asta-templates filter
 runs on, the front page too, carries where the site's root is (script#asta-flow), so its feed
 follows the sidebar, and each page's sections (script#asta-sections: its level-2 headings with
-the ids Quarto gives them), which asta-pages.js lists under the page's sidebar link. All names
+the ids Quarto gives them), which asta-templates.js lists under the page's sidebar link. All names
 here are invented for the test."""
 
 import json
@@ -51,10 +51,10 @@ The review.
 
 
 def _project(root: Path, extra: str = "") -> Path:
-    """The scaffold's own project settings and sidebar contents, with the asta-pages filter."""
+    """The scaffold's own project settings and sidebar contents, with the asta-templates filter."""
     project = root / "ws"
     shutil.copytree(
-        ASSETS / "_extensions/asta-pages", project / "_extensions/asta-pages"
+        ASSETS / "_extensions/asta-templates", project / "_extensions/asta-templates"
     )
     config = (ASSETS / "_quarto.yml").read_text()
     project_part = config[: config.index("\nbibliography:")]
@@ -62,7 +62,7 @@ def _project(root: Path, extra: str = "") -> Path:
     _write(
         project / "_quarto.yml",
         project_part
-        + "\nfilters:\n  - asta-pages\n"
+        + "\nfilters:\n  - asta-templates\n"
         + extra
         + "\nwebsite:\n  title: Demo\n  sidebar:\n"
         + contents
@@ -145,12 +145,12 @@ def test_the_sidebar_lists_the_front_page_then_the_pages_flat_in_run_order(site)
 def test_every_page_the_filter_runs_on_says_where_the_site_root_is(site):
     html, _ = site
     assert _data(html["index.html"], "flow") == {
-        "format": "asta-pages/flow@3",
+        "format": "asta-templates/flow@3",
         "site": "./",
     }, "the front page starts the feed"
     for name in ("pages/0001-alpha-study.html", "pages/0004-gamma-review.html"):
         assert _data(html[name], "flow") == {
-            "format": "asta-pages/flow@3",
+            "format": "asta-templates/flow@3",
             "site": "../",
         }
 
@@ -186,7 +186,7 @@ def test_each_page_lists_every_page_s_sections_with_the_ids_quarto_gives_them(si
 
 
 def test_sidebar_sections_can_be_turned_off_for_the_site(tmp_path):
-    project = _project(tmp_path, "\nasta-pages:\n  sidebar-sections: false\n")
+    project = _project(tmp_path, "\nasta-templates:\n  sidebar-sections: false\n")
     html, _ = _render(project)
     assert _data(html["index.html"], "sections") is None
     assert _data(html["index.html"], "flow") is not None, "the feed stays"

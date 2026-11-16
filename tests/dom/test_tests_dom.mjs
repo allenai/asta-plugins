@@ -5,11 +5,11 @@ import vm from "node:vm";
 
 import { parseHTML } from "linkedom";
 
-const dir = new URL("../../plugins/asta-tools/skills/workspace/assets/_extensions/asta-pages/", import.meta.url);
+const dir = new URL("../../plugins/asta-tools/skills/workspace/assets/_extensions/asta-templates/", import.meta.url);
 const testsJs = fs.readFileSync(new URL("tests.js", dir), "utf8");
 const theoriesJs = fs.readFileSync(new URL("theories.js", dir), "utf8");
 
-// Tests in the shapes asta-pages.lua embeds: links are already relative to the rendered page.
+// Tests in the shapes asta-templates.lua embeds: links are already relative to the rendered page.
 const F = "../../.asta/flows/0001-demo/04-tests/";
 const TESTS = [
   { id: "T1", href: F + "T1/", design: F + "T1/design.md", code: F + "T1/test.py", codeName: "test.py",
@@ -45,7 +45,7 @@ const panel = (tests, others = []) =>
 
 test("verdicts: explicit, not run, met, per region, undecided, running, not started", () => {
   const { window } = page("");
-  const v = t => window.AstaPages.testsLib.verdict(t);
+  const v = t => window.AstaTemplates.testsLib.verdict(t);
   assert.deepEqual(TESTS.map(t => [v(t).key, v(t).label]), [
     ["met", "met"],
     ["partial", "met in 1 of 2"],

@@ -1,7 +1,7 @@
-/* asta-pages AutoDiscovery page: a run as autodiscovery.allen.ai's run view shows it, read-only,
+/* asta-templates AutoDiscovery page: a run as autodiscovery.allen.ai's run view shows it, read-only,
    drawn in the theory and paper pages' style and the site's light and dark colours.
    Reads the JSON the asta-autods shortcode embedded (#asta-autods-data: each run's own files,
-   as asta-pages.lua found them) and draws the run's header (status, links, Session
+   as asta-templates.lua found them) and draws the run's header (status, links, Session
    configuration), its search tree (ExperimentGraph), its experiments table (ExperimentsTable:
    sortable, filterable) and the selected experiment (ExperimentDetails): belief shift,
    analysis, figures, review, then its plan and its code in their own tabs. Several runs on one
@@ -10,17 +10,17 @@
    draw everything; a local run's mcts_node records everything but the session settings; the
    hosted Download → CSV has no tree, code or figures. A run folder is run.md beside those.
    The run's header links its folder (and a local run's args.json); an experiment from a local
-   run links its mcts_node_*.json and the run's rich_outputs/ folder, as asta-pages.lua found them.
+   run links its mcts_node_*.json and the run's rich_outputs/ folder, as asta-templates.lua found them.
    Anchors: #experiment-<id> opens an experiment (#run-<n>/experiment-<id> with several runs);
    a local run's node id does too: #node-3-1 or #node_3_1 (#run-<n>/node-3-1).
    Uses no browser storage and makes no request: every figure is in the page. */
 (function () {
   "use strict";
 
-  // The address as this panel's page sees it: asta-pages.js knows which page of a flow's feed
+  // The address as this panel's page sees it: asta-templates.js knows which page of a flow's feed
   // the panel came from (null when the address is another page's); without it, the page's own.
-  function hashOf(el) { var A = window.AstaPages; return A && A.hashOf ? A.hashOf(el) : location.hash; }
-  function urlOf(el, hash) { var A = window.AstaPages; return A && A.urlOf ? A.urlOf(el, hash) : hash; }
+  function hashOf(el) { var A = window.AstaTemplates; return A && A.hashOf ? A.hashOf(el) : location.hash; }
+  function urlOf(el, hash) { var A = window.AstaTemplates; return A && A.urlOf ? A.urlOf(el, hash) : hash; }
 
   function esc(s) {
     return String(s == null ? "" : s)
@@ -830,11 +830,11 @@
         "). The page's data should name the run's results JSON (asta autodiscovery results), its CSV or JSON download, its output folder or its run folder.</div>";
     }
   }
-  window.AstaPages = window.AstaPages || {};
-  window.AstaPages.autods = safeRender;
+  window.AstaTemplates = window.AstaTemplates || {};
+  window.AstaTemplates.autods = safeRender;
 
   // Each AutoDiscovery panel in scope draws itself, once, from the data script that follows it.
-  // asta-pages.js calls start on a page appended to a flow's feed, so a document can hold
+  // asta-templates.js calls start on a page appended to a flow's feed, so a document can hold
   // several pages' panels.
   function start(scope) {
     scope = scope || document;
@@ -847,8 +847,8 @@
       safeRender(root, function () { return JSON.parse(src.textContent); });
     });
   }
-  window.AstaPages.widgets = window.AstaPages.widgets || [];
-  window.AstaPages.widgets.push({ name: "autods", order: 1, start: start });
+  window.AstaTemplates.widgets = window.AstaTemplates.widgets || [];
+  window.AstaTemplates.widgets.push({ name: "autods", order: 1, start: start });
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", function () { start(document); });
   else start(document);
 })();
