@@ -1,4 +1,4 @@
-# AutoDS hosted by Asta
+# AutoDS, remote
 
 We pay for it, in Asta credits: one credit per experiment. The data goes to Asta's servers and the runs execute there.
 

@@ -1,7 +1,7 @@
 """theorizer-site-data takes a paper's authors, venue and DOI from the store entry's own record.
 
 asta-papers writes the bibliographic record of the source a paper's text came from onto each
-store entry (`authors`, `venue`, `doi`), and `theorize papers import` keeps the entry whole.
+store entry (`authors`, `venue`, `doi`), and the project keeps the entry whole.
 Semantic Scholar's record (`s2_metadata`) is the fallback for an entry without one.
 """
 
@@ -169,7 +169,7 @@ def test_a_collections_metadata_replaces_the_stores_for_its_documents(tmp_path):
 
 
 def _task(name: str, parts: list[dict]) -> dict:
-    """A hosted task's final JSON, its theory store sent as merge patches."""
+    """A remote task's final JSON, its theory store sent as merge patches."""
     return {
         "id": name,
         "artifacts": [
@@ -184,7 +184,7 @@ def _task(name: str, parts: list[dict]) -> dict:
     }
 
 
-def test_a_hosted_runs_task_results_are_read_as_a_store(tmp_path):
+def test_a_remote_runs_task_results_are_read_as_a_store(tmp_path):
     project = tmp_path / "theory"
     project.mkdir()
     schema = [{"name": "effect", "type": "str", "description": "The effect found"}]

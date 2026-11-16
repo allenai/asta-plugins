@@ -1,7 +1,7 @@
 ---
 name: run-workflow
 description: Runs a research workflow with Theorizer, AutoDS, Semantic Scholar and Data Search. Use when someone brings a research question, papers, data or an AutoDS run and wants theories, hypotheses, experiments or a reproduction.
-allowed-tools: Bash(theorize *) Bash(auto-discovery *) Bash(asta auth *) Bash(asta generate-theories *) Bash(asta autodiscovery *) Bash(s2 *) Bash(asta-papers *) Bash(jq *) Bash(uv tool *) Bash(uv venv *) Bash(uv pip *) Bash(command -v *) Bash(grep *) Bash(echo *) Bash(cat *) Bash(curl *) Bash(python3 *) Bash(git *) Bash(quarto *) Bash(make *) Bash(mkdir *) Bash(ls *) Bash(cp *) Bash(ln *) Bash(touch *) Write Edit
+allowed-tools: Bash(auto-discovery *) Bash(asta auth *) Bash(asta generate-theories *) Bash(asta autodiscovery *) Bash(s2 *) Bash(asta-papers *) Bash(jq *) Bash(uv tool *) Bash(uv venv *) Bash(uv pip *) Bash(command -v *) Bash(grep *) Bash(echo *) Bash(cat *) Bash(curl *) Bash(python3 *) Bash(git *) Bash(quarto *) Bash(make *) Bash(mkdir *) Bash(ls *) Bash(cp *) Bash(ln *) Bash(touch *) Write Edit
 ---
 
 # Asta Flows
@@ -22,19 +22,16 @@ Track every run in a workspace, with the `workspace` skill. Before starting a wo
 
 After each workflow, update the report with what the run found. Cite each paper with its quote, name each theory, test, gap and AutoDS experiment ("Experiment N") a claim rests on, so the site links it to that item, and show the figures the findings rest on. Don't link files. Then run the `check-claims` skill on it and revise the report on what it finds: write, check, revise. Then render the site. When the workflow is done, give the person the site's URL and say what changed on it. Then ask the person how the run went, and submit their feedback to the Asta team with the `feedback` skill.
 
-## Running Workflows
+## Local or remote
 
-There are three ways to run workflows. Settle which one before anything else, once per project.
+Settle which before anything else, once per project.
 
-- **Library.** Use this if you want to do it in a coding agent: the agent does the reading and the analysis itself, using the Theorizer and AutoDS libraries' types. Subagents welcome, two at a time unless the person says otherwise, each in its own folder.
-- **CLI.** Use this if you have an API key and want to just use the command line, which bakes in our preferences.
-- **Hosted.** We pay for it. Your data flows through our servers.
+- **Local.** On this computer, and nothing goes to Asta. With the person's API key, the tools run their own models; with none, you do the reading and the analysis yourself with the Theorizer and AutoDS libraries. Subagents welcome, two at a time unless the person says otherwise, each in its own folder.
+- **Remote.** On Asta's servers. We pay for it, and the data goes there.
 
-The library and the CLI run on this computer, and nothing goes to Asta.
+Ask which one they want, as part of the first conversation: "Would you like to run this locally or remotely? Remote is free, but your data leaves this computer. Locally, I use your API key, or with none I do the work here in this session." Don't look for keys or logins to decide for them. The person tells you how to reach their credentials: locally, ask where their key is (a key file, a variable in their shell, a password manager) and use only that; remotely, they log in with `asta auth login`. In an Asta sandbox, don't ask: run locally with what's installed there.
 
-Ask which one they want, as part of the first conversation: "Which of these would you like? Hosted is free, but your data leaves this computer. With the CLI I use your API key, and with the library I do it all here in this session." Don't look for keys or logins to decide for them. The person tells you how to reach their credentials: for the CLI, ask where their key is (a key file, a variable in their shell, a password manager) and use only that; for hosted, they log in with `asta auth login`. In a hosted Asta sandbox, don't ask: use the CLI that's installed there.
-
-Write the answer to `.asta/mode.json` (`{"mode": "library" | "cli" | "hosted"}`), and don't switch without asking. Each tool's skill has a file per mode: `generate-theories` for Theorizer and `autodiscovery` for AutoDS. Set up what the mode needs before you propose a workflow, and say what's missing if something won't install.
+Write the answer to `.asta/mode.json` (`{"mode": "local" | "remote"}`), and don't switch without asking. Each tool's skill has `workflows/local.md` and `workflows/remote.md`: `generate-theories` for Theorizer and `autodiscovery` for AutoDS. Set up what the mode needs before you propose a workflow, and say what's missing if something won't install.
 
 ## Plan and run
 

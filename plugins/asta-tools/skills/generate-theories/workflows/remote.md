@@ -1,4 +1,4 @@
-# Theorizer hosted by Asta
+# Theorizer, remote
 
 We pay for it. Theorizer runs on Asta's servers, so the question and the papers go there.
 

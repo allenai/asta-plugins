@@ -4,7 +4,7 @@
     theorizer-site-data <step>/theory <step>/data/theorizer.json [--bib references.bib]
                         [--metadata hist/metadata.json] [--gap G7]
 
-Reads a `theorize` project directory (asta-theorizer on PyPI) and writes one JSON file with
+Reads a Theorizer project directory (the asta-theorizer library's) and writes one JSON file with
 only what the pages show: paper metadata (no full text), the searches, the extracted findings
 once, and the theories with the query each was generated for, their statements, predictions and
 evidence links; and beside it
@@ -144,10 +144,10 @@ def merge_patch(target, patch):
     return out
 
 
-def hosted_stores(project: Path):
-    """The stores a hosted Theorizer run sent back. Each saved task result (`*.result.json`, the
+def remote_stores(project: Path):
+    """The stores a remote Theorizer run sent back. Each saved task result (`*.result.json`, the
     final task JSON `asta generate-theories` prints) carries the theory store as merge patches in
-    its artifacts; applied in file order, they rebuild what a CLI run keeps in paperstore.json
+    its artifacts; applied in file order, they rebuild what a local run keeps in paperstore.json
     and theorystore.json."""
     merged, found = {}, False
     for path in sorted(project.glob("*.result.json"), key=lambda q: (q.stat().st_mtime, q.name)):
@@ -165,17 +165,17 @@ def hosted_stores(project: Path):
 
 
 def build(project: Path, metadata=None) -> dict:
-    """The slim data for one theorize project, or one hosted run's saved task results. Raises
-    NotAProject when it has neither store nor a hosted result.
+    """The slim data for one Theorizer project, or one remote run's saved task results. Raises
+    NotAProject when it has neither store nor a remote result.
     `metadata`: a collection's records (see --metadata), applied before copies are merged."""
     project = Path(project)
     paperstore = load(project / "paperstore.json")
     store = load(project / "theorystore.json")
     if paperstore is None and store is None:
-        paperstore, store = hosted_stores(project)
+        paperstore, store = remote_stores(project)
     if paperstore is None and store is None:
         raise NotAProject(f"{project} has no readable paperstore.json or theorystore.json; "
-                          "is it a theorize project (theorize -p DIR init)?")
+                          "is it a Theorizer project (one with theorystore.json)?")
     store = store or {}
     all_saves = saves(project)
 
@@ -247,7 +247,7 @@ def build(project: Path, metadata=None) -> dict:
             for r in data["results"]:
                 if isinstance(r, dict) and r.get("extraction_result_id"):
                     schema_of_result[r["extraction_result_id"]] = spec
-    # A store that keeps its schemas (a hosted run's, or the library's) names them by id.
+    # A store that keeps its schemas (a remote run's, or a local one's) names them by id.
     schema_by_id: dict[str, dict] = {}
     for sid, entry in (store.get("extraction_schemas") or {}).items():
         if isinstance(entry, dict) and isinstance(entry.get("schema"), list):
