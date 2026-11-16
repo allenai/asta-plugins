@@ -315,9 +315,16 @@ def archive_url(repository: str, ref: str) -> str:
 
 
 def load_asset(repository: str, ref: str) -> tuple[bytes, bytes]:
+    # A local archive of the ref (`git archive --format=tar.gz HEAD`), for a commit
+    # GitHub doesn't have yet: tests of unpushed work, and testing a branch by hand.
+    local = os.environ.get("ASTA_PLUGINS_ARCHIVE_FILE")
     try:
-        with urlopen(archive_url(repository, ref), timeout=30) as response:
-            archive = response.read(MAX_ARCHIVE_BYTES + 1)
+        if local:
+            with open(local, "rb") as response:
+                archive = response.read(MAX_ARCHIVE_BYTES + 1)
+        else:
+            with urlopen(archive_url(repository, ref), timeout=30) as response:
+                archive = response.read(MAX_ARCHIVE_BYTES + 1)
     except (OSError, URLError, http.client.HTTPException) as exc:
         raise click.ClickException(
             f"Could not fetch asta-plugins@{ref}: {exc}"

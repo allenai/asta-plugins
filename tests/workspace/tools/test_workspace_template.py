@@ -19,7 +19,9 @@ from tests.workspace.test_workspace_what_changed import ASSETS, git
 
 
 @pytest.mark.parametrize("directory", [".", "research workspace/docs"])
-def test_template_with_real_quarto(tmp_path: Path, directory: str) -> None:
+def test_template_with_real_quarto(
+    tmp_path: Path, directory: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
     source = os.environ.get(
         "ASTA_TEST_WORKSPACE_TEMPLATE",
         str(Path(__file__).resolve().parents[3] / "examples/workspace"),
@@ -33,6 +35,14 @@ def test_template_with_real_quarto(tmp_path: Path, directory: str) -> None:
     ref = subprocess.check_output(
         ["git", "-C", str(repo), "rev-parse", "HEAD"], text=True
     ).strip()
+    # The rules come from an archive of this commit, so the test runs before it is pushed.
+    archive = tmp_path / "asta-plugins.tar.gz"
+    subprocess.run(
+        ["git", "-C", str(repo), "archive", "--format=tar.gz"]
+        + [f"--prefix=asta-plugins-{ref}/", "-o", str(archive), ref],
+        check=True,
+    )
+    monkeypatch.setenv("ASTA_PLUGINS_ARCHIVE_FILE", str(archive))
     workflow = project / ".github/workflows/docs.yml"
     workflow.write_text(
         re.sub(
