@@ -14,10 +14,12 @@ def test_first_viewer_render_keeps_scaffold_clean(tmp_path, paper_dir):
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     config = (ASSETS / "_quarto.yml").read_text().replace("{{TITLE}}", "Starter")
     config = config.replace("{{REPO_URL}}", "https://github.com/allenai/asta-plugins")
+    # The scaffold's render allowlist, with the managed viewer added to it.
     config = config.replace(
-        "  type: website",
-        f"  type: website\n  render:\n    - index.qmd\n    - {paper_dir}/html/index.qmd",
+        '    - "pages/*.qmd"',
+        f'    - "pages/*.qmd"\n    - {paper_dir}/html/index.qmd',
     )
+    assert f"{paper_dir}/html/index.qmd" in config
     (tmp_path / "_quarto.yml").write_text(config)
     (tmp_path / "index.qmd").write_text("---\ntitle: Starter\n---\n")
     (tmp_path / "references.bib").write_text("")
