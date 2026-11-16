@@ -25,3 +25,6 @@ skills-lock.json
 !/.asta/
 /.asta/*
 !/.asta/overleaf/
+
+# Skill runs
+skill-runs/results/

@@ -1,0 +1,291 @@
+"""The skill runs: one per tool and mode.
+
+Each case gives a fresh headless agent one small task, to be done only by following a skill as
+written, and then checks the files it left. A case passes when every check passes; the agent's
+FEEDBACK.md lists the lines it found wrong or unclear either way.
+"""
+
+import glob
+import json
+import os
+import subprocess
+from dataclasses import dataclass, field
+
+PENGUINS = (
+    "penguins.csv: 344 rows, one per penguin, columns species, island, bill_length_mm, "
+    "bill_depth_mm, flipper_length_mm, body_mass_g, sex (Palmer Station data, CC0)."
+)
+PAPERS = "Semantic Scholar corpus ids 278481047, 278782698 and 279244310 (three open-access arXiv papers on grokking)"
+
+
+@dataclass
+class Case:
+    name: str
+    skill: str  # the slash command that loads it
+    mode: str
+    task: str
+    budget_usd: float  # the agent's own spend, passed to --max-budget-usd
+    keys: list  # tool keys from the env file the agent may use
+    fixtures: list = field(default_factory=list)
+    hosted: bool = False  # spends Asta credits; the runner reports them
+    tool_spend: str = ""
+
+
+def _files(root, pattern):
+    return sorted(
+        glob.glob(
+            os.path.join(root, "**", pattern), recursive=True, include_hidden=True
+        )
+    )
+
+
+def _json(path):
+    with open(path) as f:
+        return json.load(f)
+
+
+def _check(name, ok, detail=""):
+    return {"check": name, "ok": bool(ok), "detail": detail}
+
+
+def _node_dirs(root):
+    return sorted({os.path.dirname(p) for p in _files(root, "mcts_node_*.json")})
+
+
+def _beliefs_ok(directory):
+    nodes = [_json(p) for p in glob.glob(os.path.join(directory, "mcts_node_*.json"))]
+    experiments = [n for n in nodes if n.get("hypothesis")]
+    ok = experiments and all(
+        (n.get("prior") or {}).get("mean") is not None
+        and (n.get("posterior") or {}).get("mean") is not None
+        and n.get("surprising") is not None
+        for n in experiments
+    )
+    return experiments, ok
+
+
+def check_autods_library(root):
+    dirs = _node_dirs(root)
+    out = [_check("node files written", dirs, ", ".join(dirs))]
+    if not dirs:
+        return out
+    experiments, ok = _beliefs_ok(dirs[0])
+    out.append(
+        _check("at least 3 experiments", len(experiments) >= 3, str(len(experiments)))
+    )
+    out.append(_check("each has a prior, a posterior and a surprise flag", ok))
+    pythons = _files(root, "bin/python")
+    if pythons:
+        code = (
+            "import sys; from autodiscovery.mcts import MCTSNode; "
+            "from autodiscovery.mcts_utils import load_mcts_from_json; "
+            "MCTSNode._creation_counter = 0; root, levels = load_mcts_from_json(sys.argv[1]); "
+            "print(sum(len(v) for v in levels.values()))"
+        )
+        run = subprocess.run(
+            [pythons[0], "-c", code, dirs[0]], capture_output=True, text=True
+        )
+        out.append(
+            _check(
+                "AutoDS's own loader reads them",
+                run.returncode == 0,
+                (run.stdout or run.stderr).strip()[-200:],
+            )
+        )
+    else:
+        out.append(_check("AutoDS's own loader reads them", False, "no venv found"))
+    return out
+
+
+def check_autods_cli(root):
+    dirs = _node_dirs(root)
+    out = [_check("two runs", len(dirs) >= 2, ", ".join(dirs))]
+    if len(dirs) < 2:
+        return out
+    first, second = dirs[0], dirs[1]
+    picks, _ = _beliefs_ok(first)
+    seeded, ok = _beliefs_ok(second)
+    out.append(_check("both runs have experiments with beliefs", picks and ok))
+    known = {n["hypothesis"] for n in picks}
+    children = sorted(
+        (n for n in seeded if n.get("parent_id") == "node_1_0"),
+        key=lambda n: n.get("creation_idx", 0),
+    )
+    out.append(
+        _check(
+            "round 2's first experiments are round-1 seeds",
+            children and children[0]["hypothesis"] in known,
+        )
+    )
+    out.append(
+        _check(
+            "usage log kept",
+            os.path.exists(os.path.join(first, "llm_usage_events.jsonl")),
+        )
+    )
+    return out
+
+
+def check_autods_hosted(root):
+    results = _files(root, "results.json")
+    out = [_check("two results.json files", len(results) >= 2, ", ".join(results))]
+    rounds = []
+    for path in results:
+        data = _json(path)
+        rounds.append(data)
+        out.append(
+            _check(
+                "experiments in " + os.path.relpath(path, root),
+                len(data.get("experiments") or []) > 0,
+            )
+        )
+    if len(rounds) >= 2:
+        ids = {r["run"].get("runid") for r in rounds}
+        child = [
+            r
+            for r in rounds
+            if (r["run"].get("metadata") or {}).get("parent_run_id") in ids
+        ]
+        out.append(_check("round 2 is a fork of round 1", child))
+        intent = (
+            ((child[0]["run"].get("metadata") or {}).get("intent", "")) if child else ""
+        )
+        out.append(
+            _check(
+                "round 2 drills in",
+                intent.lower().startswith("explore further"),
+                intent[:120],
+            )
+        )
+    return out
+
+
+def _theory_store(root):
+    stores = _files(root, "theorystore.json")
+    return (stores[0], _json(stores[0])) if stores else (None, {})
+
+
+def check_theorizer_cli(root):
+    path, store = _theory_store(root)
+    out = [_check("a Theorizer project", path, path or "")]
+    results = store.get("extraction_results") or {}
+    papers = {r.get("paper_id") for r in results.values()}
+    out.append(
+        _check("findings from at least 2 papers", len(papers) >= 2, str(len(papers)))
+    )
+    theories = store.get("theories") or {}
+    cited = [t for t in theories.values() if t.get("supporting_evidence_ids")]
+    out.append(_check("theories that cite findings", cited, str(len(cited))))
+    return out
+
+
+def check_theorizer_library(root):
+    path, store = _theory_store(root)
+    out = [_check("a Theorizer project", path, path or "")]
+    results = store.get("extraction_results") or {}
+    out.append(_check("records written", results, str(len(results))))
+    out.append(
+        _check(
+            "written, not generated",
+            all(r.get("model_str") == "written" for r in results.values()),
+        )
+    )
+    out.append(_check("the schema saved", store.get("extraction_schemas")))
+    theories = store.get("theories") or {}
+    out.append(
+        _check(
+            "theories that cite records",
+            [t for t in theories.values() if t.get("supporting_evidence_ids")],
+        )
+    )
+    out.append(_check("HTML exported", _files(root, "index.html")))
+    return out
+
+
+def check_theorizer_hosted(root):
+    saved = [p for p in _files(root, "*.json") if "theor" in open(p).read(4000).lower()]
+    return [
+        _check("a saved result that mentions theories", saved, ", ".join(saved[:3]))
+    ]
+
+
+CASES = [
+    Case(
+        "autods-library",
+        "/asta-tools:autodiscovery",
+        "library",
+        "Run AutoDS in library mode: 3 experiments of your own on penguins.csv, saved the way the "
+        'skill says, with the prompt "Explore what distinguishes the three species."',
+        budget_usd=4,
+        keys=[],
+        fixtures=["penguins.csv"],
+        tool_spend="none",
+    ),
+    Case(
+        "autods-cli",
+        "/asta-tools:autodiscovery",
+        "cli",
+        'Run AutoDS in CLI mode on penguins.csv with the prompt "Explore what distinguishes the '
+        'three species.": round 1 of 4 experiments, then round 2 of 3, seeded and drilled in as '
+        "the skill's loop says. Use OpenAI.",
+        budget_usd=4,
+        keys=["OPENAI_API_KEY"],
+        fixtures=["penguins.csv"],
+        tool_spend="about $0.10 of OpenAI",
+    ),
+    Case(
+        "autods-hosted",
+        "/asta-tools:autodiscovery",
+        "hosted",
+        'Run AutoDS hosted on penguins.csv with the prompt "Explore what distinguishes the three '
+        "species.\": round 1 of 5 experiments, then round 2 of 3 as the skill's loop says. Wait for "
+        "both to finish and save each round's results.json in its own folder.",
+        budget_usd=5,
+        keys=[],
+        fixtures=["penguins.csv"],
+        hosted=True,
+        tool_spend="8 Asta credits",
+    ),
+    Case(
+        "theorizer-library",
+        "/asta-tools:generate-theories",
+        "library",
+        'Build theories with Theorizer in library mode for "Why do neural networks grok?" from '
+        + PAPERS
+        + ": a small schema, a few records per paper, and 2 theories, then export HTML.",
+        budget_usd=6,
+        keys=["S2_API_KEY"],
+        tool_spend="none",
+    ),
+    Case(
+        "theorizer-cli",
+        "/asta-tools:generate-theories",
+        "cli",
+        'Build theories with the Theorizer CLI for "Why do neural networks grok?" from '
+        + PAPERS
+        + ", through the first pass (plan, papers, extract, generate). Stop before discovery.",
+        budget_usd=4,
+        keys=["OPENAI_API_KEY", "S2_API_KEY", "MISTRAL_API_KEY"],
+        tool_spend="about $1 of OpenAI",
+    ),
+    Case(
+        "theorizer-hosted",
+        "/asta-tools:generate-theories",
+        "hosted",
+        'Build theories with hosted Theorizer for "Why do neural networks grok?", straight '
+        "through, with 5 papers and novelty evaluation off. Save the result in this folder.",
+        budget_usd=4,
+        keys=[],
+        hosted=True,
+        tool_spend="one small hosted run",
+    ),
+]
+
+CHECKS = {
+    "autods-library": check_autods_library,
+    "autods-cli": check_autods_cli,
+    "autods-hosted": check_autods_hosted,
+    "theorizer-library": check_theorizer_library,
+    "theorizer-cli": check_theorizer_cli,
+    "theorizer-hosted": check_theorizer_hosted,
+}
