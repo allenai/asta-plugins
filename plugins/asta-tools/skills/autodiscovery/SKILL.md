@@ -1,7 +1,7 @@
 ---
 name: autodiscovery
 description: Runs AutoDiscovery (AutoDS) on a dataset -- hosted by Asta, with the `auto-discovery` CLI and your own key, or in the coding agent with the library -- and reads its experiments back. Use when someone wants to explore data with AutoDS, start, check or fork a run, or asks about their runs, experiments or discoveries.
-allowed-tools: Bash(asta autodiscovery *) Bash(asta auth *) Bash(auto-discovery *) Bash(uv tool *) Bash(command -v *) Bash(grep *) Bash(python3 *) Bash(git *) Bash(mkdir *) Bash(ls *) Bash(nohup *) Bash(*/asta-autodiscovery/bin/python *) Bash(uv venv *) Bash(uv pip *) Bash(.venv/bin/*) Read(*) Write(*) Edit(*) TaskOutput
+allowed-tools: Bash(asta autodiscovery *) Bash(asta auth *) Bash(auto-discovery *) Bash(uv tool *) Bash(command -v *) Bash(grep *) Bash(python3 *) Bash(git *) Bash(mkdir *) Bash(ls *) Bash(nohup *) Bash(*/asta-autodiscovery/bin/python *) Bash(uv venv *) Bash(uv pip *) Bash(.venv/bin/*) Read Write Edit TaskOutput
 ---
 
 # AutoDiscovery

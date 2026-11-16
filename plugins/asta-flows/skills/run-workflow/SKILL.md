@@ -1,7 +1,7 @@
 ---
 name: run-workflow
 description: Runs an Asta research workflow for the person, from plan to front page, with Theorizer, AutoDS, Semantic Scholar and Data Search. Starts by settling how it runs -- the library in a coding agent, the CLI with your own key, or hosted by Asta. Use when someone brings a research question, papers, data or an AutoDS run and wants theories, hypotheses, experiments or a reproduction.
-allowed-tools: Bash(theorize *) Bash(auto-discovery *) Bash(asta auth *) Bash(asta generate-theories *) Bash(asta autodiscovery *) Bash(s2 *) Bash(asta-papers *) Bash(jq *) Bash(uv tool *) Bash(uv venv *) Bash(uv pip *) Bash(command -v *) Bash(env *) Bash(grep *) Bash(echo *) Bash(cat *) Bash(curl *) Bash(python3 *) Bash(git *) Bash(quarto *) Bash(make *) Bash(mkdir *) Bash(ls *) Bash(cp *) Write(*) Edit(*)
+allowed-tools: Bash(theorize *) Bash(auto-discovery *) Bash(asta auth *) Bash(asta generate-theories *) Bash(asta autodiscovery *) Bash(s2 *) Bash(asta-papers *) Bash(jq *) Bash(uv tool *) Bash(uv venv *) Bash(uv pip *) Bash(command -v *) Bash(env *) Bash(grep *) Bash(echo *) Bash(cat *) Bash(curl *) Bash(python3 *) Bash(git *) Bash(quarto *) Bash(make *) Bash(mkdir *) Bash(ls *) Bash(cp *) Bash(ln *) Bash(touch *) Write Edit
 ---
 
 # Research workflows
@@ -52,13 +52,15 @@ Propose the plan in this order, and nothing more:
 3. **What they can change,** when the README lists it, word for word.
 4. **One question,** on its own line: "Would you like to run the workflow, or provide an updated query?"
 
+If the person already asked for it to run on its own, put the plan in the run's `workflow.yaml` and go on without the question.
+
 Don't guess at datasets, papers or hypotheses in the plan, and don't fill in what the person left open unless they ask you to choose. The run finds them.
 
 Assume they want it carried out autonomously unless they say otherwise. Run long commands in the background and check on them. Check each command's output before the next. Whether to hand a step to a subagent is your call.
 
 ### The run's files and page
 
-- **Files:** `.asta/flows/<NNNN>-<workflow>/`, numbered in the order the workspace's runs started, with a `workflow.yaml` (the plan: its steps and their settings), a `README.md` (what ran, and where each step's output is) and one folder per step, `<NN>-<step>/`. Save each hosted result there as soon as it finishes.
+- **Files:** `.asta/flows/<NNNN>-<workflow>/`, numbered in the order the workspace's runs started, with a `workflow.yaml` (the plan: its steps and their settings), a `README.md` (what ran, and where each step's output is) and one folder per step, `<NN>-<step>/`, unless the workflow's README gives its own layout. Save each hosted result there as soon as it finishes.
 - **Page,** in a workspace site: `pages/<NNNN>-<workflow>.qmd`, its front matter only `title:`. It's widgets only: a heading per step and the widgets for that step's files. The sidebar lists the pages flat, in run order.
 - **Data the site reads:** what the steps write; `.asta/datasets.json` for the datasets the run used (`[{id, name, released_by, used_for, links: [{label, url}]}]`); and a gap run's theories written with `theorizer-site-data --gap <ID>`.
 

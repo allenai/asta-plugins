@@ -10,6 +10,8 @@ command -v s2 asta-papers theorize jq
 
 `asta-papers` is its own tool; installing Theorizer doesn't put it on PATH. `s2` reads `S2_API_KEY`. With `MISTRAL_API_KEY` set, `asta-papers` converts PDFs with Mistral; without it, on this machine.
 
+When the person names the papers by Semantic Scholar corpus id and they're the whole corpus, skip the search: `theorize -p <p> papers fetch <corpus ids>` fetches them, and calls no model. Don't add papers with this chain to the same project afterwards.
+
 ## Collect, fetch, import
 
 Search with a short query of the plan's key terms, drop repeated DOIs (Semantic Scholar sometimes returns one paper under two ids), and save the list with its query:
