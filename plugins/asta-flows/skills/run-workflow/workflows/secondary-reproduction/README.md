@@ -12,7 +12,7 @@ The papers and theories are [Theory generation](../theory-generation/README.md)'
 | 2 | Semantic Scholar | Gathers the literature on the hypotheses' themes | 5 themes plus the run's intent; 20 papers per theme |
 | 3 | Data Search | Finds independent data for each hypothesis | chosen during the run |
 | 4 | Reproduce | Re-runs each hypothesis's test on the new data | one test per hypothesis |
-| 5 | Theorizer | Builds theories that must explain the verdicts, then a pass for each new schema | usually 2 to 4 more schemas |
+| 5 | Theorizer | Builds theories that must explain the verdicts | the papers from step 2 |
 
 ## Verdicts
 

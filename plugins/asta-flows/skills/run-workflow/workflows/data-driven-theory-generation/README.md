@@ -10,7 +10,7 @@ The papers and theories are [Theory generation](../theory-generation/README.md)'
 |---|---|---|---|
 | 1 | Data Search | Finds a dataset the question can be tested on, and describes it | the person's data, or chosen during the run |
 | 2 | AutoDS | Runs experiments on the data | 100 experiments |
-| 3 | Theorizer | With the experiments as its mission, finds the papers, extracts findings and builds theories that must explain the experiments, then a pass for each new schema | 100 papers |
+| 3 | Theorizer | With the experiments as its mission, finds the papers, extracts findings and builds theories that must explain the experiments | 100 papers |
 
 Before the next part, say in one sentence which parts of the question AutoDS can test on data and which rest on the literature. Then write this word for word, filling in only the two examples:
 
