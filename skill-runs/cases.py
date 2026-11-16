@@ -296,9 +296,10 @@ CASES = [
         "/asta-flows:run-workflow",
         "cli",
         'Run the AutoDiscovery exploration workflow on penguins.csv for the question "What '
-        'distinguishes the three penguin species?", autonomously, with no check-ins and a budget '
-        "of 7 experiments: a first round of 4 and a second of 3. Use OpenAI. End with the front "
-        "page as the skill says, in a workspace site in this folder.",
+        'distinguishes the three penguin species?" with a budget of 8 experiments, using your own '
+        "OpenAI key (the workflow's bring-your-own-keys route). This message is the researcher's "
+        "answer to the seeding conversation: create the runs you propose and carry on to the "
+        "write-up, in a workspace site in this folder.",
         budget_usd=15,
         keys=["OPENAI_API_KEY"],
         fixtures=["penguins.csv"],
@@ -413,16 +414,15 @@ CASES = [
 
 
 def check_exploration_e2e(root):
-    flows = _files(root, "workflow.yaml")
-    out = [_check("a workflow run folder with workflow.yaml", flows, ", ".join(flows))]
-    runs = _node_dirs(root) or [
-        os.path.dirname(p) for p in _files(root, "results.json")
-    ]
-    out.append(_check("two AutoDS rounds", len(runs) >= 2, str(len(runs))))
+    out = []
+    for name in ("runs.csv", "experiments.csv"):
+        found = _files(root, name)
+        rows = sum(1 for _ in open(found[0])) - 1 if found else 0
+        out.append(_check(name + " has rows", rows > 0, str(rows)))
     front = os.path.join(root, "index.qmd")
     text = open(front).read() if os.path.exists(front) else ""
     for heading in ("Findings", "Null results", "Next steps"):
-        out.append(_check("front page has " + heading, ("## " + heading) in text))
+        out.append(_check("write-up has " + heading, ("## " + heading) in text))
     out.append(
         _check(
             "the description passes the grep",
