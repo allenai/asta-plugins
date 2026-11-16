@@ -40,6 +40,9 @@ format:
     css: _extensions/asta-theme/asta.css
     toc: true
     toc-location: left
+    # Wider reading column than Quarto's 800px default.
+    grid:
+      body-width: 1000px
     include-in-header:
       - _extensions/asta-theme/asta-head.html
       - _extensions/evidence/evidence.head.html

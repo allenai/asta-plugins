@@ -49,6 +49,46 @@ main section.level2 > h2 {
 }
 main section.level3 > h3 { scroll-margin-top: calc(var(--asta-heading-top) + 3.5rem); }
 
+/* Light: links in the text are dark teal (#105257, the theme's primary) and underlined, 1px in
+   the same colour, 2px below, so they are obvious on cream: body links, citations,
+   cross-references, the bibliography and the hover popups (a citation's or cross-reference's,
+   with its DOI). Navigation (the sidebar, the table of contents, buttons, heading anchors) and
+   the asta-pages panels, which style their own links, are left as they are. Figure and table
+   captions are body text, not a lighter teal or blue. Dark is left as it is. */
+body.quarto-light #quarto-document-content a:not(.btn, .nav-link, .anchorjs-link, .asta-panel a),
+body.quarto-light .tippy-box a {
+  color: #105257;
+  text-decoration: underline; text-decoration-thickness: 1px;
+  text-decoration-color: #105257; text-underline-offset: 2px;
+}
+body.quarto-light #quarto-document-content :is(figcaption, caption, .quarto-float-caption, .figure-caption, .table-caption) {
+  color: #0a3235;
+}
+
+/* The bibliography entry a citation lands on (#ref-…): a light pink accent halo, a ring and a
+   soft fill (--color-pink-20 in light, the pink at low alpha in dark), clear of the sticky
+   heading and wide enough for a hanging indent. A page that cannot move its own fragment (one
+   bundled into a single file) marks the entry with the class asta-target instead. The paper
+   list marks the paper a theory's evidence lands on the same way (asta-pages). */
+body {
+  --asta-accent-soft: #f8d2da;
+  --asta-halo-fill: rgba(248, 210, 218, 0.45);
+  --asta-halo-ring: #f8d2da;
+}
+body.quarto-dark {
+  --asta-accent-soft: rgba(240, 82, 156, 0.2);
+  --asta-halo-fill: rgba(240, 82, 156, 0.1);
+  --asta-halo-ring: rgba(240, 82, 156, 0.45);
+}
+div.csl-entry { scroll-margin-top: calc(var(--asta-heading-top) + 4.5rem); }
+div.csl-entry:target, div.csl-entry.asta-target {
+  background: var(--asta-halo-fill);
+  box-shadow: 0 0 0 2px var(--asta-halo-ring), 0 0 18px 2px var(--asta-accent-soft);
+  border-radius: 8px; margin-inline: -8px; padding-inline: 8px;
+}
+/* A hanging indent puts the entry's box 2em in from its first line: start the halo at the line. */
+.hanging-indent div.csl-entry:is(:target, .asta-target) { margin-left: -8px; padding-left: calc(2em + 8px); }
+
 /* The theme switch. Quarto draws a 16px toggle glyph trailing the wrapped site title; here it
    is a two-part control on its own row under the title, left-aligned with the title and the
    search box and as tall as the search box: "Light" and "Dark", the current one filled. */
