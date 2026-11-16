@@ -56,8 +56,8 @@ format:
     theme:
       dark: [cosmo, _extensions/asta-theme/dark.scss]
       light: [cosmo, _extensions/asta-theme/light.scss]
-    # Asta's look: dark by default (Quarto starts with the theme listed first),
-    # with a switch to light that the reader's browser remembers.
+    # Asta's look: dark by default, with a switch to light that the reader's
+    # browser remembers.
     # Set your own theme here to replace it.
     respect-user-color-scheme: false
     css:

@@ -531,8 +531,8 @@ def sync(
 
 SCAFFOLD_THEME = "    theme: cosmo\n"
 ASTA_THEME_DEFAULT_NOTE = (
-    "    # Asta's look: dark by default (Quarto starts with the theme listed first),\n"
-    "    # with a switch to light that the reader's browser remembers.\n"
+    "    # Asta's look: dark by default, with a switch to light that the reader's\n"
+    "    # browser remembers.\n"
 )
 ASTA_THEME = (
     "    theme:\n"
