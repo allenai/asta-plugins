@@ -1,9 +1,10 @@
 project:
   type: website
   output-dir: _site
-  # The front page, and the workflow pages: pages/<NNNN>-<workflow>.qmd, one per run.
+  # The pages to render: the front page and any other page beside it, and the workflow
+  # pages, pages/<NNNN>-<workflow>.qmd, one per run. List any page elsewhere here too.
   render:
-    - index.qmd
+    - "*.qmd"
     - "pages/*.qmd"
   preview:
     port: 4848

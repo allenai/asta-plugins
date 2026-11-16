@@ -27,6 +27,12 @@
       .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
   }
+  // A link from the data: a script URL (javascript:, vbscript:, data:) becomes "#", so a
+  // crafted run or paper file can't run code when its link is clicked.
+  function escUrl(s) {
+    var u = String(s == null ? "" : s);
+    return esc(/^(javascript|vbscript|data):/i.test(u.replace(/[\u0000-\u0020\u007f]+/g, "")) ? "#" : u);
+  }
   // A theory's anchor is its id when that already reads "theory-N" (Theorizer's ids do).
   function baseAnchor(t) { var id = String(t.id); return /^theory-/.test(id) ? id : "theory-" + id; }
   function plural(n, one, many) { return n + " " + (n === 1 ? one : many); }
@@ -74,7 +80,7 @@
     if (!p) return "";
     var title = esc(p.title || "Untitled"), id = p.corpusId || p.key;
     if (!id) return '<span class="' + cls + '">' + title + "</span>";
-    return '<a class="' + cls + '" href="' + esc((papersPage || PAPERS_PAGE) + "#paper-" + encodeURIComponent(id)) + '">' + title + "</a>";
+    return '<a class="' + cls + '" href="' + escUrl((papersPage || PAPERS_PAGE) + "#paper-" + encodeURIComponent(id)) + '">' + title + "</a>";
   }
   // "claude-opus-5" -> "Claude Opus 5"; a provider prefix ("openai/") is dropped.
   function modelName(m) {

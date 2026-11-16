@@ -1137,6 +1137,11 @@ local CONTAINERS = { Emph = true, Strong = true, Underline = true, Strikeout = t
 
 local walk_blocks
 
+-- A value written into an HTML attribute: escaped, so a path with a quote or a < can't break out.
+local function attr(s)
+  return (tostring(s):gsub("[&<>\"']", { ["&"] = "&amp;", ["<"] = "&lt;", [">"] = "&gt;", ['"'] = "&quot;", ["'"] = "&#39;" }))
+end
+
 -- A link written as raw HTML (an inline document's links to workspace files): its card.
 local function attach_raw(el)
   local href = el.text:match('^<a%s+href="([^"]+)"')
@@ -1144,16 +1149,16 @@ local function attach_raw(el)
   local is_page, pkey, rendered = page_link(href, L.rendered_dir(), nil)
   if is_page then
     -- Quarto turns a page's source into its .html in the text, not in raw HTML.
-    el.text = el.text:gsub('^<a%s+href="[^"]+"', function() return '<a href="' .. rendered .. '"' end, 1)
+    el.text = el.text:gsub('^<a%s+href="[^"]+"', function() return '<a href="' .. attr(rendered) .. '"' end, 1)
     if not pkey then return el end
     count("page")
-    el.text = el.text:gsub('%s+title="[^"]*"', ""):gsub("^<a", '<a data-asta-card="' .. pkey .. '" aria-haspopup="dialog"', 1)
+    el.text = el.text:gsub('%s+title="[^"]*"', ""):gsub("^<a", function() return '<a data-asta-card="' .. attr(pkey) .. '" aria-haspopup="dialog"' end, 1)
     return el
   end
   local key = file_card(href, L.rendered_dir())
   if not key then return el end
   count("file")
-  el.text = el.text:gsub('%s+title="[^"]*"', ""):gsub("^<a", '<a data-asta-card="' .. key .. '" aria-haspopup="dialog"', 1)
+  el.text = el.text:gsub('%s+title="[^"]*"', ""):gsub("^<a", function() return '<a data-asta-card="' .. attr(key) .. '" aria-haspopup="dialog"' end, 1)
   return el
 end
 

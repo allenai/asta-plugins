@@ -18,6 +18,12 @@
       .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
   }
+  // A link from the data: a script URL (javascript:, vbscript:, data:) becomes "#", so a
+  // crafted run or paper file can't run code when its link is clicked.
+  function escUrl(s) {
+    var u = String(s == null ? "" : s);
+    return esc(/^(javascript|vbscript|data):/i.test(u.replace(/[\u0000-\u0020\u007f]+/g, "")) ? "#" : u);
+  }
   function plural(n, one, many) { return n + " " + (n === 1 ? one : many); }
   function arr(x) { return Array.isArray(x) ? x : []; }
   // The address as this panel's page sees it: asta-templates.js knows which page of a flow's feed
@@ -184,9 +190,9 @@
   function linksHtml(t, withFolder, short) {
     var l = links(t).map(function (x) {
       var name = !short ? x[0] : x[1] === t.summaryHref ? "summary" : x[1] === t.code ? "code" : x[0].replace(/\.md$/, "");
-      return '<a href="' + esc(x[1]) + '" title="' + esc(x[0]) + '">' + esc(name) + "</a>";
+      return '<a href="' + escUrl(x[1]) + '" title="' + esc(x[0]) + '">' + esc(name) + "</a>";
     });
-    if (withFolder && t.href && !t.missing) l.push('<a href="' + esc(t.href) + '" title="The test\'s folder">' + esc(t.id) + "/</a>");
+    if (withFolder && t.href && !t.missing) l.push('<a href="' + escUrl(t.href) + '" title="The test\'s folder">' + esc(t.id) + "/</a>");
     return l.join('<span class="ap-muted"> · </span>');
   }
   function figuresHtml(t) {
@@ -197,10 +203,10 @@
     return '<div class="ap-ts-figs">' + figs.map(function (f) {
       var src = f.src || (f.size ? "" : f.href);
       if (!src) {
-        return '<a class="ap-ts-fig ap-ts-fig-big" href="' + esc(f.href) + '" title="' + esc(f.name) + '"><span class="ap-ts-fig-note">' +
+        return '<a class="ap-ts-fig ap-ts-fig-big" href="' + escUrl(f.href) + '" title="' + esc(f.name) + '"><span class="ap-ts-fig-note">' +
           esc(f.size) + ", too large to show here</span><span>" + esc(f.name) + "</span></a>";
       }
-      return '<a class="ap-ts-fig" href="' + esc(f.href) + '" title="' + esc(f.name) + '"><img src="' + esc(src) +
+      return '<a class="ap-ts-fig" href="' + escUrl(f.href) + '" title="' + esc(f.name) + '"><img src="' + esc(src) +
         '" alt="' + esc(f.name) + '" loading="lazy"><span>' + esc(f.name) + "</span></a>";
     }).join("") + "</div>";
   }
@@ -296,7 +302,7 @@
       '<p class="ap-legend">One row per test folder; open a row for its direction, figures and files. The verdict is read from the test\'s result_summary.json: ' +
       "its verdict if it states one, else whether it met its committed threshold. A folder with no summary yet is running.</p>" +
       (others.length ? '<p class="ap-legend ap-ts-others"><span class="ap-files-label">Also in this folder</span> ' + others.map(function (o) {
-        return '<a href="' + esc(o.href) + '">' + esc(o.name) + "</a>" + (o.size ? ' <span class="ap-muted">' + esc(o.size) + "</span>" : "");
+        return '<a href="' + escUrl(o.href) + '">' + esc(o.name) + "</a>" + (o.size ? ' <span class="ap-muted">' + esc(o.size) + "</span>" : "");
       }).join('<span class="ap-muted"> · </span>') + "</p>" : "") + "</div>";
 
     var tt = root.querySelector(".ap-ts"), tog = tt.querySelector(".ap-tt-head"), tbody = root.querySelector("tbody");

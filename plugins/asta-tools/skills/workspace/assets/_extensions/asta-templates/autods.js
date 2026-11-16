@@ -27,6 +27,12 @@
       .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
   }
+  // A link from the data: a script URL (javascript:, vbscript:, data:) becomes "#", so a
+  // crafted run or paper file can't run code when its link is clicked.
+  function escUrl(s) {
+    var u = String(s == null ? "" : s);
+    return esc(/^(javascript|vbscript|data):/i.test(u.replace(/[\u0000-\u0020\u007f]+/g, "")) ? "#" : u);
+  }
   // The service's experiment list writes every value as text ("None", "True", "0.75").
   function val(v) {
     if (v === "None" || v === "null" || v === "") return null;
@@ -492,13 +498,13 @@
       var chips = [sentence(run.status), statusString(run), run.requested && run.requested !== n ? n + " of " + run.requested + " experiments" : plural(n, "experiment", "experiments"),
         run.kind === "csv" ? "" : surprising + " surprising"].filter(Boolean);
       var links = [];
-      if (run.link) links.push('<a href="' + esc(run.link) + '" target="_blank" rel="noopener noreferrer">Open in AutoDiscovery</a>');
-      if (run.csvHref) links.push('<a href="' + esc(run.csvHref) + '" download>experiments.csv</a>');
+      if (run.link) links.push('<a href="' + escUrl(run.link) + '" target="_blank" rel="noopener noreferrer">Open in AutoDiscovery</a>');
+      if (run.csvHref) links.push('<a href="' + escUrl(run.csvHref) + '" download>experiments.csv</a>');
       var h = run.hrefs;
-      if (h.folder) links.push('<a href="' + esc(h.folder) + '" title="' + esc(run.source) + '">Run folder</a>');
-      else if (h.file) links.push('<a href="' + esc(h.file) + '">' + esc(String(run.source).split("/").pop()) + "</a>");
-      if (h.args) links.push('<a href="' + esc(h.args) + '">args.json</a>');
-      if (h.runmd) links.push('<a href="' + esc(h.runmd) + '">run.md</a>');
+      if (h.folder) links.push('<a href="' + escUrl(h.folder) + '" title="' + esc(run.source) + '">Run folder</a>');
+      else if (h.file) links.push('<a href="' + escUrl(h.file) + '">' + esc(String(run.source).split("/").pop()) + "</a>");
+      if (h.args) links.push('<a href="' + escUrl(h.args) + '">args.json</a>');
+      if (h.runmd) links.push('<a href="' + escUrl(h.runmd) + '">run.md</a>');
       links.push('<button type="button" class="ap-ad-linkbtn" data-params>Session configuration</button>');
       runEl.id = run.anchor;
       runEl.innerHTML =
@@ -593,8 +599,8 @@
         ["plan", "Plan", planHtml || empty("No plan", "This run's files keep no plan for this experiment.")],
         ["code", "Code", codeHtml || empty("No code", run.kind === "csv" ? "The CSV download keeps no code." : "This experiment recorded no code.")]];
       var files = [];
-      if (e.fileHref) files.push('<a href="' + esc(e.fileHref) + '">' + esc(e.file || "node file") + "</a>");
-      if (e.fileHref && run.hrefs.richOutputs) files.push('<a href="' + esc(run.hrefs.richOutputs) + '">rich_outputs/</a>');
+      if (e.fileHref) files.push('<a href="' + escUrl(e.fileHref) + '">' + esc(e.file || "node file") + "</a>");
+      if (e.fileHref && run.hrefs.richOutputs) files.push('<a href="' + escUrl(run.hrefs.richOutputs) + '">rich_outputs/</a>');
       detail.id = anchor;
       detail.innerHTML = '<div class="ap-theory-head"><h2>Experiment ' + esc(e.id) + '<a class="ap-anchor" href="#' + esc(anchor) + '" title="Link to this experiment">#</a></h2>' +
         (e.hypothesis ? "<p>" + inline(e.hypothesis) + "</p>" : "") +

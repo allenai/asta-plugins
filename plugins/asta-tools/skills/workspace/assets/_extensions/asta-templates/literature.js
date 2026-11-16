@@ -13,6 +13,12 @@
       .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
   }
+  // A link from the data: a script URL (javascript:, vbscript:, data:) becomes "#", so a
+  // crafted run or paper file can't run code when its link is clicked.
+  function escUrl(s) {
+    var u = String(s == null ? "" : s);
+    return esc(/^(javascript|vbscript|data):/i.test(u.replace(/[\u0000-\u0020\u007f]+/g, "")) ? "#" : u);
+  }
   function plural(n, one, many) { return n + " " + (n === 1 ? one : many); }
   function baseAnchor(p) { return "paper-" + (p.corpusId || p.key); }
   // The address as this panel's page sees it: asta-templates.js knows which page of a flow's feed
@@ -73,7 +79,7 @@
     var href = p.url || (p.corpusId ? "https://www.semanticscholar.org/p/" + encodeURIComponent(p.corpusId) : "");
     var title = esc(p.title || "Untitled");
     return '<div class="ap-paper" id="' + esc((prefix || "") + baseAnchor(p)) + '"><div class="ap-paper-num">' + (i + 1) + '</div><div class="ap-paper-body">' +
-      "<div>" + (href ? '<a class="ap-paper-title" href="' + esc(href) + '" target="_blank" rel="noopener">' + title + "</a>" : '<span class="ap-paper-title">' + title + "</span>") + "</div>" +
+      "<div>" + (href ? '<a class="ap-paper-title" href="' + escUrl(href) + '" target="_blank" rel="noopener">' + title + "</a>" : '<span class="ap-paper-title">' + title + "</span>") + "</div>" +
       (meta ? '<div class="ap-paper-meta">' + meta + "</div>" : "") +
       (chips.length ? '<div class="ap-chips">' + chips.join("") + "</div>" : "") +
       (dups.length ? '<div class="ap-paper-meta">Also found as ' + dups.map(esc).join("; ") + " (the same work, shown once).</div>" : "") +
@@ -97,7 +103,7 @@
         var file = s.name && searchFiles[s.name];
         return "Search " + (s.query ? "<q>" + esc(s.query) + "</q>" : "<code>" + esc(s.name) + "</code>") + " returned " +
           plural(s.candidates || 0, "paper", "papers") +
-          (file ? ' (<a href="' + esc(file) + '">' + esc(s.name + ".json") + "</a>)" : "");
+          (file ? ' (<a href="' + escUrl(file) + '">' + esc(s.name + ".json") + "</a>)" : "");
       }).join("; ") + ". The papers below are the ones the run tried to read.</div>" : "") +
       "<div><strong>" + plural(all.length, "paper", "papers") + ":</strong> " +
       [counts.used + " used by the theories", counts.read + " read in full but not used",

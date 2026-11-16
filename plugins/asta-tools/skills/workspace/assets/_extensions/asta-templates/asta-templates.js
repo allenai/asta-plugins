@@ -92,6 +92,12 @@
   function esc(s) {
     return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   }
+  // A link from the data: a script URL (javascript:, vbscript:, data:) becomes "#", so a
+  // crafted run or paper file can't run code when its link is clicked.
+  function escUrl(s) {
+    var u = String(s == null ? "" : s);
+    return esc(/^(javascript|vbscript|data):/i.test(u.replace(/[\u0000-\u0020\u007f]+/g, "")) ? "#" : u);
+  }
 
   // ---- cards -------------------------------------------------------------------------------
   // A link that autolink.lua gave a card (a test, a theory, a gap, an experiment, a figure, a
@@ -161,7 +167,7 @@
       if (s.role) h += '<div class="ap-al-role">' + esc(s.role) + "</div>";
       if (s.image) h += '<img class="ap-al-thumb" src="' + esc(urlFor(a, s.image)) + '" alt="" loading="lazy">';
       if (s.title) {
-        h += s.href ? '<a class="ap-al-go ap-al-clamp" href="' + esc(urlFor(a, s.href)) + '"' +
+        h += s.href ? '<a class="ap-al-go ap-al-clamp" href="' + escUrl(urlFor(a, s.href)) + '"' +
           (s.external ? ' target="_blank" rel="noopener"' : "") + clamp(s.title_clamp) + ">" +
           esc(s.title) + ' <span aria-hidden="true">' + (s.external ? "↗" : "→") + "</span></a>"
           : '<div class="ap-al-title ap-al-clamp"' + clamp(s.title_clamp) + ">" + esc(s.title) + "</div>";
@@ -175,7 +181,7 @@
       if (s.tally && s.tally.length) h += tally(s.tally);
       if (s.links && s.links.length) {
         h += '<div class="ap-al-links">' + s.links.map(function (l) {
-          return '<a href="' + esc(urlFor(a, l.href)) + '"' + (l.external ? ' target="_blank" rel="noopener"' : "") + ">" +
+          return '<a href="' + escUrl(urlFor(a, l.href)) + '"' + (l.external ? ' target="_blank" rel="noopener"' : "") + ">" +
             esc(l.label) + ' <span aria-hidden="true">' + (l.external ? "↗" : "→") + "</span></a>";
         }).join("") + "</div>";
       }
@@ -633,7 +639,7 @@
     function divider(s, n) {
       return '<div class="asta-flow-divider">' +
         '<div class="asta-flow-kicker">Next <span class="asta-flow-step">' + n + " of " + pages.length + "</span></div>" +
-        '<h1 class="title asta-flow-title"><a href="' + esc(s.url) + '">' + esc(s.page.title) + "</a></h1></div>";
+        '<h1 class="title asta-flow-title"><a href="' + escUrl(s.url) + '">' + esc(s.page.title) + "</a></h1></div>";
     }
 
     function setStatus(s, html) {
