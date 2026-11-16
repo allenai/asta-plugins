@@ -1,6 +1,6 @@
 # Computational review
 
-Write the project's report as a critical review of the evidence, with the Expert Review Pipeline of [ComputationalReviewTemplate](https://github.com/AllenNeuralDynamics/ComputationalReviewTemplate/tree/8cc838383453d192211413e3ff96dc1ebf3e227a#readme) (Allen Institute for Neural Dynamics, MIT). Nothing of it is copied here: read it from the repository, at this commit.
+A step of [Gap-Driven Theory Testing](../gap-driven-theory-testing/README.md), when the person chooses it with the plan. Write the project's report as a critical review of the evidence, with the Expert Review Pipeline of [ComputationalReviewTemplate](https://github.com/AllenNeuralDynamics/ComputationalReviewTemplate/tree/8cc838383453d192211413e3ff96dc1ebf3e227a#readme) (Allen Institute for Neural Dynamics, MIT). Nothing of it is copied here: read it from the repository, at this commit.
 
 The template's sections are the default. If the person has a template of their own, or has refined the report's sections, keep theirs, and run the pipeline's phases inside them.
 
@@ -40,8 +40,6 @@ Follow its phases, gates and information barriers as written. Where a skill call
 | push and deploy to GitHub Pages | the workspace's **Save** and **Show the user the rendered work** |
 
 Everything else in the pipeline still runs, including figure construction and the figure audit. The figures go in the review page as Quarto figures: copy each image into the site, and keep its script and inputs beside it in the run's folder. Each figure's folder carries a `figure.json` naming its script, inputs and audit (`{"id": "<fig-id>", "script": "make_figure.py", "inputs": ["<workspace path>", …], "audit": "audit.json"}`), so the site links the figure to the files it was made from.
-
-**Never skip the figure audit.** Phase 6 checks the figures built from other studies' numbers. Audit the project's own figures the same way: a blinded critic gets each figure, its caption and the files its `figure.json` names, and checks that the figure shows what the caption says and was made from those files. Redraw or fix every figure it flags before the review is shared.
 
 The review is the site's `index.qmd`, and the only page this workflow writes: it gets no `pages/<NNNN>-review.qmd`. In `_quarto.yml` the front page's sidebar entry reads "Computational review". The run's final files are listed at the end of the review under a short "Files" heading (`{{< asta-files dir=".asta/flows/<NNNN>-review/<final step>" >}}`).
 

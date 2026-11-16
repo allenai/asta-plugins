@@ -26,6 +26,8 @@ def test_the_template_is_linked_not_vendored():
     assert f"REF={ref}" in text
 
 
-def test_index_links_the_workflow():
-    skill = (RUN_WORKFLOW / "SKILL.md").read_text()
-    assert "](workflows/review/README.md)" in skill
+def test_gap_driven_links_the_workflow():
+    gap_driven = (
+        RUN_WORKFLOW / "workflows/gap-driven-theory-testing/README.md"
+    ).read_text()
+    assert "](../review/README.md)" in gap_driven
