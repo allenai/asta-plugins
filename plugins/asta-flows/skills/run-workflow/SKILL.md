@@ -1,7 +1,7 @@
 ---
 name: run-workflow
 description: Runs an Asta research workflow for the person, from plan to front page, with Theorizer, AutoDS, Semantic Scholar and Data Search. Starts by settling how it runs -- the library in a coding agent, the CLI with your own key, or hosted by Asta. Use when someone brings a research question, papers, data or an AutoDS run and wants theories, hypotheses, experiments or a reproduction.
-allowed-tools: Bash(theorize *) Bash(auto-discovery *) Bash(asta auth *) Bash(asta generate-theories *) Bash(asta autodiscovery *) Bash(s2 *) Bash(asta-papers *) Bash(jq *) Bash(uv tool *) Bash(uv venv *) Bash(uv pip *) Bash(command -v *) Bash(curl *) Bash(python3 *) Bash(git *) Bash(quarto *) Bash(make *) Bash(mkdir *) Bash(ls *) Bash(cp *) Write(*) Edit(*)
+allowed-tools: Bash(theorize *) Bash(auto-discovery *) Bash(asta auth *) Bash(asta generate-theories *) Bash(asta autodiscovery *) Bash(s2 *) Bash(asta-papers *) Bash(jq *) Bash(uv tool *) Bash(uv venv *) Bash(uv pip *) Bash(command -v *) Bash(env *) Bash(grep *) Bash(echo *) Bash(cat *) Bash(curl *) Bash(python3 *) Bash(git *) Bash(quarto *) Bash(make *) Bash(mkdir *) Bash(ls *) Bash(cp *) Write(*) Edit(*)
 ---
 
 # Research workflows
@@ -21,8 +21,10 @@ The library and the CLI run on this machine, and nothing goes to Asta. Your mode
 To pick one, look first, without printing any key:
 
 ```bash
-env | grep -oE '^(OPENAI|ANTHROPIC|MISTRAL|S2)_API_KEY'; echo "CLAUDECODE=${CLAUDECODE:-}"
-asta auth status 2>/dev/null; cat .asta/mode.json 2>/dev/null
+env | grep -oE '^(OPENAI|ANTHROPIC|MISTRAL|S2)_API_KEY'
+echo "CLAUDECODE=${CLAUDECODE:-}"
+asta auth status
+cat .asta/mode.json
 ```
 
 If that doesn't settle it, ask: "Is it okay for your data to leave this machine? If so, hosted is free. If not, I can use your API key with the CLI, or do it all here in this session with the library." In a hosted Asta sandbox the data is already with us, so don't ask: use the CLI that's installed there.

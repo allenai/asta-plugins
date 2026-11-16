@@ -162,7 +162,7 @@ def run_case(case, args, keys, out_dir, secrets):
         "--no-session-persistence", "--allowedTools", *BASIC_TOOLS,
     ]  # fmt: skip
     for plugin in PLUGINS:
-        command += ["--plugin-dir", plugin]
+        command += ["--plugin-dir", plugin, "--add-dir", plugin]
 
     before = credits() if case.hosted else None
     started = datetime.datetime.now()

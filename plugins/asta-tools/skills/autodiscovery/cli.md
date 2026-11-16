@@ -27,10 +27,10 @@ Never ask for a key in chat, because it would stay in the transcript. The person
 
 ## A run
 
-Run it through `scripts/run_relaxed.py`, which takes the same arguments as `auto-discovery` and also passes on the resume and seed flags, which plain `auto-discovery` doesn't have. Its reviewer fails an experiment only when the main result is wrong or untested, where AutoDS's own fails it for any gap against its plan. On some data that took the pass rate from about a third to nearly all, so read the experiments rather than trusting the count. It prints `experiment_reviewer: relaxed system message active` when it starts.
+`<tools>` is the folder `uv tool dir` prints; write it out in full, since a command that starts with `$(…)` can't be matched by a permission rule. Run it through `scripts/run_relaxed.py`, which takes the same arguments as `auto-discovery` and also passes on the resume and seed flags, which plain `auto-discovery` doesn't have. Its reviewer fails an experiment only when the main result is wrong or untested, where AutoDS's own fails it for any gap against its plan. On some data that took the pass rate from about a third to nearly all, so read the experiments rather than trusting the count. It prints `experiment_reviewer: relaxed system message active` when it starts.
 
 ```bash
-"$(uv tool dir)/asta-autodiscovery/bin/python" -I <this skill>/scripts/run_relaxed.py <data files> \
+<tools>/asta-autodiscovery/bin/python -I <this skill>/scripts/run_relaxed.py <data files> \
   --name "<short name>" \
   --intent "<the prompt>" \
   --dataset_description "$(cat <file>.description.md)" \
@@ -46,7 +46,7 @@ Run it from the project folder, so the data files and `--out_dir` are relative t
 - Each experiment lands in `<run folder>` as `mcts_node_*.json`, with the usage in `llm_usage_events.jsonl`. That has tokens, not cost. For an upper bound on the cost so far, ignoring cache discounts:
 
   ```bash
-  "$(uv tool dir)/asta-autodiscovery/bin/python" -I -c 'import json,sys,litellm; p=litellm.model_cost; print(round(sum(e["usage"]["prompt_tokens"]*p[e["model"]]["input_cost_per_token"]+e["usage"]["completion_tokens"]*p[e["model"]]["output_cost_per_token"] for e in map(json.loads,open(sys.argv[1]))),4))' <run folder>/llm_usage_events.jsonl
+  <tools>/asta-autodiscovery/bin/python -I -c 'import json,sys,litellm; p=litellm.model_cost; print(round(sum(e["usage"]["prompt_tokens"]*p[e["model"]]["input_cost_per_token"]+e["usage"]["completion_tokens"]*p[e["model"]]["output_cost_per_token"] for e in map(json.loads,open(sys.argv[1]))),4))' <run folder>/llm_usage_events.jsonl
   ```
 - It's done when the log ends with `HTML report: <run folder>/report/index.html` and `ps -axo command | grep '[r]un_relaxed.py'` is empty.
 - A run of 50 can take an hour or more. Run it in the background (`nohup <command> > run.log 2>&1 &`; macOS has no `setsid`) and check the log. In a hosted sandbox, wait for it inside the turn.
