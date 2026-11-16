@@ -90,7 +90,10 @@ def _format_snippet_results(result: dict) -> None:
         title = paper.get("title", "N/A")
         click.echo(f"{i}. {title}")
         if authors := paper.get("authors"):
-            author_names = ", ".join(a.get("name", "") for a in authors[:3])
+            # The snippet API lists authors as names; other endpoints as {"name": ...}
+            author_names = ", ".join(
+                a if isinstance(a, str) else a.get("name", "") for a in authors[:3]
+            )
             if len(authors) > 3:
                 author_names += " et al."
             click.echo(f"   Authors: {author_names}")

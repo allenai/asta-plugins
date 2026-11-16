@@ -4,7 +4,7 @@ We pay for it. Theorizer runs on Asta's servers, so the question and the papers 
 
 The person logs in once: `asta auth login` (in Claude Code, `! asta auth login`).
 
-The commands are generated from the service's agent card, so once logged in, ask them what they take: `asta generate-theories --help`, `asta generate-theories card`, and `asta generate-theories describe <skill>` for one skill's inputs. Before login, only `card`, `send-message`, `task` and `tasks` show, and `card` says to log in.
+The commands are generated from the service's agent card, so once logged in, ask them what they take: `asta generate-theories --help`, `asta generate-theories card`, and `asta generate-theories describe <skill>` for one skill's inputs. Before login, only `card`, `send-message` and `task` show, and `card` says to log in.
 
 ## The skills
 
