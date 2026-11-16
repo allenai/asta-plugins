@@ -384,6 +384,33 @@ class TestPapersSnippetSearch:
         assert "This is a matching snippet." in result.output
         assert "abstract" in result.output
 
+    def test_snippet_search_text_format_with_author_names(self, runner):
+        """The snippet API lists authors as plain names, not {"name": ...}."""
+        mock_result = {
+            "data": [
+                {
+                    "paper": {
+                        "title": "Snippet Paper",
+                        "authors": ["Author A", "Author B", "Author C", "Author D"],
+                    },
+                    "snippet": {"text": "A matching snippet.", "snippetKind": "body"},
+                },
+            ],
+        }
+
+        with patch("asta.papers.snippet_search.SemanticScholarClient") as MockClient:
+            mock_instance = MagicMock()
+            mock_instance.snippet_search.return_value = mock_result
+            MockClient.return_value = mock_instance
+
+            result = runner.invoke(
+                cli,
+                ["papers", "snippet-search", "test query", "--format", "text"],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "Authors: Author A, Author B, Author C et al." in result.output
+
     def test_snippet_search_custom_fields(self, runner):
         """Test snippet-search with explicit --fields."""
         mock_result = {"data": []}
