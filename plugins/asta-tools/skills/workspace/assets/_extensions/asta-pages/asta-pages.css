@@ -598,3 +598,61 @@ body.quarto-dark .ap-ts-table tr.ap-ts-row.ap-open td:first-child { box-shadow: 
 .ap-tt td.ap-tt-tests { font-size: 13px; color: var(--ap-muted); }
 .ap-tt-unmatched { margin-top: 12px; }
 .ap-ad-files { margin-top: 8px; font-size: 13px; }
+
+/* ---- a flow's feed (asta-pages.js): the next workflow pages of the flow, appended below ---- */
+.asta-flow {
+  --ap-text: #0a3235; --ap-muted: #3f7274; --ap-faint: #6e9291; --ap-line: #cbd2cc;
+  --ap-link: #105257; --ap-link-hover: #3f7274; --ap-accent: #f0529c;
+}
+body.quarto-dark .asta-flow {
+  --ap-text: #faf2e9; --ap-muted: #cbd2cc; --ap-faint: #9cb2af; --ap-line: rgba(250, 242, 233, 0.2);
+  --ap-link: #0fcb8c; --ap-link-hover: #6ddbb1;
+}
+.asta-flow-page { margin-top: 4.5rem; }
+.asta-flow-divider {
+  position: relative; padding-top: 1.6rem; margin-bottom: 1.5rem;
+  border-top: 1px solid var(--ap-line);
+  font-family: Manrope, Arial, sans-serif;
+}
+/* A short accent stroke on the rule marks where one workflow ends and the next begins. */
+.asta-flow-divider::before {
+  content: ""; position: absolute; top: -2px; left: 0; width: 3rem; height: 3px;
+  border-radius: 2px; background: var(--ap-accent);
+}
+.asta-flow-kicker {
+  font-size: 0.78rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--ap-faint); margin-bottom: 0.35rem;
+}
+.asta-flow-step { font-weight: 500; letter-spacing: 0.02em; margin-left: 0.4em; }
+main .asta-flow-divider h1.asta-flow-title { margin: 0 0 0.3rem; border: 0; padding: 0; }
+/* The title links its page, quietly: the heading's colour, underlined on hover (above the
+   asta-theme's rule for links in the page body). */
+body #quarto-document-content .asta-flow .asta-flow-divider h1.asta-flow-title a { color: inherit; text-decoration: none; }
+body #quarto-document-content .asta-flow .asta-flow-divider h1.asta-flow-title a:hover { color: var(--ap-link-hover); text-decoration: underline; text-underline-offset: 4px; text-decoration-thickness: 2px; }
+.asta-flow-status {
+  display: flex; align-items: center; gap: 0.6rem; padding: 1.2rem 0 3rem;
+  font-family: Manrope, Arial, sans-serif; font-size: 0.92rem; color: var(--ap-muted);
+}
+.asta-flow-status a, .asta-flow-retry { color: var(--ap-link); font-weight: 500; }
+.asta-flow-retry {
+  font: inherit; font-weight: 600; background: none; border: 1px solid var(--ap-line); border-radius: 6px;
+  padding: 0.15rem 0.6rem; cursor: pointer;
+}
+.asta-flow-retry:hover { border-color: var(--ap-link); }
+.asta-flow-spinner {
+  width: 14px; height: 14px; border-radius: 50%; flex: none;
+  border: 2px solid var(--ap-line); border-top-color: var(--ap-link);
+  animation: asta-flow-spin 0.9s linear infinite;
+}
+@keyframes asta-flow-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .asta-flow-spinner { animation: none; } }
+.asta-flow-sentinel { height: 1px; }
+.asta-flow-end {
+  margin: 4rem 0 2rem; padding-top: 1rem; border-top: 1px solid var(--ap-line); text-align: center;
+  font-family: Manrope, Arial, sans-serif; font-size: 0.85rem; color: var(--ap-faint);
+}
+
+/* "On this page" while it lists just the sections the sidebar lists for the page in view. */
+nav[role="doc-toc"].asta-toc-same {
+  display: none;
+}

@@ -88,9 +88,11 @@ local function read_data(kwargs)
   return text, nil, rel
 end
 
--- The stylesheet every panel shares. Added before any widget script.
+-- The stylesheet and asta-pages.js, which every widget script shares (a panel's start, the
+-- address it owns) and which draws a flow's feed. Added before any widget script.
 local function css_dep()
   quarto.doc.add_html_dependency({ name = "asta-pages", version = "0.1.0", stylesheets = { "asta-pages.css" } })
+  quarto.doc.add_html_dependency({ name = "asta-pages-core", version = "0.1.0", scripts = { "asta-pages.js" } })
 end
 
 local function add_deps(script)
@@ -1302,26 +1304,178 @@ local function doc_panel(kwargs)
   return pandoc.Blocks({ pandoc.RawBlock("html", head), pandoc.Div(blocks, pandoc.Attr("", { "asta-doc" })) })
 end
 
+-- ---- the feed, and each page's sections in the sidebar -----------------------------------
+--
+-- Every page one of the asta-pages shortcodes runs on carries two small JSON blocks for
+-- asta-pages.js:
+--   script#asta-flow      where the site's root is. The feed's pages are the sidebar's links into
+--                         the site, in the sidebar's order: in a workspace the front page, then
+--                         the workflow pages (pages/<NNNN>-<workflow>.qmd, listed flat with
+--                         `auto: "pages/*.qmd"`, so by file name: run order). The page the reader
+--                         is on loads the pages after it, below it, as the reader reaches its end.
+--   script#asta-sections  each page's sections: its level-2 headings and the ids Quarto gives
+--                         them, keyed by the page's place in the site, for the pages the project
+--                         renders. Listed under each page's sidebar link. Off with
+--                         `asta-pages: {sidebar-sections: false}` in _quarto.yml.
+
+-- A page's front matter as Pandoc metadata (an empty table when it has none).
+local function front_matter(path)
+  local text = read_file(path)
+  if not text then return nil end
+  text = text:gsub("^\239\187\191", ""):gsub("\r\n", "\n")
+  local yaml = text:match("^%-%-%-[ \t]*\n(.-\n)%-%-%-[ \t]*\n") or text:match("^%-%-%-[ \t]*\n(.-\n)%-%-%-[ \t]*$")
+  if not yaml then return {} end
+  local ok, doc = pcall(pandoc.read, "---\n" .. yaml .. "---\n", "markdown")
+  if not ok then return {} end
+  return doc.meta
+end
+
+-- Where a page source renders: <output dir>/<its place in the project>.html.
+local function rendered_file(src)
+  local root = project_root()
+  local out = quarto.project.output_directory
+  local inside = relative(src, root):gsub("%.[^./]+$", "") .. ".html"
+  if out == nil or out == "" then return normalize(root .. "/" .. inside) end
+  out = slashes(out)
+  if not is_absolute(out) then out = root .. "/" .. out end
+  return normalize(out .. "/" .. inside)
+end
+
+-- The project's render list (project.render in _quarto.yml), its globs expanded (a `*` in the
+-- last part of a path); without one, the .qmd files at the root and in pages/.
+local function render_list()
+  local root = project_root()
+  local text = read_file(root .. "/_quarto.yml") or read_file(root .. "/_quarto.yaml")
+  local items = {}
+  if text then
+    local ok, doc = pcall(pandoc.read, "---\n" .. text:gsub("\r\n", "\n") .. "\n---\n", "markdown")
+    local render = ok and doc.meta.project and doc.meta.project.render
+    if type(render) == "table" then
+      for _, v in ipairs(render) do items[#items + 1] = pandoc.utils.stringify(v) end
+    end
+  end
+  if #items == 0 then items = { "*.qmd", "pages/*.qmd" } end
+  local out, seen = {}, {}
+  local function add(p)
+    p = normalize(p)
+    if not seen[p] and file_size(p) then seen[p] = true; out[#out + 1] = p end
+  end
+  for _, item in ipairs(items) do
+    local dir, name = item:match("^(.*)/([^/]*)$")
+    if not dir then dir, name = "", item end
+    if item:sub(1, 1) ~= "!" and not dir:find("[*?]") then
+      local base = dir == "" and root or (root .. "/" .. dir)
+      if name:find("[*?]") then
+        local pat = "^" .. name:gsub("[%^%$%(%)%%%.%[%]%+%-]", "%%%0"):gsub("%*", "[^/]*"):gsub("%?", "[^/]") .. "$"
+        local names = list_dir(base) or {}
+        table.sort(names)
+        for _, n in ipairs(names) do
+          if n:match(pat) and not n:match("^[_.]") and n:match("%.q?md$") then add(base .. "/" .. n) end
+        end
+      else
+        add(base .. "/" .. name)
+      end
+    end
+  end
+  return out
+end
+
+-- A page's sections: its level-2 headings ({id, title}), read from its source with the ids
+-- Quarto gives them (an explicit {#id}, else Pandoc's identifier for the heading's text), and
+-- the "Workflow" heading asta-workflow draws when the page's diagram is there. Headings marked
+-- .unlisted are left out, as Quarto leaves them out of "On this page". nil for a slide deck.
+local function page_sections(path)
+  local text = read_file(path)
+  if not text then return nil end
+  local fm = front_matter(path) or {}
+  local fmt = fm.format
+  if type(fmt) == "table" and fmt.revealjs ~= nil and fmt.html == nil then return nil end
+  if fmt ~= nil and pandoc.utils.stringify(fmt):match("^revealjs") then return nil end
+  local dir = pandoc.path.directory(path)
+  text = ("\n" .. text:gsub("^\239\187\191", ""):gsub("\r\n", "\n")):gsub("\n[ \t]*{{<%s*asta%-workflow(.-)>}}", function(args)
+    local file = args:match('file%s*=%s*"([^"]*)"') or args:match("file%s*=%s*([^%s\"]+)") or "workflow.mmd"
+    local title = args:match('title%s*=%s*"([^"]*)"') or "Workflow"
+    local src = read_file(normalize(dir .. "/" .. file))
+    if not src or src:match("^%s*$") then return "\n" end
+    return "\n\n## " .. title .. " {#workflow}\n\n"
+  end)
+  local ok, doc = pcall(pandoc.read, text, "markdown")
+  if not ok then return {} end
+  local out = {}
+  doc.blocks:walk({
+    Header = function(h)
+      if h.level == 2 and h.identifier ~= "" and not h.classes:includes("unlisted") then
+        out[#out + 1] = { id = h.identifier, title = pandoc.utils.stringify(h.content) }
+      end
+    end,
+  })
+  return out
+end
+
+local function option(meta, name)
+  local o = meta and meta["asta-pages"]
+  if type(o) ~= "table" then return nil end
+  local v = o[name]
+  if v == nil or type(v) == "boolean" then return v end
+  local s = pandoc.utils.stringify(v)
+  return s ~= "false" and s ~= "no"
+end
+
+-- The feed's and the sidebar's data, once per page (a page may run several shortcodes; it
+-- renders in one Lua state, so the mark is kept in package.loaded).
+local function page_extras(meta)
+  local state = package.loaded["asta-pages/page"] or {}
+  package.loaded["asta-pages/page"] = state
+  if state.done then return end
+  state.done = true
+  if not quarto.doc.is_format("html") or quarto.doc.is_format("revealjs") then return end
+  local site = site_root() or project_root()
+  local rel = relative(site, rendered_dir())
+  local to_root = rel == "" and "./" or (url_path(rel) .. "/")
+  css_dep()
+  quarto.doc.include_text("after-body", json_script('id="asta-flow"', { format = "asta-pages/flow@3", site = to_root }))
+  if option(meta, "sidebar-sections") == false then return end
+  local pages, any = {}, false
+  for _, src in ipairs(render_list()) do
+    local list = page_sections(src)
+    if list and #list > 0 then
+      pages[url_path(relative(rendered_file(src), site))] = list
+      any = true
+    end
+  end
+  if any then
+    quarto.doc.include_text("after-body", json_script('id="asta-sections"',
+      { format = "asta-pages/sections@1", site = to_root, pages = pages }))
+  end
+end
+
 return {
   ["asta-workflow"] = function(args, kwargs, meta)
+    page_extras(meta)
     return workflow(kwargs)
   end,
   ["asta-theories"] = function(args, kwargs, meta)
+    page_extras(meta)
     return theories_panel(kwargs)
   end,
   ["asta-literature"] = function(args, kwargs, meta)
+    page_extras(meta)
     return literature_panel(kwargs)
   end,
   ["asta-autods"] = function(args, kwargs, meta)
+    page_extras(meta)
     return autods(kwargs)
   end,
   ["asta-files"] = function(args, kwargs, meta)
+    page_extras(meta)
     return files_panel(kwargs)
   end,
   ["asta-doc"] = function(args, kwargs, meta)
+    page_extras(meta)
     return doc_panel(kwargs)
   end,
   ["asta-tests"] = function(args, kwargs, meta)
+    page_extras(meta)
     return tests_panel(kwargs)
   end,
 }

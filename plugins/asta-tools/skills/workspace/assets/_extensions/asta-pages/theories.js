@@ -13,6 +13,13 @@
 (function () {
   "use strict";
 
+  // The address as this panel's page sees it: asta-pages.js knows which page of a flow's feed
+  // the panel came from (null when the address is another page's); without it, the page's own.
+  function api() { return typeof window !== "undefined" ? window.AstaPages : null; }
+  function hashOf(el) { var A = api(); return A && A.hashOf ? A.hashOf(el) : location.hash; }
+  function urlOf(el, hash) { var A = api(); return A && A.urlOf ? A.urlOf(el, hash) : hash; }
+  function scopeOf(el) { var A = api(); return A && A.scope ? A.scope(el) : (typeof document !== "undefined" ? document : null); }
+
   function esc(s) {
     return String(s == null ? "" : s)
       .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
@@ -280,7 +287,7 @@
         ["evidence", "Evidence", evidenceTab(t, src.papers, src.findings, prefix, link)],
         ["papers", "Referenced papers", papersTab(t, src.papers, link)]
       ];
-      if (withTests) tabs.push(["tests", "Tests" + (e.tests.length ? " (" + e.tests.length + ")" : ""), testsTab(e.tests, document)]);
+      if (withTests) tabs.push(["tests", "Tests" + (e.tests.length ? " (" + e.tests.length + ")" : ""), testsTab(e.tests, scopeOf(box))]);
       var chips = [t.kind ? sentenceCase(t.kind) + " theory" : "",
         t.novelty && t.novelty.label ? "Novelty: " + sentenceCase(t.novelty.label) : "",
         t.model ? "Written by " + modelName(t.model) : ""].filter(Boolean);
@@ -419,13 +426,14 @@
     // Choosing a theory or a query tab is a step in the browser's history (pushState), so Back
     // returns to the list or the tab before. `shown` is the address the panel last drew, so the
     // panel's own steps, and a Back that fires both popstate and hashchange, are drawn once.
-    var shown = location.hash;
+    var shown = hashOf(root);
     function visit(hash) {
-      if (location.hash === hash) return;
-      try { history.pushState(null, "", hash); } catch (e) {
-        try { history.replaceState(null, "", hash); } catch (x) { /* a sandboxed frame may refuse */ }
+      if (hashOf(root) === hash) return;
+      var url = urlOf(root, hash);
+      try { history.pushState(null, "", url); } catch (e) {
+        try { history.replaceState(null, "", url); } catch (x) { /* a sandboxed frame may refuse */ }
       }
-      shown = location.hash;
+      shown = hashOf(root);
     }
     var bodies = root.querySelectorAll(".ap-qbody");
     var views = groups.map(function (g, k) { return drawGroup(bodies[k], g, prefix, link, visit, !!tests); });
@@ -476,8 +484,8 @@
       return at;
     }
     function fromHash() {
-      var h = "";
-      try { h = decodeURIComponent((location.hash || "").slice(1)); } catch (e) { h = ""; }
+      var h = hashOf(root) || "";
+      try { h = decodeURIComponent(h.slice(1)); } catch (e) { h = ""; }
       if (!h) {
         // No fragment: the page as it first opened (Back to it from a theory or a tab).
         activate(0, false);
@@ -519,8 +527,9 @@
     // Back and Forward fire popstate, and hashchange too when the fragment differs; a link or
     // the app's site frame fires hashchange alone.
     function onAddress() {
-      if (location.hash === shown) return;
-      shown = location.hash;
+      var h = hashOf(root);
+      if (h == null || h === shown) return; // another page's address, or this panel's own step
+      shown = h;
       fromHash();
     }
     window.addEventListener("hashchange", onAddress);
@@ -539,19 +548,36 @@
   window.AstaPages = window.AstaPages || {};
   window.AstaPages.theories = safeRender;
 
-  // A page that carries the Quarto shortcode's markup draws itself: one embedded data file per
-  // Theorizer project the shortcode names (script.asta-theories-data, in the shortcode's order),
-  // and its tests (script.asta-theories-tests).
-  function start() {
-    var root = document.querySelector(".asta-panel.asta-theories");
-    if (!root) return;
-    var scripts = Array.prototype.slice.call(document.querySelectorAll("script.asta-theories-data"));
-    if (!scripts.length) {
-      var one = document.getElementById("asta-theories-data");
-      if (one) scripts = [one];
-    }
-    if (!scripts.length) return;
-    var testsEl = document.querySelector("script.asta-theories-tests");
+  // Each theories panel in scope draws itself, once: one embedded data file per Theorizer
+  // project the shortcode names (script.asta-theories-data, in the shortcode's order) and its
+  // tests (script.asta-theories-tests), the scripts that follow the panel. asta-pages.js calls
+  // start on a page appended to a flow's feed, so a document can hold several pages' panels.
+  var drawn = 0;
+  function start(scope) {
+    scope = scope || document;
+    scope.querySelectorAll(".asta-panel.asta-theories").forEach(function (root) {
+      if (root.hasAttribute("data-asta-drawn")) return;
+      var scripts = [], testsEl = null;
+      for (var n = root.nextElementSibling; n && /^script$/i.test(n.tagName); n = n.nextElementSibling) {
+        if (n.classList.contains("asta-theories-data")) scripts.push(n);
+        else if (n.classList.contains("asta-theories-tests")) testsEl = n;
+      }
+      if (!scripts.length && !drawn) {
+        scripts = Array.prototype.slice.call(document.querySelectorAll("script.asta-theories-data"));
+        if (!scripts.length) {
+          var one = document.getElementById("asta-theories-data");
+          if (one) scripts = [one];
+        }
+        testsEl = document.querySelector("script.asta-theories-tests");
+      }
+      if (!scripts.length) return;
+      root.setAttribute("data-asta-drawn", "");
+      if (!root.id && drawn) root.id = "asta-theories-" + (drawn + 1); // its query tabs' ids
+      drawn++;
+      draw(root, scripts, testsEl);
+    });
+  }
+  function draw(root, scripts, testsEl) {
     var names = [];
     try { names = JSON.parse(root.getAttribute("data-asta-names") || "[]"); } catch (e) { names = []; }
     var tests = null;
@@ -566,5 +592,8 @@
       tests: tests
     });
   }
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start); else start();
+  window.AstaPages.widgets = window.AstaPages.widgets || [];
+  window.AstaPages.widgets.push({ name: "theories", order: 1, start: start });
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", function () { start(document); });
+  else start(document);
 })();

@@ -49,7 +49,7 @@ Assume the person wants the workflow carried out autonomously unless they say ot
 ### The run's files and page
 
 - **Files:** `.asta/flows/<NNNN>-<workflow>/`, numbered in the order the workspace's runs started, with a `workflow.yaml` (the plan: its steps and their settings), a `README.md` (what ran, and where each step's output is) and one folder per step, `<NN>-<step>/`.
-- **Page,** in a workspace site: `pages/<NNNN>-<workflow>.qmd`, the same NNNN as the run's folder, its front matter only `title:`, normally the workflow's name. The sidebar lists the pages flat in run order.
+- **Page,** in a workspace site: `pages/<NNNN>-<workflow>.qmd`, the same NNNN as the run's folder, its front matter only `title:`, normally the workflow's name. The sidebar lists the pages flat in run order, and they read one after another in that order.
 
 ### Long steps in a hosted sandbox
 

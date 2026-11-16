@@ -17,6 +17,11 @@
 (function () {
   "use strict";
 
+  // The address as this panel's page sees it: asta-pages.js knows which page of a flow's feed
+  // the panel came from (null when the address is another page's); without it, the page's own.
+  function hashOf(el) { var A = window.AstaPages; return A && A.hashOf ? A.hashOf(el) : location.hash; }
+  function urlOf(el, hash) { var A = window.AstaPages; return A && A.urlOf ? A.urlOf(el, hash) : hash; }
+
   function esc(s) {
     return String(s == null ? "" : s)
       .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
@@ -415,16 +420,17 @@
     // fragment drawn last, so the panel's own steps, and a Back that fires both popstate and
     // hashchange, are drawn once. Scroll positions are kept per fragment in memory, which also
     // works when the app's site frame replays Back with location.replace (no history.state).
-    var shown = location.hash, ypos = {};
-    window.addEventListener("scroll", function () { ypos[shown] = window.scrollY; }, { passive: true });
+    var shown = hashOf(root), ypos = {};
+    window.addEventListener("scroll", function () { if (shown != null) ypos[shown] = window.scrollY; }, { passive: true });
     function setHash(h) {
       var target = "#" + h;
-      if (location.hash === target) return;
-      ypos[shown] = window.scrollY;
-      try { history.pushState(null, "", target); } catch (err) {
-        try { history.replaceState(null, "", target); } catch (x) { /* a sandboxed frame may refuse */ }
+      if (hashOf(root) === target) return;
+      if (shown != null) ypos[shown] = window.scrollY;
+      var url = urlOf(root, target);
+      try { history.pushState(null, "", url); } catch (err) {
+        try { history.replaceState(null, "", url); } catch (x) { /* a sandboxed frame may refuse */ }
       }
-      shown = location.hash;
+      shown = hashOf(root);
     }
 
     var listHtml = "";
@@ -766,8 +772,8 @@
     }
 
     function fromHash(back) {
-      var h = "";
-      try { h = decodeURIComponent((location.hash || "").slice(1)); } catch (err) { h = ""; }
+      var h = hashOf(root) || "";
+      try { h = decodeURIComponent(h.slice(1)); } catch (err) { h = ""; }
       var run = runs[0], rest = h;
       // A local run's node id names an experiment too: #node-3-1 or #node_3_1 (any run's,
       // or #run-2/node-3-1).
@@ -786,7 +792,7 @@
       var em = /^experiment-(.+)$/.exec(rest || ""), e = null;
       if (em) e = run.experiments.filter(function (x) { return String(x.id) === em[1]; })[0] || null;
       else e = byNode(run, rest);
-      var saved = back ? ypos[location.hash] : null;
+      var saved = back ? ypos[hashOf(root)] : null;
       if (state.run !== run) selectRun(run, e ? e.key : null, !back && !!h && !e);
       if (e) showExperiment(e, saved == null);
       // Back to a fragment with no experiment (the run, or the page itself): the tree again,
@@ -797,8 +803,9 @@
     // Back and Forward fire popstate, and hashchange too when the fragment differs; a link or
     // the app's site frame fires hashchange alone.
     function onAddress() {
-      if (location.hash === shown) return;
-      shown = location.hash;
+      var h = hashOf(root);
+      if (h == null || h === shown) return; // another page's address, or this panel's own step
+      shown = h;
       fromHash(true);
     }
     window.addEventListener("hashchange", onAddress);
@@ -826,12 +833,22 @@
   window.AstaPages = window.AstaPages || {};
   window.AstaPages.autods = safeRender;
 
-  // A page that carries the Quarto shortcode's markup draws itself.
-  function start() {
-    var root = document.querySelector(".asta-panel.asta-autods");
-    var src = document.getElementById("asta-autods-data");
-    if (!root || !src) return;
-    safeRender(root, function () { return JSON.parse(src.textContent); });
+  // Each AutoDiscovery panel in scope draws itself, once, from the data script that follows it.
+  // asta-pages.js calls start on a page appended to a flow's feed, so a document can hold
+  // several pages' panels.
+  function start(scope) {
+    scope = scope || document;
+    scope.querySelectorAll(".asta-panel.asta-autods").forEach(function (root) {
+      if (root.hasAttribute("data-asta-drawn")) return;
+      var src = root.nextElementSibling;
+      if (!src || !/^script$/i.test(src.tagName) || !/asta-autods-data$/.test(src.id || "")) src = document.getElementById("asta-autods-data");
+      if (!src) return;
+      root.setAttribute("data-asta-drawn", "");
+      safeRender(root, function () { return JSON.parse(src.textContent); });
+    });
   }
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start); else start();
+  window.AstaPages.widgets = window.AstaPages.widgets || [];
+  window.AstaPages.widgets.push({ name: "autods", order: 1, start: start });
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", function () { start(document); });
+  else start(document);
 })();

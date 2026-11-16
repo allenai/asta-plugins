@@ -186,6 +186,62 @@ HTML, CSS and JavaScript; the panels follow the asta-theme light (cream) and dar
 test's figures (their copies in the site) and the files the panels link are loaded when the
 reader opens them.
 
+**The feed: the site's pages, one after another.** Scrolling past the end of a page loads the
+next page in the sidebar's order below it, to the last: in a workspace the workflow pages in run
+order.
+
+- **Which page comes next:** every page an asta-pages shortcode runs on carries
+  where the site's root is (`script#asta-flow`), and `asta-pages.js` takes the sidebar's links
+  into the site, once each (links elsewhere and repeats skipped), in the sidebar's order.
+- **Sections in the sidebar:** under each page's sidebar link, its level-2 headings (read from
+  each page's source with the ids Quarto gives them, `script#asta-sections`), folded with
+  Quarto's chevron, the page in view open and its section in view marked; "On this page" hides
+  while it lists just those. `asta-pages: {sidebar-sections: false}` in `_quarto.yml` turns it off.
+- **Loading** (`asta-pages.js`, loaded with every widget script): about a screen before the end
+  of what is loaded, the next page is fetched (same origin), its main content appended under a
+  divider (its title linking the page itself, and "2 of 4"), any widget script or
+  stylesheet it needs and this page lacks loaded, and its panels drawn. A light "Loading…" line
+  shows while it comes, and "Try again" if it fails. Each page is fetched once; the last ends
+  with a quiet "End". Nothing is unloaded: a run is a handful of pages, and the
+  four pages of a test site (10 MB of HTML, the largest 10 MB) came to under 20 MB of script heap.
+- **Address:** as a later page's divider passes the top quarter of the window, the address
+  becomes that page's (`history.replaceState`, with the fragment that page last had), the window
+  title its title, and the sidebar marks it, so a reload or a shared link opens that page, and
+  Back is as before (the app's site frame mirrors replaceState without a history entry).
+  "On this page" lists the headings of the page in view (each appended page brings its own
+  list); a heading there scrolls to that page's heading.
+- **Reading position.** While the reader reads a page in the feed, the address keeps where they
+  are: `#flow-at=<section id>~<px>`, the last of the page's sections above the top of the window
+  and how far into it the window is, written with `history.replaceState` (only over no fragment,
+  a heading's, or an earlier position, never over a panel's anchor, which the panels read as no
+  fragment). A panel's own scrolling list (the tests table, a run's experiments, a theory's
+  evidence) keeps its offset too (`~1:800`: the second such list, 800 px down). The place is
+  written 400 ms after the window or such a list stops scrolling, at once when a click or a
+  key comes first (a file link would take the reader away before it was written), and on a
+  slow page that was scrolled before the script was ready. Leaving from an appended page (a file link to the Files tab) and coming Back opens
+  that page at that address, on its own, and it scrolls to the same place in the same section:
+  the pages above it in the feed are not there again, but the reader is back at the row they
+  left. The address is used, not `history.state`, because the app's site frame keeps the
+  frame's address but not its state (it moves the frame with `location.replace`).
+- **Panels of several pages in one document.** Each panel draws itself from the data script that
+  follows it and only once (`data-asta-drawn`); `AstaPages.init(root)` draws the panels in
+  `root`. An appended page's ids, and the `data-asta-data` that names them, are prefixed
+  (`asta-f3-`); its headings answer to their own ids on its address (`…/0004-x.html#tests`).
+  A panel's anchors belong to its page: `#theory-2`, `#test-G2-T1`, `#experiment-7`,
+  `#paper-…` act on the panel of the page the address names, and a panel's own steps push that
+  page's address with the fragment, so Back steps through each page's panels.
+- **Links** in an appended page are made absolute paths from the page they came from, so they
+  open the same files as on that page. Workflow pages share one folder (`pages/`), where the
+  relative links the panels draw later resolve the same; should a page sit in another folder,
+  every relative link in the document is made absolute from its own page, including the ones
+  panels draw later.
+- **Limits.** Quarto's own
+  per-page scripts (footnote and cross-reference pop-ups, code copy buttons, heading anchors) do
+  not run on appended pages; the panels and links do (an `asta-workflow` diagram is handed to
+  `mermaid.run`, not yet checked in a browser). A widget's elements
+  (`#theory-2` on two pages) can share an id across pages: the panels look them up within their
+  own page, but the browser's own jump to a fragment goes to the first.
+
 `make workspace-assets` fetches this extension when a page uses one of its shortcodes, like the
 evidence extension. To customize it, commit a copy of `_extensions/asta-pages` and remove its
 line from `.gitignore`.

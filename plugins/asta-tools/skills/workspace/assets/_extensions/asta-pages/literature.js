@@ -15,6 +15,15 @@
   }
   function plural(n, one, many) { return n + " " + (n === 1 ? one : many); }
   function baseAnchor(p) { return "paper-" + (p.corpusId || p.key); }
+  // The address as this panel's page sees it: asta-pages.js knows which page of a flow's feed
+  // the panel came from (null when the address is another page's); without it, the page's own.
+  function hashOf(el) { var A = window.AstaPages; return A && A.hashOf ? A.hashOf(el) : location.hash; }
+  function byId(root, id) {
+    var found = null;
+    root.querySelectorAll(".ap-paper[id]").forEach(function (el) { if (!found && el.id === id) found = el; });
+    return found;
+  }
+  var panels = 0;
   var CHEVRON = '<svg class="ap-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
   var SORTS = [
@@ -77,6 +86,7 @@
   function render(root, data, opts) {
     opts = opts || {};
     var prefix = opts.prefix || "";
+    var sortName = "ap-sort-" + (++panels); // one radio group per panel on the page
     var searchFiles = opts.searchFiles || {};
     var all = (data.papers || []).slice();
     var searches = data.searches || [];
@@ -127,7 +137,7 @@
     function drawFacets() {
       var any = FACETS.some(function (f) { return Object.keys(state.picked[f[0]]).length; });
       var html = '<div class="ap-facet"><h4>Sort by</h4>' + SORTS.map(function (s) {
-        return '<label><input type="radio" name="ap-sort" value="' + s[0] + '"' + (state.sort === s[0] ? " checked" : "") + "> " + s[1] + "</label>";
+        return '<label><input type="radio" name="' + sortName + '" value="' + s[0] + '"' + (state.sort === s[0] ? " checked" : "") + "> " + s[1] + "</label>";
       }).join("") + "</div>";
       FACETS.forEach(function (f) {
         // A facet's counts ignore its own selection, so its other values stay pickable.
@@ -166,7 +176,7 @@
     q.addEventListener("input", function () { state.text = q.value.trim().toLowerCase(); update(); });
     facetsEl.addEventListener("change", function (e) {
       var t = e.target;
-      if (t.name === "ap-sort") state.sort = t.value;
+      if (t.name === sortName) state.sort = t.value;
       else if (t.getAttribute("data-facet")) {
         var f = t.getAttribute("data-facet");
         if (t.checked) state.picked[f][t.value] = true; else delete state.picked[f][t.value];
@@ -181,8 +191,9 @@
     update();
 
     function fromHash() {
-      var id = "";
-      try { id = decodeURIComponent((location.hash || "").slice(1)); } catch (e) { id = ""; }
+      var id = hashOf(root);
+      if (id == null) return;
+      try { id = decodeURIComponent(id.slice(1)); } catch (e) { id = ""; }
       if (prefix) { if (id.indexOf(prefix) !== 0) return; id = id.slice(prefix.length); }
       if (!/^paper-/.test(id)) return;
       // A copy of a work is shown once, on the card that lists it under "Also found as".
@@ -194,8 +205,8 @@
         if (card) id = baseAnchor(card);
       }
       id = prefix + id;
-      var el = document.getElementById(id);
-      if (!el) { FACETS.forEach(function (f) { state.picked[f[0]] = {}; }); state.text = ""; q.value = ""; update(); el = document.getElementById(id); }
+      var el = byId(root, id);
+      if (!el) { FACETS.forEach(function (f) { state.picked[f[0]] = {}; }); state.text = ""; q.value = ""; update(); el = byId(root, id); }
       if (!el) return;
       root.querySelectorAll(".ap-paper.ap-target").forEach(function (o) { o.classList.remove("ap-target"); });
       el.classList.add("ap-target");
@@ -216,15 +227,24 @@
   window.AstaPages = window.AstaPages || {};
   window.AstaPages.literature = safeRender;
 
-  // A page that carries the Quarto shortcode's markup draws itself, its searches linking the
-  // files the shortcode found.
-  function start() {
-    var root = document.querySelector(".asta-panel.asta-literature");
-    var src = document.getElementById("asta-literature-data");
-    if (!root || !src) return;
-    var files = {};
-    try { files = JSON.parse(root.getAttribute("data-asta-search-files") || "{}") || {}; } catch (e) { files = {}; }
-    safeRender(root, function () { return JSON.parse(src.textContent); }, { searchFiles: files });
+  // Each paper list in scope draws itself, once, from the data script that follows it.
+  // asta-pages.js calls start on a page appended to a flow's feed, so a document can hold
+  // several pages' panels.
+  function start(scope) {
+    scope = scope || document;
+    scope.querySelectorAll(".asta-panel.asta-literature").forEach(function (root) {
+      if (root.hasAttribute("data-asta-drawn")) return;
+      var src = root.nextElementSibling;
+      if (!src || !/^script$/i.test(src.tagName) || !/asta-literature-data$/.test(src.id || "")) src = document.getElementById("asta-literature-data");
+      if (!src) return;
+      root.setAttribute("data-asta-drawn", "");
+      var files = {};
+      try { files = JSON.parse(root.getAttribute("data-asta-search-files") || "{}") || {}; } catch (e) { files = {}; }
+      safeRender(root, function () { return JSON.parse(src.textContent); }, { searchFiles: files });
+    });
   }
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start); else start();
+  window.AstaPages.widgets = window.AstaPages.widgets || [];
+  window.AstaPages.widgets.push({ name: "literature", order: 1, start: start });
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", function () { start(document); });
+  else start(document);
 })();

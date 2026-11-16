@@ -20,6 +20,9 @@
   }
   function plural(n, one, many) { return n + " " + (n === 1 ? one : many); }
   function arr(x) { return Array.isArray(x) ? x : []; }
+  // The address as this panel's page sees it: asta-pages.js knows which page of a flow's feed
+  // the panel came from (null when the address is another page's); without it, the page's own.
+  function hashOf(el) { var A = window.AstaPages; return A && A.hashOf ? A.hashOf(el) : location.hash; }
   function isNum(v) { return typeof v === "number" && isFinite(v); }
   function minus(s) { return String(s).replace(/^-/, "−"); }
   var CHEVRON = '<svg class="ap-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
@@ -386,8 +389,9 @@
 
     // #test-<id>: open that row and bring it into view (clearing a filter that hides it).
     function fromHash() {
-      var h = "";
-      try { h = decodeURIComponent((location.hash || "").slice(1)); } catch (e) { h = ""; }
+      var h = hashOf(root);
+      if (h == null) return;
+      try { h = decodeURIComponent(h.slice(1)); } catch (e) { h = ""; }
       var r = rows.filter(function (x) { return x.anchor === h; })[0];
       if (!r) return;
       state.only = null; state.text = ""; if (input) input.value = "";
@@ -409,15 +413,22 @@
   }
   window.AstaPages.tests = safeRender;
 
-  // Each asta-tests panel on the page draws itself from its own data (data-asta-data names it;
-  // the script follows the panel).
-  function start() {
-    document.querySelectorAll(".asta-panel.asta-tests").forEach(function (root) {
+  // Each asta-tests panel in scope draws itself, once, from its own data (data-asta-data names
+  // it; the script follows the panel). asta-pages.js calls start on a page appended to a flow's
+  // feed, so a document can hold several pages' panels.
+  function start(scope) {
+    scope = scope || document;
+    scope.querySelectorAll(".asta-panel.asta-tests").forEach(function (root) {
+      if (root.hasAttribute("data-asta-drawn")) return;
       var id = root.getAttribute("data-asta-data") || "", src = root.nextElementSibling;
       if (!src || src.id !== id) src = id ? document.getElementById(id) : null;
       if (!src) return;
+      root.setAttribute("data-asta-drawn", "");
       safeRender(root, function () { return JSON.parse(src.textContent); });
     });
   }
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start); else start();
+  window.AstaPages.widgets = window.AstaPages.widgets || [];
+  window.AstaPages.widgets.push({ name: "tests", order: 0, start: start });
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", function () { start(document); });
+  else start(document);
 })();
