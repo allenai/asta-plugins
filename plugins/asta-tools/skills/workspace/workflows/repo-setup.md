@@ -32,20 +32,28 @@ again about a declined default; Overleaf pairing reads this record too.
 Apply only what the owner accepted. When a step fails or GitHub reports
 something unexpected, stop and tell the owner what GitHub said.
 
-1. Create the repo private with a README, so the default branch exists
+1. Resolve the requester's verified GitHub login; ask if it is unknown rather
+   than guess. Check the target owner's type with
+   `gh api users/<owner> -q .type`. A personal repo has only one owner, so if
+   the type is `User` and `<owner>` isn't the requester, stop and ask for an
+   organization-owned or requester-owned repo. Don't change the chosen owner
+   or transfer a repo automatically. Create the repo private with a README,
+   so the default branch exists
    (`gh repo create <owner>/<name> --private --add-readme`), or make an
    existing empty repo private.
-2. Before anything is pushed, make the person who asked for the workspace the
-   repo's admin when the account you act as (`gh api user -q .login`) isn't
-   theirs, as when an agent creates the repo for someone else:
+2. Before anything is pushed, identify the account you act as with
+   `gh api user -q .login`; if it cannot be identified, stop and resolve it.
+   For an organization-owned repo, when that account isn't the requester,
+   add the requester as admin:
    `gh api -X PUT repos/<owner>/<name>/collaborators/<login> -f permission=admin`.
-   Use only a GitHub login you know is theirs; if you don't know it, ask
-   rather than guess. Then check that it worked:
+   For a personal repo, the requester must be its owner; don't attempt this
+   collaborator grant, which supports `admin` only on organization-owned repos.
+   In every case, check the requester's effective permission:
    `gh api repos/<owner>/<name>/collaborators/<login>/permission -q .permission`
-   reads `admin`. If GitHub sent an invitation instead, its `permissions` in
-   `gh api repos/<owner>/<name>/invitations` reads `admin`; tell them to
-   accept it. Don't push until the check passes. This step isn't one of the
-   proposed defaults: the person who asked always ends up an admin.
+   must read `admin`. A pending invitation is incomplete: tell the requester
+   to accept it, stop, and rerun the permission check after acceptance. Don't
+   push or report them as admin until that check passes. This step isn't one
+   of the proposed defaults: the person who asked always ends up an admin.
 3. If the repo has no branches, push an empty-tree root commit to `main`
    first, before any Pages branch. Merge the established default branch into
    the local workspace without losing local work or force-pushing.
