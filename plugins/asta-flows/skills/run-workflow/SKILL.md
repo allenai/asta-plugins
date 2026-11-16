@@ -22,10 +22,13 @@ Check the environment before you propose a workflow: install what is missing and
 
 ```bash
 command -v theorize auto-discovery
+theorize --version   # already the version you want? skip its install line
 uv tool install --upgrade --python 3.13 asta-theorizer --with "pymupdf4llm<2"
 uv tool install --upgrade --python 3.13 asta-autodiscovery
 theorize doctor
 ```
+
+If `theorize` is already installed at the version the person or the environment asks for (for example, a newer build than PyPI's, provided for testing), keep it: `--upgrade` would replace it with PyPI's.
 
 Both tools need `--python`: on the newest Python, a dependency they share has no prebuilt package and the install fails while compiling it. Each workflow's own setup section says what else its pins are for.
 
@@ -38,7 +41,7 @@ Start from the person's mission: what they want to find out or produce, in their
 Propose the plan in this order, and nothing more:
 
 1. "Here's an example workflow:"
-2. **Plan,** as the workflow's table, with the values for their question. Mention the workspace only when the person gave files.
+2. **Plan,** as the workflow's table, with the values for their question. Mention the workspace only when the person gave files. If diagram tools are available, also make a flow chart of the plan and show it to the person.
 3. **What they can change,** when the workflow's file lists it, word for word as the file gives it.
 4. **One question,** on its own line: "Would you like to run the workflow, or provide an updated query?"
 

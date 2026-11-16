@@ -37,6 +37,10 @@ A favorable estimate that misses the threshold is undecided, not support. Read t
 
 1. **Selection.** From the run's `mcts_node_*.json` files, take every surprising node, plus the N highest and N lowest by posterior mean, without duplicates. Each becomes one hypothesis. Copy its hypothesis text verbatim, and keep its plan, code, prior and posterior means, and belief change. Do not group, merge or reword.
 
+   If the beliefs barely vary (AutoDS's belief scale can collapse to two or three values), the surprising flag and the ranks are mostly ties: say so, and break ties by a rule fixed in advance, such as experiment order.
+
+   When a hypothesis is the experiment the run was seeded from, give its test an id of its own and record it at the top level of the selection file as `"seed": {"test_id": "<id>", "experiment": <the source run's experiment number>}`, so the site links "Experiment N" to that test.
+
 2. **Literature,** alongside step 3. Cluster the hypotheses into themes and add one for the run's overall intent, taken from its metadata. Run [Theory generation](theory-generation/README.md)'s step 2 with one search per theme into the same project, in place of the single search on the question:
 
    ```bash
@@ -52,7 +56,7 @@ A favorable estimate that misses the threshold is undecided, not support. Read t
 
 4. **Reproduction,** for each hypothesis with covering data.
    - **Design.** Adapt the AutoDS experiment; do not design a new one. Keep the statistic, the direction and the decision rule, and change only what the new data requires. Vary one independence axis per test, so a failure to reproduce can be traced to it. Judge faithfulness. Commit the test and its threshold, both significance and minimum effect, before running anything.
-   - **Run.** Run exactly the committed test, without looking at the source result. A separate subagent given only the design and the data is the cleanest way. Record the effect size, p, n, the code and a figure. If the test cannot run, record that and why.
+   - **Run.** Run exactly the committed test, without looking at the source result. A separate subagent given only the design and the data is the cleanest way. Where your harness cannot start subagents, run a headless agent process instead (for example Claude Code's `claude -p`) in a folder holding only the design, the code and the data paths, and copy its result back. Record the effect size, p, n, the code and a figure. If the test cannot run, record that and why.
    - **Audit.** Try to refute the result. Use a control suited to it: a negative control for an effect, a positive control for a null, a block permutation for clustered or time data. Check sensitivity to influential points. Rule out a setup artifact before calling a failure to reproduce. Set the verdict. Flag the source finding as an error only when confident the run's own result is wrong.
 
 5. **Theories.** Reconstruct what the run's user set out to learn, from its stated intent and dataset descriptions, and use it as the question. Theorizer reads only the papers, so the verdicts go in as its mission statement. Run [Theory generation](theory-generation/README.md)'s steps 3 to 7, adding the mission to the plan and to every generation:
@@ -84,6 +88,8 @@ A favorable estimate that misses the threshold is undecided, not support. Read t
 
    Drop a hypothesis only when its source finding was flagged as an error. Report the hypotheses each theory leaves unexplained.
 
-6. **Findings.**
+6. **Calibration.** Add a table to the reproduction page: each reproduced hypothesis's selection group, belief change and verdict, and how often each group reproduced.
+
+7. **Findings.**
    - **The front page** is for a reader outside the field. Orient them to the domain without giving away the discovery. Say what the study found, then separate what the field already knew from what this work adds. Expand every acronym, and use no tool names and no statistics. End with a short list of key findings, each tagged as reproduced, proposed or refuted.
    - **The scientist's synthesis** leads with the honest bottom line, even when it is that the data could not decide most of it. Cover what held up and what it means, what the work adds against the literature, and why it could not answer more. End with the specific data or single test that would settle each open question.

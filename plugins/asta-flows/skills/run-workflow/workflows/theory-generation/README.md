@@ -14,7 +14,7 @@ theorize doctor
 command -v s2 asta-papers
 ```
 
-`--upgrade` replaces an older `theorize` already on PATH; without it the run gets whatever is there. Both pins matter. Without `--python`, uv builds on the newest Python it finds, where one dependency has no prebuilt package and the install fails part-way through compiling it. And `pymupdf4llm` 2.0 on PyPI is an empty package, so without that pin, PDFs are imported as metadata with no text.
+`--upgrade` replaces an older `theorize` already on PATH; without it the run gets whatever is there. If `theorize --version` already reports the version the person or the environment asks for (for example, a newer build than PyPI's, provided for testing), skip the install line, which would replace it with PyPI's. Both pins matter. Without `--python`, uv builds on the newest Python it finds, where one dependency has no prebuilt package and the install fails part-way through compiling it. And `pymupdf4llm` 2.0 on PyPI is an empty package, so without that pin, PDFs are imported as metadata with no text.
 
 `doctor` exits non-zero on anything that would stop a run, and says how to fix it. A missing key is the common one, and this is the fix that needs no restart -- Theorizer reads the file on the next command:
 
