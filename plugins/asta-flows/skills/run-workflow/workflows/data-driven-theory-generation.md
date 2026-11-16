@@ -2,7 +2,7 @@
 
 Build theories that explain the question, grounded in the literature and in experiments this run computes on real data. The experiments are the only evidence in the run that was computed rather than read, so the theories must answer to them.
 
-The papers and theories are [Theory generation](theory-generation.md)'s steps. This file says what this workflow adds to them: the data, the experiments, and the mission that carries the experiments to Theorizer.
+The papers and theories are [Theory generation](theory-generation/README.md)'s steps. This file says what this workflow adds to them: the data, the experiments, and the mission that carries the experiments to Theorizer.
 
 ## Plan
 
@@ -10,7 +10,7 @@ Show the person this table, with the values for their question. Everything not i
 
 | Step | Agent | What it does | Configuration |
 |---|---|---|---|
-| 1 | Paper Finder | Searches for the question, fetches the top papers' full text, and fills any gap to the target | 100 papers (`papers fetch --top`) |
+| 1 | Semantic Scholar | Searches for the question, fetches the top papers' full text, and fills any gap to the target | 100 papers (`asta-papers store --limit`) |
 | 2 | Data Search | Finds a dataset the question can be tested on | the person's data, or chosen during the run |
 | 3 | AutoDS | Runs experiments on the data | 10 experiments (`--n_experiments`), model `openai/gpt-6-luna` |
 | 4 | Theorizer | Extracts findings from the papers and builds theories that must explain the experiments; then a pass for each schema variable discovery designs | extraction `gpt-6-luna`, generation `gpt-6-sol`; usually 2 to 4 more schemas |
@@ -64,7 +64,7 @@ WHAT THE SEARCH COULD NOT SETTLE:
 
 The run directory holds three things: `theory/` is the Theorizer project, `data/` holds the datasets, and `autods/` holds the search.
 
-1. **Papers.** Run [Theory generation](theory-generation.md)'s steps 1 and 2 into `<run>/theory`. The papers also give Data Search its leads.
+1. **Papers.** Run [Theory generation](theory-generation/README.md)'s steps 1 and 2 into `<run>/theory`. The papers also give Data Search its leads.
 
 2. **Data.** Data Search finds one dataset the question can be tested on, and writes the description AutoDS reads. No command does this yet. If the person named data, use it, and only describe it.
    - **Find it** from the deposits the papers name: look in `<run>/theory/paperstore.json` for data-availability statements, repository DOIs (Dryad, Zenodo, figshare) and accessions. Search the portals only if the papers name none that fits. Take one dataset that loads and tests in minutes, and download it into `<run>/data/`.
@@ -79,7 +79,7 @@ The run directory holds three things: `theory/` is the Theorizer project, `data/
    - **Say what the data are, never what they show.** The description carries no result: no fitted relationship between the question's variables, no expected value, no range the literature reports, no hypothesis. AutoDS told what to find tends to find it.
    - Save it as `<run>/data/<file>.description.md`, in this order: what the dataset is and what one row is; the subset and its size; each column the question uses, with its meaning, units and measured profile; the cautions.
 
-3. **Experiments.** AutoDS searches over experiments on the data. Run it in the background:
+3. **Experiments.** AutoDS searches over experiments on the data. Run it in the background (in a hosted sandbox, wait for it inside the turn: [Long steps in a hosted sandbox](../SKILL.md#long-steps-in-a-hosted-sandbox)):
 
    ```bash
    auto-discovery <run>/data/<file> \
@@ -95,7 +95,7 @@ The run directory holds three things: `theory/` is the Theorizer project, `data/
    - When it ends, read every node. For each large belief change, ask what caused it. A bug, a leak or a quantity true by construction swings belief hard and means nothing; mark it as an artifact. A confirmation of the prior is a real, low-surprise result.
    - Say why the search stopped, and how many experiments ran and failed. A partial search, described as partial, is still usable.
 
-4. **Theories,** once AutoDS has ended. Write the mission from its findings, in the shape above, to `<run>/mission.md`. Then run [Theory generation](theory-generation.md)'s steps 3 to 7, adding the mission to the plan and to every generation:
+4. **Theories,** once AutoDS has ended. Write the mission from its findings, in the shape above, to `<run>/mission.md`. Then run [Theory generation](theory-generation/README.md)'s steps 3 to 7, adding the mission to the plan and to every generation:
 
    ```bash
    theorize -p <run>/theory plan "<the question>" --mission-statement "$(cat <run>/mission.md)"

@@ -1,0 +1,31 @@
+---
+title: "<Descriptive title, a noun phrase>"
+---
+
+## Mission
+
+> <The person's mission, in their words: their message, lightly edited for typos and anonymised.>
+
+## Abstract
+
+<!-- A few sentences: what came back, and what could not be answered. Mission and abstract together are about one page. -->
+
+<Abstract.> The [findings](#findings) below are the review.
+
+## Findings
+
+<!-- The body. -->
+
+### <A result worth calling out, as a noun phrase or a plain statement>
+
+<Why it matters and which question it bears on. End with a sentence on how far to trust it and why.>
+
+## Null results
+
+**<Topic>.** <What was tested and came back with nothing.>
+
+**Not testable.** <What the data cannot answer, and what it would need.>
+
+## Next steps
+
+1. **<Step>.** <Why, in a sentence or two.>

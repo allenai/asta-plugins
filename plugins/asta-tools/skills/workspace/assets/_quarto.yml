@@ -1,6 +1,10 @@
 project:
   type: website
   output-dir: _site
+  # The front page, and the workflow pages: pages/<NNNN>-<workflow>.qmd, one per run.
+  render:
+    - index.qmd
+    - "pages/*.qmd"
   preview:
     port: 4848
 
@@ -26,7 +30,11 @@ website:
         href: "{{REPO_URL}}"
         text: "GitHub repo"
         target: _blank
-    contents: auto
+    # The front page, then the workflow pages, flat, by file name: run order.
+    contents:
+      - text: "Home"
+        href: index.qmd
+      - auto: "pages/*.qmd"
 
 format:
   html:

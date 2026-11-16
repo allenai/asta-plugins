@@ -283,9 +283,9 @@ The workspace devcontainer uses `exec asta workspace preview` for attach startup
 
 Keep each talk in its own `<deck-dir>/slides.qmd`, declaring
 `format: asta-slides-revealjs`. Deck folders can be nested; `make render` and
-`make check` build them alongside the website. When `project.render` or the
-sidebar has an explicit page list, add the deck to that list; the standard
-`contents: auto` sidebar includes it by title. Each publishes as
+`make check` build them alongside the website. The scaffold's `project.render`
+and sidebar are explicit lists (the front page and `pages/*.qmd`): add the deck
+to both. Each publishes as
 `<deck-dir>/slides.html` in the site and the PR preview. What changed compares
 the rendered slides and links changes to their slide anchors.
 

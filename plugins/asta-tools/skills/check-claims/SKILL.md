@@ -6,7 +6,7 @@ allowed-tools: Read Grep Glob Bash(git diff *) Bash(git status) Bash(gh pr diff 
 
 # Check claims
 
-Covers only what needs reading: is a claim backed, and does its quote say what the prose says. Structural validation — unresolved `.ev` keys, empty quotes, unresolvable citations, orphaned entries — belongs to the project's `make check`; don't redo it here, and don't assume it ran unless CI or the project's docs say so. See `workspace` for the evidence machinery (`.ev` spans, `evidence.yml`, `references.bib`).
+Covers only what needs reading: is a claim backed, and does its quote say what the prose says. Structural validation — unresolved `.ev` keys, empty quotes, unresolvable citations, orphaned entries — belongs to the project's `make check`; don't redo it here, and don't assume it ran unless CI or the project's docs say so. Where there is no `make` (a hosted sandbox), `quarto render` is that check: its `[evidence]` and citeproc warnings name the broken keys. See `workspace` for the evidence machinery (`.ev` spans, `evidence.yml`, `references.bib`).
 
 ## Procedure
 
