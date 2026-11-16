@@ -1,39 +1,46 @@
 ---
 name: run-workflow
-description: Runs an Asta research workflow for the person, from plan to report, using Semantic Scholar (`s2`), asta-papers, Data Search, AutoDS and Theorizer. Use when someone brings a research question, papers, data or an AutoDS run and wants theories, hypotheses, experiments or a reproduction.
-allowed-tools: Bash(theorize *) Bash(auto-discovery *) Bash(s2 *) Bash(asta-papers *) Bash(jq *) Bash(uv tool *) Bash(command -v *)
+description: Runs an Asta research workflow for the person, from plan to report, with Theorizer, AutoDS, Semantic Scholar and Data Search. Starts by settling how it runs -- the library in a coding agent, the CLI with your own key, or hosted by Asta. Use when someone brings a research question, papers, data or an AutoDS run and wants theories, hypotheses, experiments or a reproduction.
+allowed-tools: Bash(theorize *) Bash(auto-discovery *) Bash(asta auth *) Bash(asta generate-theories *) Bash(asta autodiscovery *) Bash(s2 *) Bash(asta-papers *) Bash(jq *) Bash(uv tool *) Bash(command -v *)
 ---
 
 # Research workflows
 
+## First: library, CLI or hosted
+
+There are three ways to run this. Settle which one before anything else, once per project.
+
+- **Library.** You pay for it. Use this if you just want to do it in a coding agent: the agent does the reading and the analysis itself, using the Theorizer and AutoDS libraries' types. [library.md](modes/library.md)
+- **CLI.** You pay for it. Use this if you have an API key and want to just use the command line, which bakes in our preferences. [cli.md](modes/cli.md)
+- **Hosted.** We pay for it. A great option if you're okay with your data going to our servers. [hosted.md](modes/hosted.md)
+
+The library and the CLI run on this machine, and nothing goes to Asta. Your model provider still sees what it reads, as it does now.
+
+To pick one, look first, without printing any key:
+
+```bash
+env | grep -oE '^(OPENAI|ANTHROPIC|MISTRAL|S2)_API_KEY'; echo "CLAUDECODE=${CLAUDECODE:-}"
+asta auth status 2>/dev/null; cat .asta/mode.json 2>/dev/null
+```
+
+If that doesn't settle it, ask: "Is it okay for your data to leave this machine? If so, hosted is free. If not, I can use your API key with the CLI, or do it all here in this session with the library." In a hosted Asta sandbox the data is already with us, so don't ask: use the CLI that's installed there.
+
+Write the answer to `.asta/mode.json` (`{"mode": "library" | "cli" | "hosted"}`) so you don't ask again, and don't switch without asking.
+
 ## Workflows
 
-- [Theory generation](workflows/theory-generation/README.md): Theorizer plans a search query and schema, Semantic Scholar (`s2`) finds the papers and `asta-papers` fetches them, then Theorizer passes over the literature, one per extraction schema.
+- [Theory generation](workflows/theory-generation/README.md): plan a search query and extraction schema, find and fetch the papers, extract findings, generate theories, then a pass per new schema.
 - [Data Driven Theory Generation](workflows/data-driven-theory-generation.md): Semantic Scholar, Data Search, AutoDS, then Theorizer to explain experimental findings.
 - [Secondary reproduction](workflows/secondary-reproduction.md): re-test an AutoDS run's hypotheses on independent data, then build theories from the verdicts with Theorizer.
-- [Gap-Driven Theory Testing](workflows/gap-driven-theory-testing.md): Semantic Scholar or a local paper index, a map of what the literature knows and leaves open, Theorizer theories aimed at the gaps, tests on independent data the person gives or Data Search finds, and the experiment each untested theory still needs.
+- [Gap-Driven Theory Testing](workflows/gap-driven-theory-testing.md): a map of what the literature knows and leaves open, Theorizer theories aimed at the gaps, tests on independent data the person gives or Data Search finds, and the experiment each untested theory still needs.
 - [AutoDiscovery exploration](workflows/autodiscovery-exploration/README.md): break a researcher's question about their data into AutoDS runs, log them, and write up what came back with every number linked to its experiment.
 - [Computational review](workflows/computational-review.md): write the project's report, the site's front page, as a critical review of the evidence, with ComputationalReviewTemplate's Expert Review Pipeline and the `workspace` skill's citations and site.
 
-Pick one with the person and read its file.
+Pick one with the person and read its file. The workflow files give their steps as CLI commands (`theorize …`, `auto-discovery …`). For the library or hosted, the mode's file says what to use instead. Everything else stays the same.
 
 ## Setup
 
-Check the environment before you propose a workflow: install what is missing and run `theorize doctor`. If a tool will not install or a key is missing, tell the person what is missing and what the run cannot do without it, before going further.
-
-```bash
-command -v theorize auto-discovery
-theorize --version   # already the version you want? skip its install line
-uv tool install --upgrade --python 3.13 asta-theorizer --with "pymupdf4llm<2"
-uv tool install --upgrade --python 3.13 asta-autodiscovery
-theorize doctor
-```
-
-If `theorize` is already installed at the version the person or the environment asks for (for example, a newer build than PyPI's, provided for testing), keep it: `--upgrade` would replace it with PyPI's.
-
-Both tools need `--python`: on the newest Python, a dependency they share has no prebuilt package and the install fails while compiling it. Each workflow's own setup section says what else its pins are for.
-
-Keys come from the environment. `theorize doctor` names every key the installed Theorizer reads, whether it is set, what a run loses without it, and how to set it, so follow it rather than a list here. AutoDS has no such check: it reads the key of its model's provider, such as `ANTHROPIC_API_KEY` for `anthropic/` models.
+Set up what the mode needs, from its file, before you propose a workflow. If a tool will not install or a key is missing, tell the person what is missing and what the run cannot do without it, before going further.
 
 ## Plan and run
 
@@ -62,11 +69,12 @@ Where you run in a hosted sandbox (the person reaches you through an app, not on
 
 ## Agents
 
-**Semantic Scholar and asta-papers** find and fetch papers: `s2` searches and follows references, `asta-papers store` fetches full text into a paper store, and `theorize papers import` brings the store into the project ([S2 to asta-papers to Theorizer](workflows/theory-generation/s2-papers.md)). Not `theorize papers search` or `theorize papers fetch`. `theorize papers import` adds the person's own documents: a folder (read recursively), a glob or files, of markdown, text or PDF. When the person says their papers are the corpus, add none.
+What each one does is the same in every mode. How you run it is in the mode's file.
+
+**Semantic Scholar** finds papers and follows references. The person's own documents (a folder, a glob or files, of markdown, text or PDF) are added instead or as well; when they say their papers are the corpus, add none.
 
 **Data Search** finds the data a question can be tested on. There is no command for it; it is your own work with the web and a shell.
 
-**AutoDS** runs a search over experiments on a dataset with `auto-discovery`: each experiment is a hypothesis, code, and how far its result moved belief.
+**AutoDS** runs a search over experiments on a dataset: each experiment is a hypothesis, a prior belief, code, its result and a posterior belief, and how far the result moved belief (its surprise) decides what to try next.
 
-**Theorizer** builds theories from the papers: `theorize plan`, `theorize extract` and `theorize theories generate`, then `theorize discover` and `theorize schemas from-discovery` for more schemas. [Theory generation](workflows/theory-generation/README.md) has the full sequence.
-
+**Theorizer** builds theories from the papers: plan a query and extraction schema, extract findings per paper, generate theories whose laws cite those findings, then discover the variables the schema missed. [Theory generation](workflows/theory-generation/README.md) has the full sequence.
