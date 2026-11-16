@@ -16,7 +16,10 @@
 -- `query` in the data file): one query is shown above the table, several get a tab each,
 -- labelled "Query 1", "Query 2" ... or by `names="Original|Revised"` in that order. A paper
 -- title links to its entry on the site's papers page, `papers="papers.html"` (relative to this
--- page; literature.html when not given).
+-- page; literature.html when not given). `tests="<index.json>[,<index.json>...]"` adds each
+-- theory's tests (an index is a list of {test_id, theory_name, ...}; a test's folder is
+-- <folder of the index>/tests/<test_id>/ unless `tests_dir=` names the folder of test folders,
+-- one for all indexes or one per index): a verdict column in the table and a Tests tab.
 --
 -- `data` is relative to the page's own directory. The file is read at render time and
 -- embedded in the page as JSON, so the rendered page needs no request at view time; the panel
@@ -44,12 +47,18 @@
 --
 --   {{< asta-files dir=".asta/flows/0004-x/04-gap-map" >}}       a folder's files (depth=1)
 --   {{< asta-doc file=".asta/flows/0004-x/04-gap-map/gaps.md" >}} a markdown file, inline
+--   {{< asta-tests dir=".asta/flows/0004-x/07-tests" index=".asta/flows/0004-x/tests.json" >}}
+--                                                        a table of tests, one per subfolder
 --
--- These name paths relative to the project root; an absolute path or a ".." that leaves the
--- project is refused. asta-files lists folders first, then files, with sizes (skipping __pycache__,
+-- These name paths relative to the project root (`dir`, `file`, `index`, `tests`, `tests_dir`
+-- may be comma lists where it makes sense); an absolute path or a ".." that leaves the project
+-- is refused. asta-files lists folders first, then files, with sizes (skipping __pycache__,
 -- .DS_Store and names that look like credentials); past `limit=` entries (30) it gives a count
 -- and a link to the folder. asta-doc renders the file's markdown with its headings moved under
 -- the page's (its top heading at `level=`, 3 by default) and a header line linking the file.
+-- asta-tests reads each test folder's result_summary.json (or result.json, results.json) for
+-- its verdict, effect, p and animals, design.md for what it tests when no index entry says,
+-- and links design, code, result, summary, figures and the folder; tests.js draws the table.
 --
 -- Links to files are plain relative URLs from the rendered page (in the project's output
 -- directory) to the file in the project, written as raw HTML so Quarto neither copies the
@@ -159,6 +168,14 @@ local function natural_sort(list, get)
   get = get or function(x) return x end
   table.sort(list, function(a, b) return natural_key(get(a)) < natural_key(get(b)) end)
   return list
+end
+
+-- At most n bytes of s, cut between characters, not inside one.
+local function clip(s, n)
+  if #s <= n then return s end
+  local cut = n
+  while cut > 0 and (s:byte(cut + 1) or 0) >= 0x80 and (s:byte(cut + 1) or 0) < 0xC0 do cut = cut - 1 end
+  return s:sub(1, cut) .. "…"
 end
 
 -- ---- paths: the project root, where the page is rendered, and links to files on disk -------
@@ -415,7 +432,306 @@ end
 -- A page-relative path (the `data` arguments) as an absolute one.
 local function page_abs(rel) return absolute(pandoc.path.join({ page_dir(), rel })) end
 
+-- ---- tests: one folder per test, read for asta-tests and asta-theories tests= ---------------
+
+-- The first file of these in a test folder is its summary; the fields kept from it are the ones
+-- the table shows (the rest, audits and per-animal detail, stays in the file it links).
+local SUMMARY_FILES = { "result_summary.json", "result.json", "results.json" }
+local CODE_FILES = { "test.py", "code.py" }
+local SUMMARY_KEYS = { "verdict", "status", "ran", "runnable", "meets_threshold", "effect", "effect_name",
+  "effect_label", "effect_units", "effect_description", "p", "p_label", "n_animals", "n_mice", "n_subjects",
+  "direction" }
+local INDEX_KEYS = { "theory_name", "theory_index", "kind", "dataset", "regions", "title", "name", "hypothesis",
+  "question", "labels" }
+local FIGURE_EXT = { png = true, jpg = true, jpeg = true, svg = true, gif = true, webp = true }
+
 local function is_list(t) return type(t) == "table" and t[1] ~= nil end
+
+-- A value kept for the page: strings clipped, small tables as they are, large ones dropped.
+local function keep(v, n)
+  if type(v) == "string" then return clip(v, n or 600) end
+  if type(v) == "table" then
+    local ok, enc = pcall(quarto.json.encode, v)
+    if ok and #enc <= 4000 then return v end
+    return nil
+  end
+  return v
+end
+
+local function slim_summary(d)
+  local s = {}
+  for _, k in ipairs(SUMMARY_KEYS) do
+    if d[k] ~= nil then s[k] = keep(d[k]) end
+  end
+  -- A summary with several subject-level tests and no single effect (a reproduction's).
+  if is_list(d.subject_level_tests) then
+    local list = {}
+    for i, t in ipairs(d.subject_level_tests) do
+      if i > 12 then break end
+      if type(t) == "table" then
+        list[#list + 1] = { name = keep(t.name, 300), n_mice = keep(t.n_mice), n_animals = keep(t.n_animals),
+          effect = keep(t.effect), p = keep(t.p), direction = keep(t.direction, 300) }
+      end
+    end
+    s.subject_level_tests = list
+  end
+  return s
+end
+
+-- design.md: its first heading, and the paragraph under a "Hypothesis" heading if it has one.
+local function design_text(text)
+  local heading, hyp, fence = nil, nil, false
+  local lines = {}
+  for l in (text .. "\n"):gmatch("(.-)\r?\n") do lines[#lines + 1] = l end
+  for i, l in ipairs(lines) do
+    if l:match("^%s*```") or l:match("^%s*~~~") then fence = not fence end
+    local h = not fence and l:match("^#+%s+(.-)%s*#*%s*$")
+    if h then
+      heading = heading or h
+      if not hyp and h:lower():find("hypothes", 1, true) then
+        local buf = {}
+        for j = i + 1, #lines do
+          local x = lines[j]
+          if x:match("^#") then break end
+          if x:match("^%s*$") then
+            if #buf > 0 then break end
+          else
+            buf[#buf + 1] = x:match("^%s*(.-)%s*$")
+          end
+        end
+        if #buf > 0 then hyp = table.concat(buf, " ") end
+      end
+    end
+  end
+  return heading and clip(heading, 300), hyp and clip(hyp, 600)
+end
+
+-- One test folder, as the page shows it: its summary's fields and links to its files.
+local function test_record(dir, id)
+  local names = list_dir(dir)
+  if names == nil then return { id = id, missing = true } end
+  local rec = { id = id, href = href_to(dir, true) }
+  local has = {}
+  for _, n in ipairs(names) do has[n] = true end
+  local function link(n) return href_to(dir .. "/" .. n) end
+  if has["design.md"] then
+    rec.design = link("design.md")
+    rec.heading, rec.hypothesis = design_text(read_file(dir .. "/design.md") or "")
+  end
+  for _, n in ipairs(CODE_FILES) do
+    if has[n] then rec.code, rec.codeName = link(n), n; break end
+  end
+  if has["result.md"] then rec.result = link("result.md") end
+  for _, n in ipairs(SUMMARY_FILES) do
+    if has[n] then
+      rec.summaryHref, rec.summaryName = link(n), n
+      local data = decode_json(read_file(dir .. "/" .. n))
+      if type(data) == "table" and not is_list(data) then rec.summary = slim_summary(data) end
+      break
+    end
+  end
+  local figs, count = {}, 0
+  for _, n in ipairs(names) do
+    if not skip_name(n) then
+      count = count + 1
+      local ext = n:lower():match("%.(%w+)$")
+      if ext and FIGURE_EXT[ext] then
+        -- href opens the workspace's file; src shows the copy in the site (none when too large).
+        local src, size = figure_src(dir .. "/" .. n)
+        figs[#figs + 1] = { name = n, href = link(n), src = src, size = (not src and size) and human_size(size) or nil }
+      end
+    end
+  end
+  if #figs > 0 then rec.figures = figs end
+  rec.files = count
+  return rec
+end
+
+local function slim_entry(id, e)
+  local out = { test_id = id }
+  if type(e) == "table" and not is_list(e) then
+    for _, k in ipairs(INDEX_KEYS) do
+      local v = e[k]
+      if type(v) == "string" then out[k] = clip(v, 400)
+      elseif type(v) == "number" or type(v) == "boolean" then out[k] = v
+      elseif is_list(v) then
+        local l = {}
+        for i, x in ipairs(v) do
+          if i > 20 then break end
+          if type(x) == "string" or type(x) == "number" then l[#l + 1] = x end
+        end
+        out[k] = l
+      end
+    end
+  elseif is_list(e) then
+    out.labels = {}
+    for _, x in ipairs(e) do if type(x) == "string" then out.labels[#out.labels + 1] = x end end
+  elseif type(e) == "string" then
+    out.labels = { e }
+  end
+  return out
+end
+
+-- A test index: a list of {test_id (or id), ...}, an object with such a list under `tests`, or
+-- an object keyed by test id (each value an entry, or labels). "file.json#key" reads the index
+-- under that key. Entries from an object keyed by id are `loose`: kept only where the test's
+-- folder exists, since such an object may carry other fields too.
+local function read_index(rel)
+  local file, key = rel:match("^(.-)#(.+)$")
+  file = file or rel
+  local abs, clean = project_path(file)
+  if not abs then return nil, "the test index " .. clean end
+  local text = read_file(abs)
+  if text == nil or is_dir(abs) then return nil, "cannot read the test index " .. clean end
+  local data = decode_json(text)
+  if type(data) ~= "table" then return nil, "the test index " .. clean .. " is not JSON" end
+  if key then
+    for k in key:gmatch("[^/]+") do data = type(data) == "table" and data[k] or nil end
+  end
+  if type(data) == "table" and is_list(data.tests) then data = data.tests end
+  if type(data) ~= "table" then return nil, "the test index " .. rel .. " holds no tests" end
+  local entries = {}
+  if is_list(data) then
+    for _, e in ipairs(data) do
+      local id = type(e) == "table" and (e.test_id or e.id)
+      if id ~= nil and id ~= false then entries[#entries + 1] = slim_entry(tostring(id), e) end
+    end
+  else
+    local ids = {}
+    for k in pairs(data) do ids[#ids + 1] = tostring(k) end
+    natural_sort(ids)
+    for _, id in ipairs(ids) do
+      local e = slim_entry(id, data[id])
+      e.loose = true
+      entries[#entries + 1] = e
+    end
+  end
+  return entries, nil, abs
+end
+
+-- The tests: index entries first, in their order (each with its folder under `base_for(i)`),
+-- then the folders of `dirs` that no entry names, in natural order. Flat files beside the test
+-- folders are `others`.
+local function gather_tests(dirs, indexes)
+  local folders, order, others = {}, {}, {}
+  for _, d in ipairs(dirs) do
+    for _, n in ipairs(list_dir(d) or {}) do
+      if not skip_name(n) and n:sub(1, 1) ~= "." then
+        local p = d .. "/" .. n
+        if is_dir(p) then
+          if not folders[n] then folders[n] = p; order[#order + 1] = n end
+        else
+          others[#others + 1] = { name = n, href = href_to(p), size = human_size(file_size(p)) }
+        end
+      end
+    end
+  end
+  local tests, seen = {}, {}
+  for _, ix in ipairs(indexes) do
+    for _, e in ipairs(ix.entries) do
+      local id = e.test_id
+      local dir = folders[id] or (ix.base and (ix.base .. "/" .. id))
+      if not seen[id] and not (e.loose and not (dir and is_dir(dir))) then
+        seen[id] = true
+        local rec = dir and test_record(dir, id) or { id = id, missing = true }
+        e.loose = nil
+        rec.index = e
+        tests[#tests + 1] = rec
+      end
+    end
+  end
+  natural_sort(order)
+  for _, n in ipairs(order) do
+    if not seen[n] then
+      seen[n] = true
+      tests[#tests + 1] = test_record(folders[n], n)
+    end
+  end
+  return tests, others
+end
+
+-- Embedded JSON: "</" cannot appear raw inside a <script> element; "<\/" is the same in JSON.
+local function json_script(attrs, value)
+  local text = type(value) == "string" and value or quarto.json.encode(value)
+  return "<script type=\"application/json\" " .. attrs .. ">" .. text:gsub("</", "<\\/") .. "</script>"
+end
+
+local panel_count = 0
+local function next_id(kind)
+  panel_count = panel_count + 1
+  return "asta-" .. kind .. "-" .. panel_count
+end
+
+local function tests_panel(kwargs)
+  if not quarto.doc.is_format("html") then return pandoc.Null() end
+  css_dep()
+  quarto.doc.add_html_dependency({ name = "asta-pages-tests", version = "0.1.0", scripts = { "tests.js" } })
+  local dirs, bar, errors = {}, {}, {}
+  for _, rel in ipairs(split_list(kwarg(kwargs, "dir"), ",")) do
+    local abs, clean = project_path(rel)
+    if not abs then
+      errors[#errors + 1] = "dir " .. clean
+    elseif not is_dir(abs) then
+      errors[#errors + 1] = "cannot read the folder " .. clean .. "; its tests appear once it exists"
+    else
+      dirs[#dirs + 1] = abs
+      bar[#bar + 1] = { abs = abs, folder = true }
+    end
+  end
+  local indexes = {}
+  for _, rel in ipairs(split_list(kwarg(kwargs, "index"), ",")) do
+    local entries, err, abs = read_index(rel)
+    if entries then
+      indexes[#indexes + 1] = { entries = entries }
+      bar[#bar + 1] = { abs = abs }
+    else
+      errors[#errors + 1] = err
+    end
+  end
+  if #dirs == 0 and #indexes == 0 then
+    if #errors == 0 then errors[1] = "the shortcode names no tests folder; use dir=\".asta/flows/<run>/<step>\"." end
+    return error_box("tests", "This page has no tests yet: " .. table.concat(errors, "; "))
+  end
+  local boxes = {}
+  for _, e in ipairs(errors) do
+    boxes[#boxes + 1] = error_box("tests", "Some tests are missing: " .. e).text
+  end
+  local tests, others = gather_tests(dirs, indexes)
+  local id = next_id("tests")
+  local title = kwarg(kwargs, "title")
+  return pandoc.RawBlock("html", table.concat(boxes, "\n") .. (#boxes > 0 and "\n" or "") .. files_bar(bar) ..
+    '<div class="asta-panel asta-tests" data-asta-data="' .. id .. '"' ..
+    (title ~= "" and (' data-asta-title="' .. attr_escape(title) .. '"') or "") .. "></div>\n" ..
+    json_script('class="asta-tests-data" id="' .. id .. '"', { format = "asta-pages/tests@1", tests = tests, others = others }))
+end
+
+-- asta-theories tests="a/tests.json,b/tests.json": each index's tests, their folders under
+-- <folder of the index>/tests/ or tests_dir (one for all, or one per index).
+local function theory_tests(kwargs, bar, errors)
+  local files = split_list(kwarg(kwargs, "tests"), ",")
+  if #files == 0 then return nil end
+  local bases = split_list(kwarg(kwargs, "tests_dir"), ",")
+  local all = {}
+  for i, rel in ipairs(files) do
+    local entries, err, abs = read_index(rel)
+    if not entries then
+      errors[#errors + 1] = err
+    else
+      bar[#bar + 1] = { abs = abs }
+      local base = bases[i] or bases[#bases]
+      local base_abs
+      if base then
+        local b, clean = project_path(base)
+        if not b then errors[#errors + 1] = "tests_dir " .. clean else base_abs = b end
+      else
+        base_abs = pandoc.path.directory(abs) .. "/tests"
+      end
+      local tests = gather_tests({}, { { entries = entries, base = base_abs } })
+      for _, t in ipairs(tests) do all[#all + 1] = t end
+    end
+  end
+  return all
+end
 
 -- asta-theories: one or more data files (data="a.json,b.json"), one per Theorizer project,
 -- each embedded as its own script element. A file that cannot be read gets an error box above
@@ -488,6 +804,11 @@ local function theories_panel(kwargs)
   if not quarto.doc.is_format("html") then
     return pandoc.Null()
   end
+  -- tests.js draws a theory's tests (the Tests tab); it goes before theories.js.
+  if kwarg(kwargs, "tests") ~= "" then
+    css_dep()
+    quarto.doc.add_html_dependency({ name = "asta-pages-tests", version = "0.1.0", scripts = { "tests.js" } })
+  end
   add_deps("theories")
   local rels = split_list(pandoc.utils.stringify(kwargs["data"] or ""), ",")
   if #rels == 0 then
@@ -522,9 +843,18 @@ local function theories_panel(kwargs)
   -- links (#paper-<corpus id or key>). theories.js uses literature.html when it is not given.
   local papers = pandoc.utils.stringify(kwargs["papers"] or "")
   local papers_attr = papers ~= "" and (' data-asta-papers="' .. attr_escape(papers) .. '"') or ""
-  return pandoc.RawBlock("html", table.concat(errors, "\n") .. (#errors > 0 and "\n" or "") .. files_bar(bar) ..
+  -- tests="<index>,...": each theory's tests, matched by theory name in theories.js.
+  local data_bar, test_errors = bar, {}
+  bar = {}
+  local tests = theory_tests(kwargs, bar, test_errors)
+  for _, e in ipairs(test_errors) do
+    errors[#errors + 1] = error_box("theories", "Some tests are missing: " .. e).text
+  end
+  local tests_script = tests and ("\n" .. json_script('class="asta-theories-tests"', { format = "asta-pages/tests@1", tests = tests })) or ""
+  for _, b in ipairs(bar) do data_bar[#data_bar + 1] = b end
+  return pandoc.RawBlock("html", table.concat(errors, "\n") .. (#errors > 0 and "\n" or "") .. files_bar(data_bar) ..
     '<div class="asta-panel asta-theories" data-asta-source="' .. attr_escape(table.concat(read, ",")) .. '"' ..
-    names_attr .. papers_attr .. '></div>\n' .. table.concat(scripts, "\n"))
+    names_attr .. papers_attr .. '></div>\n' .. table.concat(scripts, "\n") .. tests_script)
 end
 
 -- ---- asta-autods ---------------------------------------------------------------------------
@@ -990,5 +1320,8 @@ return {
   end,
   ["asta-doc"] = function(args, kwargs, meta)
     return doc_panel(kwargs)
+  end,
+  ["asta-tests"] = function(args, kwargs, meta)
+    return tests_panel(kwargs)
   end,
 }

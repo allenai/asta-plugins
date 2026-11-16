@@ -1,4 +1,5 @@
-"""The asta-pages widgets that link to files on disk: asta-files and asta-doc. A workflow page sits in pages/, renders into _site/pages/, and links each
+"""The asta-pages widgets that link to files on disk: asta-files, asta-doc, asta-tests and
+asta-theories tests=. A workflow page sits in pages/, renders into _site/pages/, and links each
 file under .asta/flows/ relative to the rendered page, without Quarto copying the files."""
 
 import html
@@ -62,6 +63,83 @@ def _project(tmp_path: Path) -> Path:
     _write(flow / "03-map/data/rows.csv", "x\n")
     _write(flow / "03-map/fig.png", "png")
 
+    # Tests: one folder each, in the shapes runs write.
+    tests = flow / "04-tests"
+    _json(
+        tests / "Q1-T1/result_summary.json",
+        {
+            "ran": True,
+            "meets_threshold": True,
+            "effect": 0.25,
+            "effect_name": "mean difference",
+            "p": 0.01,
+            "n_animals": 6,
+            "direction": "positive",
+            "audit": {"big": list(range(10))},
+        },
+    )
+    _write(tests / "Q1-T1/design.md", "# Committed test Q1-T1\n\nBody.\n")
+    _write(tests / "Q1-T1/test.py", "print(1)\n")
+    _write(tests / "Q1-T1/result.md", "# Result\n")
+    _write(tests / "Q1-T1/fig_main.png", "png")
+    # Larger than a page shows (2 MB): linked, not copied into the site.
+    _write(tests / "Q1-T2/fig_all_panels.png", "x" * (2 * 1024 * 1024 + 1))
+    _json(
+        tests / "Q1-T2/result_summary.json",
+        {
+            "ran": True,
+            "meets_threshold": {"RegionA": True, "RegionB": False, "rule": "both"},
+            "effect": {"RegionA": 0.1, "RegionB": -0.2},
+            "p": {"RegionA": 0.02, "RegionB": 0.4},
+            "n_animals": {"RegionA": 5, "RegionB": 4},
+        },
+    )
+    _json(tests / "Q1-T3/result_summary.json", {"ran": False, "status": "no data"})
+    _write(tests / "Q1-T4/design.md", "# Committed test Q1-T4\n")  # still running
+    # A reproduction's shape: several subject-level tests, a hypothesis in its design.
+    _json(
+        tests / "node_2_1/result_summary.json",
+        {
+            "runnable": True,
+            "subject_level_tests": [
+                {"name": "first", "n_mice": 5, "effect": None, "p": None},
+                {"name": "second", "n_mice": 6, "effect": 1.5, "p": 0.03},
+            ],
+        },
+    )
+    _write(
+        tests / "node_2_1/design.md",
+        "# Committed test: node_2_1\n\n## Hypothesis (verbatim)\nSomething changes after a switch.\n\n"
+        "```python\n# not a heading\n```\n",
+    )
+    _write(tests / "node_2_1/code.py", "pass\n")
+    _write(tests / "seed.json", "{}")  # a flat file beside the test folders
+    _json(
+        flow / "04-tests/index.json",
+        [
+            {"test_id": "Q1-T1", "theory_name": "Theory one", "kind": "supporting"},
+            {"test_id": "Q1-T2", "theory_name": "Theory  one\n"},
+            {"test_id": "Q1-T9", "theory_name": "Theory two"},  # no folder yet
+        ],
+    )
+    # A theory index whose tests live under <folder of the index>/tests/.
+    _json(
+        flow / "05-theories/G1/tests.json",
+        [{"test_id": "G1-T1", "theory_name": "Theory two"}],
+    )
+    _json(
+        flow / "05-theories/G1/tests/G1-T1/result_summary.json",
+        {"meets_threshold": False},
+    )
+    _json(
+        project / "pages/data/theorizer.json",
+        {
+            "theories": [
+                {"id": "theory-1", "name": "Theory one", "query": "Q"},
+                {"id": "theory-2", "name": "Theory two", "query": "Q"},
+            ]
+        },
+    )
     return project
 
 
@@ -109,6 +187,15 @@ def _resolves(project: Path, link: str) -> bool:
     return target.is_dir() if link.endswith("/") else target.is_file()
 
 
+def _tests_data(page: str) -> dict:
+    body = re.search(
+        r'<script type="application/json" class="asta-tests-data"[^>]*>(.*?)</script>',
+        page,
+        re.S,
+    ).group(1)
+    return json.loads(body.replace("<\\/", "</"))
+
+
 @pytest.fixture(scope="module")
 def site(tmp_path_factory):
     project = _project(tmp_path_factory.mktemp("widgets"))
@@ -118,7 +205,12 @@ def site(tmp_path_factory):
             "files": f'{{{{< asta-files dir="{FLOW}/01-survey" depth="2" >}}}}\n\n'
             f'{{{{< asta-files dir="{FLOW}/02-many" >}}}}',
             "doc": f'{{{{< asta-doc file="{FLOW}/03-map/map.md" >}}}}',
-            "refused": '{{< asta-files dir="/etc" >}}\n\n{{< asta-doc file="../outside.md" >}}',
+            "tests": f'{{{{< asta-tests dir="{FLOW}/04-tests" index="{FLOW}/04-tests/index.json" >}}}}',
+            "theories": '{{< asta-theories data="data/theorizer.json" '
+            f'tests="{FLOW}/04-tests/index.json,{FLOW}/05-theories/G1/tests.json" '
+            f'tests_dir="{FLOW}/04-tests,{FLOW}/05-theories/G1/tests" >}}}}',
+            "refused": '{{< asta-files dir="/etc" >}}\n\n{{< asta-doc file="../outside.md" >}}\n\n'
+            '{{< asta-tests dir=".asta/../../x" >}}',
         },
     )
     return project, pages, log
@@ -126,7 +218,7 @@ def site(tmp_path_factory):
 
 def test_links_resolve_from_the_rendered_page_and_nothing_is_copied(site):
     project, pages, _ = site
-    for name in ("files", "doc"):
+    for name in ("files", "doc", "tests", "theories"):
         links = _links(pages[name])
         assert links, name
         assert all(link.startswith(f"../../{FLOW}/") for link in links), name
@@ -139,7 +231,10 @@ def test_links_resolve_from_the_rendered_page_and_nothing_is_copied(site):
         for p in (project / "_site/_asta/files").rglob("*")
         if p.is_file()
     )
-    assert copies == [f"_{FLOW[1:]}/03-map/fig.png"]
+    assert copies == [
+        f"_{FLOW[1:]}/03-map/fig.png",
+        f"_{FLOW[1:]}/04-tests/Q1-T1/fig_main.png",
+    ]
 
 
 def test_no_warnings_for_good_pages_and_refusals_for_paths_outside(site):
@@ -147,10 +242,11 @@ def test_no_warnings_for_good_pages_and_refusals_for_paths_outside(site):
     warnings = [
         line for line in log.splitlines() if "WARN" in line or line.startswith("(W)")
     ]
-    # The refused page's two shortcodes are the only warnings.
-    assert len(warnings) == 2, warnings
+    # The refused page's three shortcodes are the only warnings.
+    assert len(warnings) == 3, warnings
     assert "/etc is an absolute path" in pages["refused"]
     assert "../outside.md leaves the project" in pages["refused"]
+    assert "leaves the project" in pages["refused"].split("outside.md")[-1]
 
 
 def test_files_lists_folders_first_with_sizes_and_skips_caches_and_secrets(site):
@@ -178,3 +274,63 @@ def test_doc_renders_inline_with_headings_moved_under_the_page(site):
     assert f'src="../_asta/files/_{FLOW[1:]}/03-map/fig.png"' in page
     assert ">map.md</a>" in page  # the header line links the file
     assert "@handle" in page  # not read as a citation
+
+
+def test_tests_embed_each_folder_with_its_summary_and_links(site):
+    _, pages, _ = site
+    data = _tests_data(pages["tests"])
+    tests = {t["id"]: t for t in data["tests"]}
+    # Index order first, then folders the index does not name, in natural order.
+    assert [t["id"] for t in data["tests"]] == [
+        "Q1-T1",
+        "Q1-T2",
+        "Q1-T9",
+        "node_2_1",
+        "Q1-T3",
+        "Q1-T4",
+    ]
+    one = tests["Q1-T1"]
+    assert one["summary"]["meets_threshold"] is True
+    assert "audit" not in one["summary"]
+    assert one["index"]["theory_name"] == "Theory one"
+    assert one["design"].endswith("Q1-T1/design.md")
+    assert one["code"].endswith("Q1-T1/test.py")
+    assert one["figures"] == [
+        {
+            "name": "fig_main.png",
+            "href": f"../../{FLOW}/04-tests/Q1-T1/fig_main.png",
+            "src": f"../_asta/files/_{FLOW[1:]}/04-tests/Q1-T1/fig_main.png",
+        }
+    ]
+    big = tests["Q1-T2"]["figures"][0]
+    assert big["name"] == "fig_all_panels.png" and "src" not in big
+    assert big["size"] == "2.0 MB"
+    assert tests["Q1-T9"] == {
+        "id": "Q1-T9",
+        "missing": True,
+        "index": {"test_id": "Q1-T9", "theory_name": "Theory two"},
+    }
+    assert "summary" not in tests["Q1-T4"]
+    assert tests["Q1-T3"]["summary"]["ran"] is False
+    repro = tests["node_2_1"]
+    assert repro["hypothesis"] == "Something changes after a switch."
+    assert repro["heading"] == "Committed test: node_2_1"
+    assert repro["codeName"] == "code.py"
+    assert repro["summary"]["subject_level_tests"][1]["p"] == 0.03
+    assert [o["name"] for o in data["others"]] == ["index.json", "seed.json"]
+
+
+def test_theories_get_their_tests_from_each_index(site):
+    _, pages, _ = site
+    body = re.search(
+        r'<script type="application/json" class="asta-theories-tests">(.*?)</script>',
+        pages["theories"],
+        re.S,
+    ).group(1)
+    tests = json.loads(body.replace("<\\/", "</"))["tests"]
+    by_id = {t["id"]: t for t in tests}
+    assert by_id["G1-T1"]["summary"] == {"meets_threshold": False}
+    assert by_id["G1-T1"]["index"]["theory_name"] == "Theory two"
+    assert by_id["Q1-T9"]["missing"] is True
+    assert "tests.js" in pages["theories"]
+    assert pages["theories"].index("tests.js") < pages["theories"].index("theories.js")

@@ -478,4 +478,123 @@ body.quarto-dark .asta-doc { border-left-color: rgba(250, 242, 233, 0.2); }
 .asta-doc > :first-child { margin-top: 0; }
 .asta-doc table { font-size: 0.9em; }
 .asta-doc .ap-doc-img { max-width: 100%; height: auto; border-radius: 4px; background: #fff; }
+
+/* ---- verdicts -------------------------------------------------------------------------- */
+.asta-panel { --ap-amber-soft: #fbe3bd; --ap-amber: #c46a00; }
+body.quarto-dark .asta-panel { --ap-amber-soft: rgba(255, 163, 28, 0.2); --ap-amber: #ffa31c; }
+.ap-chip.ap-v { font-weight: 600; }
+.ap-chip.ap-v-met { background: var(--ap-green-soft); color: var(--ap-text); }
+.ap-chip.ap-v-partial { background: var(--ap-amber-soft); color: var(--ap-text); }
+.ap-chip.ap-v-notmet { background: var(--ap-sunk); color: var(--ap-text); border-color: var(--ap-line); }
+.ap-chip.ap-v-undecided { background: transparent; color: var(--ap-text); border: 1px dashed var(--ap-muted); }
+.ap-chip.ap-v-running { background: transparent; color: var(--ap-muted); border: 1px dashed var(--ap-line); font-style: italic; }
+.ap-chip.ap-v-notrun, .ap-chip.ap-v-notstarted { background: transparent; color: var(--ap-faint); border: 1px solid var(--ap-hairline); }
+.ap-chip.ap-v-other { background: var(--ap-sunk); color: var(--ap-text); }
+.ap-ts-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; background: var(--ap-faint); }
+.ap-ts-dot.ap-v-met { background: #0fa36f; }
+.ap-ts-dot.ap-v-partial { background: var(--ap-amber); }
+.ap-ts-dot.ap-v-notmet { background: var(--ap-muted); }
+.ap-ts-dot.ap-v-undecided { background: transparent; border: 1.5px dashed var(--ap-muted); }
+.ap-ts-dot.ap-v-running { background: transparent; border: 1.5px dotted var(--ap-faint); }
+.ap-ts-dot.ap-v-notrun, .ap-ts-dot.ap-v-notstarted { background: var(--ap-hairline); }
+.ap-ts-parts { margin-top: 4px; font-size: 12px; color: var(--ap-muted); display: flex; flex-wrap: wrap; gap: 2px 8px; }
+.ap-ts-parts .ap-ts-yes { color: var(--ap-text); font-weight: 600; }
+
+/* ---- asta-tests: the tests table --------------------------------------------------------- */
+.ap-ts { margin-bottom: 1.5rem; }
+.ap-ts-filters { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
+.ap-ts-filter {
+  display: inline-flex; align-items: center; gap: 2px; padding: 3px 10px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--ap-line); background: var(--ap-raised); color: var(--ap-muted); font-size: 13px;
+}
+.ap-ts-filter .ap-n { color: var(--ap-faint); margin-left: 4px; font-variant-numeric: tabular-nums; }
+.ap-ts-filter:hover { color: var(--ap-text); border-color: var(--ap-muted); }
+.ap-ts-filter[aria-pressed="true"] { color: var(--ap-text); border-color: var(--ap-text); font-weight: 700; }
+.ap-ts-scroll { max-height: 42rem; overflow: auto; }
+.ap-tt table.ap-ts-table { table-layout: fixed; min-width: 720px; }
+.ap-tt .ap-ts-table th { position: sticky; top: 0; z-index: 1; padding: 0; }
+.ap-ts-table th button, .ap-ts-table th .ap-ts-th {
+  display: flex; align-items: center; gap: 4px; width: 100%; padding: 10px 12px; background: none; border: 0; cursor: pointer;
+  font-weight: 700; font-size: 13px; color: var(--ap-text); text-align: left; white-space: nowrap;
+}
+.ap-ts-table th .ap-ts-th { cursor: default; }
+.ap-ts-table th.ap-ts-c-num button { justify-content: flex-end; }
+.ap-ts-table th button:hover .ap-ad-sort, .ap-ts-table th button.ap-ad-sorted .ap-ad-sort { opacity: 1; }
+.ap-ts-table th button.ap-ad-desc .ap-ad-sort { transform: rotate(180deg); }
+.ap-tt .ap-ts-table td { padding: 10px 12px; vertical-align: top; font-size: 13.5px; }
+.ap-ts-table tr.ap-ts-row { cursor: pointer; }
+.ap-ts-table tr.ap-ts-row.ap-open { background: var(--ap-cream); }
+.ap-ts-table tr.ap-ts-row.ap-open td:first-child { box-shadow: inset 4px 0 0 var(--ap-accent); }
+body.quarto-dark .ap-ts-table tr.ap-ts-row.ap-open td:first-child { box-shadow: inset 4px 0 0 var(--ap-link); }
+.ap-ts-table tr.ap-ts-row:focus-visible { outline: 2px solid var(--ap-link); outline-offset: -2px; }
+.ap-ts-c-id { width: 96px; white-space: nowrap; }
+.ap-ts-idcell { display: inline-flex; align-items: center; gap: 6px; }
+.ap-ts-idcell .ap-chevron { width: 14px; height: 14px; color: var(--ap-muted); transform: rotate(-90deg); }
+.ap-ts-row.ap-open .ap-ts-idcell .ap-chevron { transform: none; }
+
+.ap-ts-what { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--ap-text); }
+.ap-ts-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.ap-ts-tags .ap-chip { height: 20px; font-size: 11px; padding: 0 6px; }
+.ap-ts-c-verdict { width: 118px; }
+.ap-ts-c-effect { width: 190px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.ap-ts-effect { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.ap-ts-sub-line {
+  color: var(--ap-faint); font-size: 12px; line-height: 1.35; margin-top: 2px;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.ap-tt .ap-ts-table .ap-ts-c-num { width: 84px; text-align: right; font-variant-numeric: tabular-nums; color: var(--ap-muted); overflow-wrap: anywhere; }
+.ap-tt .ap-ts-table .ap-ts-c-n { width: 64px; }
+.ap-ts-c-files { width: 150px; font-size: 12.5px; }
+.ap-ts-c-files a { white-space: nowrap; }
+.ap-ts-table tr.ap-ts-detail td { background: var(--ap-cream); padding: 4px 16px 18px 34px; cursor: default; }
+.ap-ts-others { margin-top: 6px; }
+@media (max-width: 760px) {
+  /* Narrow screens: the table scrolls sideways inside its box; the Files and n columns give way
+     (an opened row still has both), and a theory's name keeps a readable width. */
+  .ap-tt table.ap-ts-table { min-width: 600px; }
+  .ap-tt .ap-ts-table .ap-ts-c-files, .ap-tt .ap-ts-table .ap-ts-c-n { display: none; width: 0; padding: 0; }
+  .ap-ts-c-id { width: 82px; }
+  .ap-ts-c-effect { width: 150px; }
+  .ap-tt td:first-child .ap-tt-name-cell { min-width: 12rem; }
+  .ap-ts-table tr.ap-ts-detail td { padding-left: 14px; }
+}
+
+/* A test as a card: an opened row, and a theory's Tests tab */
+.ap-ts-cards { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; }
+.ap-ts-cards .ap-ts-card { border: 1px solid var(--ap-line); border-radius: var(--ap-r); background: var(--ap-raised); padding: 14px 16px; }
+.ap-ts-card { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.ap-ts-card-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.ap-ts-card-head .ap-ts-id { font-size: 15px; font-weight: 700; margin-right: 2px; }
+.ap-ts-facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr)); gap: 10px 20px; margin: 0; }
+.ap-ts-facts > div { min-width: 0; }
+.ap-ts-facts dt, .ap-ts-leaves dt { font-weight: 700; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ap-faint); }
+.ap-ts-facts dd { margin: 2px 0 0; font-size: 14px; overflow-wrap: anywhere; }
+.ap-ts-leaves dl { display: grid; grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr)); gap: 2px 20px; margin: 6px 0 0; font-size: 13px; }
+.ap-ts-leaves dl > div { display: flex; gap: 8px; justify-content: space-between; border-bottom: 1px solid var(--ap-hairline); padding: 2px 0; min-width: 0; }
+.ap-ts-leaves dt { text-transform: none; letter-spacing: 0; font-weight: 500; font-size: 12.5px; color: var(--ap-muted); overflow-wrap: anywhere; }
+.ap-ts-leaves dd { margin: 0; font-variant-numeric: tabular-nums; white-space: nowrap; text-align: right; }
+.ap-ts-leaves dl > div.ap-ts-text { grid-column: 1 / -1; flex-direction: column; gap: 0; }
+.ap-ts-leaves dl > div.ap-ts-text dd { white-space: normal; text-align: left; }
+.ap-ts-sub table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 6px; }
+.ap-ts-sub th, .ap-ts-sub td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--ap-hairline); vertical-align: top; }
+.ap-ts-sub th { font-size: 12px; color: var(--ap-muted); }
+.ap-ts-links { font-size: 13px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 4px; }
+.ap-ts-figs { display: flex; flex-wrap: wrap; gap: 10px; }
+.asta-panel a.ap-ts-fig {
+  display: flex; flex-direction: column; gap: 4px; width: 168px; padding: 6px; text-decoration: none; font-weight: 400;
+  border: 1px solid var(--ap-line); border-radius: var(--ap-r); background: var(--ap-raised);
+}
+.asta-panel a.ap-ts-fig:hover { border-color: var(--ap-muted); }
+.ap-ts-fig img { width: 100%; height: 104px; object-fit: contain; background: #fff; border-radius: 4px; }
+.ap-ts-fig span { font-size: 11.5px; color: var(--ap-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A figure too large to copy into the site: a link to the file, the size of a thumbnail. */
+.ap-ts-fig-big .ap-ts-fig-note {
+  display: flex; align-items: center; justify-content: center; height: 104px; padding: 0 8px; text-align: center;
+  white-space: normal; border-radius: 4px; background: var(--ap-sunk);
+}
+
+/* The theory table's Tests column */
+.ap-tt th.ap-tt-tests, .ap-tt td.ap-tt-tests { width: 1%; white-space: nowrap; }
+.ap-tt td.ap-tt-tests { font-size: 13px; color: var(--ap-muted); }
+.ap-tt-unmatched { margin-top: 12px; }
 .ap-ad-files { margin-top: 8px; font-size: 13px; }

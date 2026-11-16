@@ -11,6 +11,7 @@ results, and that link every panel to the files on disk it was built from:
 {{< asta-workflow >}}                               <!-- workflow.mmd beside the page, if any -->
 {{< asta-files dir=".asta/flows/0004-x/04-gap-map" >}}          <!-- a folder's files -->
 {{< asta-doc file=".asta/flows/0004-x/04-gap-map/gaps.md" >}}   <!-- a markdown file, inline -->
+{{< asta-tests dir=".asta/flows/0004-x/07-tests" index=".asta/flows/0004-x/06-designs/tests.json" >}}
 ```
 
 ## Conventions
@@ -23,8 +24,8 @@ writes:
   the two pair up and the pages sort in run order. `_quarto.yml` renders `index.qmd` and
   `pages/*.qmd`, and its sidebar lists the front page, then the pages flat by file name
   (`- auto: "pages/*.qmd"`).
-- **Data files.** The widgets' own data (Theorizer site data, AutoDS runs, inline
-  documents).
+- **Data files.** The widgets' own data (Theorizer site data, test summaries and indexes,
+  AutoDS runs, inline documents).
 - **Front matter.** `title:` and Quarto's own keys.
 
 **A workflow page is widgets only.** A workspace keeps one page per workflow run,
@@ -44,9 +45,16 @@ title: "Gap-driven theory testing"
 
 ## Theories
 
-{{< asta-theories data="../.asta/flows/0004-gap-driven-theory-testing/05-theories/theorizer.json" >}}
+{{< asta-theories data="../.asta/flows/0004-gap-driven-theory-testing/05-theories/theorizer.json"
+    tests=".asta/flows/0004-gap-driven-theory-testing/06-test-designs/tests.json"
+    tests_dir=".asta/flows/0004-gap-driven-theory-testing/07-tests" >}}
 
-{{< asta-files dir=".asta/flows/0004-gap-driven-theory-testing/05-theories" >}}
+## Tests
+
+{{< asta-tests dir=".asta/flows/0004-gap-driven-theory-testing/07-tests"
+    index=".asta/flows/0004-gap-driven-theory-testing/06-test-designs/tests.json" >}}
+
+{{< asta-files dir=".asta/flows/0004-gap-driven-theory-testing/07-tests" >}}
 ```
 
 - **Theory page:** the theories with their supporting and conflicting counts; the selected
@@ -103,17 +111,45 @@ title: "Gap-driven theory testing"
   becomes `level=`, 3 by default, below the page's step heading) and left out of the page's
   table of contents, under a header line linking the file and its folder. Links and images in
   the document that name files beside it point at those files.
+- **Tests** (`asta-tests dir=... index=...`): a table of tests, one per subfolder of `dir`: test,
+  what it tests, verdict, effect, p, animals, and links to `design.md`, the code (`test.py` or
+  `code.py`), `result.md`, the summary JSON and figures; a row opens to its direction, the effect
+  and p in full (for a summary that gives one per region), its figure thumbnails and its folder.
+  Sortable, filterable by text and by verdict; `#test-<id>` opens a row. Files beside the test
+  folders are listed under the table.
+  - The summary is the folder's `result_summary.json` (else `result.json`, `results.json`). The
+    verdict is its `verdict` if it states one; else `ran: false` (or `runnable: false`) is
+    "not run"; `meets_threshold` true is "met", false "not met", an object of per-region
+    booleans "met in X of Y" with the regions listed; anything else is "undecided" (its `status`
+    shown). A folder with no summary yet is "running"; an index entry with no folder yet is
+    "not started". A summary with several `subject_level_tests` and no single effect shows its
+    first test with a p, and lists them all when the row is opened.
+  - What a test tests comes from its index entry (`theory_name`, `title`, `hypothesis`, with
+    `kind`, `dataset` and `labels` as tags); without one, from the paragraph under a
+    "Hypothesis" heading in `design.md`, else its first heading.
+  - `index` names one or more index files (comma-separated): a list of `{test_id, ...}`, an
+    object with such a list under `tests`, or an object keyed by test id (each value an entry,
+    or labels; ids without a folder are skipped). `file.json#key` reads the index under that key
+    (`selection.json#groups`). Index entries come first, in their order, then folders no entry
+    names. `dir` may also be a comma list.
+- **Theory tests** (`asta-theories ... tests="<index>[,<index>...]"`): each index is a list of
+  tests with `theory_name` and `test_id`; a test's folder is `<folder of the index>/tests/<test_id>/`
+  unless `tests_dir=` names the folder that holds the test folders (one for all indexes, or a
+  comma list, one per index). Tests are matched to theories by name (exactly, then ignoring
+  spacing). The theory table gets a Tests column ("1 of 2 met") and each theory a Tests tab
+  with each test's verdict, effect, p, animals, files and figures; tests naming no theory on the
+  page are listed under the panel.
 
 **Files.** Every panel carries a small "Files" line linking what it was built from: the data
-files (several files in one folder, or several files of one name, are their folder), an
-AutoDiscovery run's folder. An AutoDiscovery run's header also
+files (several files in one folder, or several files of one name, are their folder), a test
+table's folders and indexes, an AutoDiscovery run's folder. An AutoDiscovery run's header also
 links its folder and `args.json`, and an experiment from a local run its `mcts_node_*.json` and
 the run's `rich_outputs/`. A paper list links each search's own file (`<name>.json`) when it is
 in a `searches/` folder beside the papers file or beside its folder, or in `searches=` (from the
 project root).
 
 **Paths and links.** `data` is relative to the page, as before. The paths the file widgets name
-(`dir`, `file`, `searches`) are relative to the **project root**;
+(`dir`, `file`, `index`, `tests`, `tests_dir`, `searches`) are relative to the **project root**;
 an absolute path, or a `..` that leaves the project, is refused with an error box and a render
 warning. Hidden folders (`.asta`) work. Links are plain relative URLs from the *rendered* page to
 the file in the project, computed from the page's place in the project and the project's
@@ -128,7 +164,8 @@ site published on its own (GitHub Pages) does not carry `.asta/`.
 
 **Figures are served from the site.** A host may serve the output directory and nothing else
 (the app's front door serves `_site/` only), so an image a panel shows cannot point at the
-workspace's file. Each figure a page shows (an image in an `asta-doc` document) is copied when the page renders to `_site/_asta/files/<its path in the project>`,
+workspace's file. Each figure a page shows (a test's figures, an image in an `asta-doc`
+document) is copied when the page renders to `_site/_asta/files/<its path in the project>`,
 with a leading dot in a folder's name made `_` (`.asta/flows/…` → `_site/_asta/files/_asta/flows/…`),
 and the `<img>` shows the copy, while the figure's link still opens the workspace's file (as
 the app's Files tab does). Only figures the pages show are copied, each up to 2 MB; a larger
@@ -145,8 +182,9 @@ The data files are written by the run-workflow skill's theory-generation workflo
 (`workflows/theory-generation/scripts/theorizer-site-data`), from a `theorize` project; each
 theory carries its `query`. A second project's file (`data/theorizer-v2.json`) gets its own
 papers file beside it (`data/papers-v2.json`), leaving the first one's `papers.json` as it is. Plain
-HTML, CSS and JavaScript; the panels follow the asta-theme light (cream) and dark modes. The
-files the panels link are loaded when the reader opens them.
+HTML, CSS and JavaScript; the panels follow the asta-theme light (cream) and dark modes. A
+test's figures (their copies in the site) and the files the panels link are loaded when the
+reader opens them.
 
 `make workspace-assets` fetches this extension when a page uses one of its shortcodes, like the
 evidence extension. To customize it, commit a copy of `_extensions/asta-pages` and remove its

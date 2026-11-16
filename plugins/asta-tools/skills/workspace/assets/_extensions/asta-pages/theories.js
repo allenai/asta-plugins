@@ -7,7 +7,9 @@
    Anchors: #theory-<n> selects a theory, #finding-<uuid> opens the Evidence tab at that row,
    #query-<n> selects a query's tab. Choosing a theory or a tab is a step in the history (Back
    returns to the list or the tab before). A paper's title links to its entry on the site's
-   papers page (#paper-<corpus id or key>), which the shortcode names. Uses no browser storage. */
+   papers page (#paper-<corpus id or key>), which the shortcode names. With the shortcode's
+   tests=, each theory's tests (script.asta-theories-tests, matched by theory name) add a verdict
+   column to the table and a Tests tab, drawn with tests.js. Uses no browser storage. */
 (function () {
   "use strict";
 
@@ -171,6 +173,20 @@
     return out.length ? out.join("") : empty("No evidence", "No extracted findings back this theory in the data file.");
   }
 
+  // The tests run on a theory, each as a card: its verdict, effect, p and animals, and links to
+  // its files (tests.js draws the card, as for an opened row of a tests table).
+  function testsTab(tests, scope) {
+    var lib = window.AstaPages.testsLib;
+    if (!tests.length) return empty("No tests", "No test in the test index names this theory.");
+    var t = lib.tally(tests);
+    return '<p class="ap-legend">' + esc(t.text) + ". Each test's verdict is read from its result_summary.json; open its files for the design, code and result.</p>" +
+      '<div class="ap-ts-cards">' + tests.map(function (x) {
+        var here = scope && scope.querySelector && scope.querySelector('[id="test-' + String(x.id).replace(/[^A-Za-z0-9_.-]+/g, "-") + '"]');
+        return lib.card(x, { head: true }).replace('<strong class="ap-ts-id">' + esc(x.id) + "</strong>",
+          here ? '<a class="ap-ts-id" href="#' + esc(here.id) + '">' + esc(x.id) + "</a>" : '<strong class="ap-ts-id">' + esc(x.id) + "</strong>");
+      }).join("") + "</div>";
+  }
+
   function papersTab(t, papers, link) {
     var list = [];
     (t.papers || []).forEach(function (k) { var p = papers[k]; if (p && list.indexOf(p) < 0) list.push(p); });
@@ -216,8 +232,15 @@
 
   // One query's theories: the table, its legend and the selected theory. Returns what the page
   // needs to drive it: select(i, scroll), and whether a theory is selected yet.
-  function drawGroup(box, group, prefix, link, visit) {
+  function drawGroup(box, group, prefix, link, visit, withTests) {
     var theories = group.entries.map(function (e) { return e.t; });
+    var lib = window.AstaPages && window.AstaPages.testsLib;
+    withTests = withTests && !!lib;
+    function testsCell(e) {
+      if (!e.tests.length) return '<td class="ap-tt-tests"><span class="ap-muted">\u2014</span></td>';
+      var t = lib.tally(e.tests);
+      return '<td class="ap-tt-tests"><span class="ap-ts-dot ap-v-' + t.key + '"></span>' + esc(t.text) + "</td>";
+    }
     var rows = theories.map(function (t, i) {
       var novel = theoryNovel(t) ? NOVEL_CHIP : "";
       function count(n, papersN) {
@@ -225,14 +248,16 @@
       }
       return '<tr data-i="' + i + '"><td><div class="ap-tt-name-cell"><span class="ap-tt-name">' + esc(t.name) + "</span>" + novel + "</div></td>" +
         '<td class="ap-num">' + count(t.supporting, t.supporting_papers) + '</td><td class="ap-num' + (t.conflicting ? " ap-has-conflict" : "") + '">' +
-        count(t.conflicting, t.conflicting_papers) + "</td></tr>";
+        count(t.conflicting, t.conflicting_papers) + "</td>" + (withTests ? testsCell(group.entries[i]) : "") + "</tr>";
     }).join("");
     box.innerHTML =
       '<div class="ap-tt"><button type="button" class="ap-tt-head" aria-expanded="true">' + CHEVRON + "<h2>" +
       plural(theories.length, "theory", "theories") + ' generated</h2></button><div class="ap-tt-wrap"><table><thead><tr>' +
       '<th>Theory name</th><th class="ap-num">Supporting evidence</th><th class="ap-num">Conflicting evidence</th>' +
+      (withTests ? '<th class="ap-tt-tests">Tests</th>' : "") +
       "</tr></thead><tbody>" + rows + "</tbody></table></div>" +
-      '<p class="ap-legend">Counts are pieces of evidence: findings from the papers that a theory\'s statements cite for or against them, added up over its statements, and how many papers they come from. One paper can supply many.</p>' +
+      '<p class="ap-legend">Counts are pieces of evidence: findings from the papers that a theory\'s statements cite for or against them, added up over its statements, and how many papers they come from. One paper can supply many.' +
+      (withTests ? " Tests: how many of the tests run on a theory met their committed threshold." : "") + "</p>" +
       '</div><div class="ap-theory"></div>';
 
     var detail = box.querySelector(".ap-theory");
@@ -255,6 +280,7 @@
         ["evidence", "Evidence", evidenceTab(t, src.papers, src.findings, prefix, link)],
         ["papers", "Referenced papers", papersTab(t, src.papers, link)]
       ];
+      if (withTests) tabs.push(["tests", "Tests" + (e.tests.length ? " (" + e.tests.length + ")" : ""), testsTab(e.tests, document)]);
       var chips = [t.kind ? sentenceCase(t.kind) + " theory" : "",
         t.novelty && t.novelty.label ? "Novelty: " + sentenceCase(t.novelty.label) : "",
         t.model ? "Written by " + modelName(t.model) : ""].filter(Boolean);
@@ -346,6 +372,25 @@
         groups[byQuery[q]].entries.push({ t: t, src: src, anchor: anchor });
       });
     });
+    // A test names its theory (theory_name): matched to the theory of that name, exactly, then
+    // with spacing ignored.
+    var tests = Array.isArray(opts.tests) ? opts.tests : null, unmatched = [];
+    if (tests) {
+      var exact = {}, loose = {};
+      groups.forEach(function (g) {
+        g.entries.forEach(function (e) {
+          e.tests = [];
+          var n = String(e.t.name || "");
+          if (!exact[n]) exact[n] = e;
+          if (!loose[normQuery(n)]) loose[normQuery(n)] = e;
+        });
+      });
+      tests.forEach(function (x) {
+        var n = x && x.index && x.index.theory_name != null ? String(x.index.theory_name) : null;
+        var e = n == null ? null : exact[n] || loose[normQuery(n)];
+        if (e) e.tests.push(x); else if (x) unmatched.push(x);
+      });
+    }
     if (!groups.length) {
       root.innerHTML = empty("No theories yet",
         "This run has " + plural(nPapers, "paper", "papers") + "; its theories appear here after the next generation.");
@@ -383,7 +428,14 @@
       shown = location.hash;
     }
     var bodies = root.querySelectorAll(".ap-qbody");
-    var views = groups.map(function (g, k) { return drawGroup(bodies[k], g, prefix, link, visit); });
+    var views = groups.map(function (g, k) { return drawGroup(bodies[k], g, prefix, link, visit, !!tests); });
+    if (unmatched.length) {
+      var note = document.createElement("p");
+      note.className = "ap-legend ap-tt-unmatched";
+      note.textContent = plural(unmatched.length, "test names", "tests name") + " a theory not on this page: " +
+        unmatched.map(function (x) { return x.id; }).join(", ") + ".";
+      root.appendChild(note);
+    }
     var qtabs = root.querySelectorAll(".ap-qtab"), qpanels = root.querySelectorAll(".ap-qpanel");
     var active = 0;
 
@@ -488,7 +540,8 @@
   window.AstaPages.theories = safeRender;
 
   // A page that carries the Quarto shortcode's markup draws itself: one embedded data file per
-  // Theorizer project the shortcode names (script.asta-theories-data, in the shortcode's order).
+  // Theorizer project the shortcode names (script.asta-theories-data, in the shortcode's order),
+  // and its tests (script.asta-theories-tests).
   function start() {
     var root = document.querySelector(".asta-panel.asta-theories");
     if (!root) return;
@@ -498,14 +551,19 @@
       if (one) scripts = [one];
     }
     if (!scripts.length) return;
+    var testsEl = document.querySelector("script.asta-theories-tests");
     var names = [];
     try { names = JSON.parse(root.getAttribute("data-asta-names") || "[]"); } catch (e) { names = []; }
+    var tests = null;
+    try { tests = testsEl ? (JSON.parse(testsEl.textContent).tests || []) : null; } catch (e) { tests = null; }
+    if (tests && !Array.isArray(tests)) tests = [];
     safeRender(root, function () {
       return scripts.map(function (s) { return JSON.parse(s.textContent); });
     }, {
       sources: scripts.map(function (s) { return s.getAttribute("data-asta-source") || ""; }),
       names: names,
-      papers: root.getAttribute("data-asta-papers") || ""
+      papers: root.getAttribute("data-asta-papers") || "",
+      tests: tests
     });
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start); else start();
