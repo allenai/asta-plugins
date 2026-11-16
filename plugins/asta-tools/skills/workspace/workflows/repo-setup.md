@@ -34,19 +34,32 @@ something unexpected, stop and tell the owner what GitHub said.
 
 1. Create the repo private with a README, so the default branch exists
    (`gh repo create <owner>/<name> --private --add-readme`), or make an
-   existing empty repo private. If it has no branches, push an empty-tree root
-   commit to `main` first, before any Pages branch. Merge the established default
-   branch into the local workspace without losing local work or force-pushing.
-2. Scaffold the Quarto build with its `docs.yml` stub manual-only, and run
+   existing empty repo private.
+2. Before anything is pushed, make the person who asked for the workspace the
+   repo's admin when the account you act as (`gh api user -q .login`) isn't
+   theirs, as when an agent creates the repo for someone else:
+   `gh api -X PUT repos/<owner>/<name>/collaborators/<login> -f permission=admin`.
+   Use only a GitHub login you know is theirs; if you don't know it, ask
+   rather than guess. Then check that it worked:
+   `gh api repos/<owner>/<name>/collaborators/<login>/permission -q .permission`
+   reads `admin`. If GitHub sent an invitation instead, its `permissions` in
+   `gh api repos/<owner>/<name>/invitations` reads `admin`; tell them to
+   accept it. Don't push until the check passes. This step isn't one of the
+   proposed defaults: the person who asked always ends up an admin.
+3. If the repo has no branches, push an empty-tree root commit to `main`
+   first, before any Pages branch. Merge the established default branch into
+   the local workspace without losing local work or force-pushing.
+4. Scaffold the Quarto build with its `docs.yml` stub manual-only, and run
    `make check`, without pushing.
-3. With Pages accepted, follow [GitHub Pages setup](github-pages.md) before
+5. With Pages accepted, follow [GitHub Pages setup](github-pages.md) before
    the scaffold's first push, so no content reaches a site that could be
    public. Then enable the stub's `on.push` and `on.pull_request`.
-4. Push the scaffold to that established default branch.
-5. With protections accepted, apply both rulesets from `assets/rulesets/`
+6. Push the scaffold to that established default branch.
+7. With protections accepted, apply both rulesets from `assets/rulesets/`
    (`gh api repos/{owner}/{repo}/rulesets -X POST --input <file>`) only now
    that `docs.yml` is on the default branch. Without Pages, apply only
    `default-branch.json`: no check would run on PRs.
-6. With branch deletion accepted, run
+8. With branch deletion accepted, run
    `gh repo edit <owner>/<name> --delete-branch-on-merge`.
-7. Tell the owner what is on, with links to Settings → General, Pages and Rules.
+9. Tell the owner what is on, with links to Settings → General, Pages and
+   Rules, and that they are the repo's admin.
