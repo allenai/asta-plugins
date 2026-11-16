@@ -1,8 +1,8 @@
-"""SKILL.md text that the skill loader would change.
+"""Keep `$1`-style placeholders out of every SKILL.md.
 
-The loader replaces `$1`, `$2` and so on with the skill's arguments, so a price like "$1" or an
-awk `$1` in a SKILL.md reaches the agent as one of the person's words. Other files in a skill
-folder are read as they are.
+When a skill runs, Claude Code replaces `$1`, `$2` and so on in its SKILL.md with the arguments
+the skill was called with. So an awk `'{print $1}'` or a price like "$5" in a SKILL.md doesn't
+reach the agent as written. Only SKILL.md is rewritten; a skill's other files may use `$1`.
 """
 
 import re
