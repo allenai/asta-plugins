@@ -50,6 +50,7 @@ Assume the person wants the workflow carried out autonomously unless they say ot
 
 - **Files:** `.asta/flows/<NNNN>-<workflow>/`, numbered in the order the workspace's runs started, with a `workflow.yaml` (the plan: its steps and their settings), a `README.md` (what ran, and where each step's output is) and one folder per step, `<NN>-<step>/`.
 - **Page,** in a workspace site: `pages/<NNNN>-<workflow>.qmd`, the same NNNN as the run's folder, its front matter only `title:`, normally the workflow's name. The sidebar lists the pages flat in run order, and they read one after another in that order.
+- **Data the site reads:** what the steps write (the widgets' data files); `.asta/datasets.json` for the datasets the run used (`[{id, name, released_by, used_for, links: [{label, url}]}]`); and a gap run's theories written with `theorizer-site-data --gap <ID>`.
 
 ### Long steps in a hosted sandbox
 

@@ -652,6 +652,42 @@ body #quarto-document-content .asta-flow .asta-flow-divider h1.asta-flow-title a
   font-family: Manrope, Arial, sans-serif; font-size: 0.85rem; color: var(--ap-faint);
 }
 
+/* ---- autolink (autolink.lua): links and the cards they open (asta-pages.js) ---- */
+/* A mention that names several things is marked by a dotted underline. */
+a.asta-al-many { text-decoration-style: dotted; }
+/* Where a card stands in for the evidence popover (asta-pages.js sets html.asta-cards), the
+   popover evidence draws with CSS stays shut; without asta-pages.js it shows as before. */
+html.asta-cards .ev[data-asta-card] > .ev-pop { display: none !important; }
+.asta-panel.asta-al-card {
+  position: absolute; z-index: 1080; width: min(380px, calc(100vw - 16px));
+  padding: 10px 12px 8px; border-radius: var(--ap-r); border: 1px solid var(--ap-line);
+  background: var(--ap-raised); box-shadow: 0 8px 24px rgba(3, 38, 41, 0.16); font-size: 13.5px; line-height: 1.45;
+}
+body.quarto-dark .asta-panel.asta-al-card { box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45); }
+.asta-al-card .ap-al-item + .ap-al-item { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--ap-hairline); }
+.asta-al-card .ap-al-role {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ap-faint);
+}
+.asta-al-card a.ap-al-go { font-weight: 600; }
+.asta-al-card .ap-al-title { font-weight: 600; color: var(--ap-text); }
+.asta-al-card .ap-al-page { font-size: 12px; color: var(--ap-muted); }
+/* Text clamped to the lines a section asks for (style="-webkit-line-clamp: n"). */
+.asta-al-card .ap-al-clamp[style] { display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; }
+.asta-al-card .ap-al-text { margin: 3px 0 0; color: var(--ap-text); }
+.asta-al-card .ap-al-quote {
+  margin: 3px 0 0; padding: 0 0 0 8px; border-left: 2px solid var(--ap-line); font-style: italic; color: var(--ap-text);
+  font-size: 13px;
+}
+.asta-al-card .ap-al-thumb {
+  display: block; width: 100%; max-height: 120px; object-fit: contain; margin: 4px 0;
+  background: var(--ap-raised); border-radius: 4px; border: 1px solid var(--ap-hairline);
+}
+.asta-al-card .ap-al-meta { margin-top: 4px; font-size: 12.5px; color: var(--ap-muted); }
+.asta-al-card .ap-al-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+.asta-al-card .ap-al-chips .ap-chip { font-size: 11.5px; padding: 1px 6px; }
+.asta-al-card .ap-al-links { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 4px; font-size: 12.5px; }
+.asta-al-card .ap-al-foot { margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--ap-hairline); font-size: 12px; color: var(--ap-faint); }
+
 /* "On this page" while it lists just the sections the sidebar lists for the page in view. */
 nav[role="doc-toc"].asta-toc-same {
   display: none;

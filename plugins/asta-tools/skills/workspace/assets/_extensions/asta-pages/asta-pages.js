@@ -93,6 +93,208 @@
     return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   }
 
+  // ---- cards -------------------------------------------------------------------------------
+  // A link that autolink.lua gave a card (a test, a theory, a gap, an experiment, a figure, a
+  // paper or dataset or site, a citation, an evidence claim, a workspace file) names it in
+  // data-asta-card: a key into the page's cards (script.asta-cards-data; a page appended to a
+  // flow's feed brings its own). Every card is the same kind of thing, drawn here the same way:
+  // sections, each with any of a role, a title (linked), a sub line, a thumbnail, a quote, text
+  // clamped to some lines, a test's verdict, tests' verdicts, a tally of verdicts, facts and
+  // links; then a footer. Hovering the link, focusing it or tapping it opens its card beside
+  // it (never over it); the card stays while the pointer is on it; Esc, a click elsewhere, or
+  // the pointer leaving both for a moment closes it. The link's own hover (Quarto's reference
+  // and cross-reference previews, a native title, the evidence popover) gives way to it.
+  A.cards = (function () {
+    var card = null, owner = null, openTimer = 0, closeTimer = 0, touch = false, seq = 0, quiet = null;
+    var stores = [];
+    function mention(el) { return el && el.closest ? el.closest("[data-asta-card]") : null; }
+    function inCard(el) { return !!(card && el && card.contains(el)); }
+    function urlFor(a, href) {
+      try { return new URL(href, A.pageUrl(a)).href; } catch (e) { return href; }
+    }
+    // The card a link names: from its page's store (or, written whole, the attribute itself).
+    function spec(a) {
+      var key = a.getAttribute("data-asta-card") || "";
+      if (key.charAt(0) === "{") { try { return JSON.parse(key); } catch (e) { return null; } }
+      var scope = A.scope(a), el = scope.querySelector ? scope.querySelector("script.asta-cards-data") : null;
+      if (!el) return null;
+      var hit = stores.filter(function (x) { return x.el === el; })[0];
+      if (!hit) {
+        var data = {};
+        try { data = JSON.parse(el.textContent) || {}; } catch (e) { data = {}; }
+        hit = { el: el, data: data };
+        stores.push(hit);
+      }
+      return hit.data[key] || null;
+    }
+    var SHORT = { met: "met", partial: "partly met", notmet: "not met", undecided: "undecided", running: "running",
+      notrun: "not run", notstarted: "not started" };
+    function testLine(t) {
+      var lib = A.testsLib;
+      if (!lib || !t) return "";
+      var v = lib.verdict(t), n = lib.numbers(t), bits = [];
+      if (n.effect && n.effect.text && n.effect.text !== "—") bits.push("effect " + esc(n.effect.text));
+      if (n.p && n.p.text && n.p.text !== "—") bits.push("p " + esc(n.p.text));
+      if (n.n && n.n.text && n.n.text !== "—") bits.push(esc(n.n.text) + " mice");
+      return '<div class="ap-al-meta">' + lib.verdictChip(v) + (bits.length ? " <span>" + bits.join(" · ") + "</span>" : "") + "</div>";
+    }
+    function chips(tests) {
+      var lib = A.testsLib;
+      if (!lib) return "";
+      return '<div class="ap-al-chips">' + tests.map(function (t) {
+        var v = lib.verdict(t);
+        return '<span class="ap-chip ap-v ap-v-' + esc(v.key) + '">' + esc(t.id) + " · " + esc(SHORT[v.key] || v.label) + "</span>";
+      }).join("") + "</div>";
+    }
+    function tally(tests) {
+      var lib = A.testsLib;
+      if (!lib) return "";
+      var c = {}, order = [];
+      tests.forEach(function (t) { var k = lib.verdict(t).key; if (!c[k]) { c[k] = 0; order.push(k); } c[k]++; });
+      order.sort(function (a, b) { return Object.keys(SHORT).indexOf(a) - Object.keys(SHORT).indexOf(b); });
+      return '<div class="ap-al-meta">' + tests.length + (tests.length === 1 ? " test: " : " tests: ") +
+        order.map(function (k) { return c[k] + " " + esc(SHORT[k] || k); }).join(" · ") + "</div>";
+    }
+    function clamp(n) { return n ? ' style="-webkit-line-clamp:' + (+n) + '"' : ""; }
+    function section(a, s) {
+      var h = "";
+      if (s.role) h += '<div class="ap-al-role">' + esc(s.role) + "</div>";
+      if (s.image) h += '<img class="ap-al-thumb" src="' + esc(urlFor(a, s.image)) + '" alt="" loading="lazy">';
+      if (s.title) {
+        h += s.href ? '<a class="ap-al-go ap-al-clamp" href="' + esc(urlFor(a, s.href)) + '"' +
+          (s.external ? ' target="_blank" rel="noopener"' : "") + clamp(s.title_clamp) + ">" +
+          esc(s.title) + ' <span aria-hidden="true">' + (s.external ? "↗" : "→") + "</span></a>"
+          : '<div class="ap-al-title ap-al-clamp"' + clamp(s.title_clamp) + ">" + esc(s.title) + "</div>";
+      }
+      if (s.sub) h += '<div class="ap-al-page">' + esc(s.sub) + "</div>";
+      if (s.quote) h += '<blockquote class="ap-al-quote ap-al-clamp"' + clamp(s.clamp) + ">“" + esc(s.quote) + "”</blockquote>";
+      if (s.text) h += '<p class="ap-al-text ap-al-clamp"' + clamp(s.clamp) + ">" + esc(s.text) + "</p>";
+      if (s.test) h += testLine(s.test);
+      if (s.tests && s.tests.length) h += chips(s.tests);
+      if (s.facts && s.facts.length) h += '<div class="ap-al-meta"><span>' + s.facts.map(esc).join(" · ") + "</span></div>";
+      if (s.tally && s.tally.length) h += tally(s.tally);
+      if (s.links && s.links.length) {
+        h += '<div class="ap-al-links">' + s.links.map(function (l) {
+          return '<a href="' + esc(urlFor(a, l.href)) + '"' + (l.external ? ' target="_blank" rel="noopener"' : "") + ">" +
+            esc(l.label) + ' <span aria-hidden="true">' + (l.external ? "↗" : "→") + "</span></a>";
+        }).join("") + "</div>";
+      }
+      return '<div class="ap-al-item">' + h + "</div>";
+    }
+    // Where a workspace file opens: on GitHub once a deployed site's links point there, in the
+    // app's Files tab inside the app's frame, else the file itself.
+    function fileFoot(a) {
+      var href = a.getAttribute("href") || "";
+      if (/^https?:\/\/github\.com\//.test(href)) return "Opens on GitHub.";
+      return window.top !== window ? "Opens in Files." : "Opens the file.";
+    }
+    function build(a, d) {
+      var el = document.createElement("div");
+      el.className = "asta-panel asta-al-card";
+      el.id = "asta-al-card-" + (++seq);
+      el.setAttribute("role", "dialog");
+      el.setAttribute("aria-label", d.text || a.textContent || "Details");
+      var foot = d.file ? fileFoot(a) : d.foot;
+      el.innerHTML = (d.sections || []).map(function (s) { return section(a, s); }).join("") +
+        (foot ? '<div class="ap-al-foot">' + esc(foot) + "</div>" : "");
+      return el;
+    }
+    // Below the mention, or above it when there is no room below; inside the window sideways.
+    function place(a) {
+      if (!card || !a.getBoundingClientRect) return;
+      var r = a.getBoundingClientRect(), w = card.offsetWidth || 0, h = card.offsetHeight || 0, gap = 6;
+      var vw = document.documentElement.clientWidth || window.innerWidth, vh = window.innerHeight;
+      var top = r.bottom + gap;
+      if (top + h > vh && r.top - gap - h > 0) top = r.top - gap - h;
+      var left = Math.max(8, Math.min(r.left, vw - w - 8));
+      card.style.top = (top + (window.scrollY || 0)) + "px";
+      card.style.left = (left + (window.scrollX || 0)) + "px";
+    }
+    function close(refocus) {
+      clearTimeout(openTimer); clearTimeout(closeTimer);
+      if (!card) return;
+      var a = owner;
+      if (card.parentNode) card.parentNode.removeChild(card);
+      card = null; owner = null;
+      if (a) {
+        a.setAttribute("aria-expanded", "false");
+        a.removeAttribute("aria-controls");
+        if (refocus && a.focus) { quiet = a; a.focus(); quiet = null; } // back on it, the card stays shut
+      }
+    }
+    function open(a) {
+      clearTimeout(openTimer); clearTimeout(closeTimer);
+      if (owner === a && card) return;
+      close(false);
+      var d = spec(a);
+      if (!d || !Array.isArray(d.sections) || !d.sections.length) return;
+      card = build(a, d);
+      owner = a;
+      document.body.appendChild(card);
+      a.setAttribute("aria-expanded", "true");
+      a.setAttribute("aria-controls", card.id);
+      place(a);
+    }
+    function closeSoon() { clearTimeout(closeTimer); closeTimer = setTimeout(function () { close(false); }, 300); }
+    document.addEventListener("mouseover", function (ev) {
+      var a = mention(ev.target);
+      if (a) {
+        clearTimeout(closeTimer);
+        if (owner !== a) { clearTimeout(openTimer); openTimer = setTimeout(function () { open(a); }, 120); }
+      } else if (inCard(ev.target)) clearTimeout(closeTimer);
+    });
+    document.addEventListener("mouseout", function (ev) {
+      var from = mention(ev.target) || (inCard(ev.target) ? card : null);
+      if (!from) return;
+      var to = ev.relatedTarget;
+      if (to && (inCard(to) || (owner && owner.contains(to)) || mention(to) === from)) return;
+      clearTimeout(openTimer);
+      if (card) closeSoon();
+    });
+    document.addEventListener("focusin", function (ev) {
+      var a = mention(ev.target);
+      if (a) { if (a !== quiet) open(a); return; }
+      if (card && !inCard(ev.target)) close(false);
+    });
+    document.addEventListener("pointerdown", function (ev) {
+      touch = ev.pointerType === "touch" || ev.pointerType === "pen";
+      if (card && !inCard(ev.target) && !(owner && owner.contains(ev.target))) close(false);
+    }, true);
+    // On a touch screen a first tap opens the card; a tap on the opened mention follows it.
+    document.addEventListener("click", function (ev) {
+      var a = mention(ev.target);
+      if (a && touch && owner !== a) { ev.preventDefault(); open(a); }
+    });
+    document.addEventListener("keydown", function (ev) {
+      if (!card) return;
+      if (ev.key === "Escape") { close(true); return; }
+      if (ev.key !== "Tab") return;
+      var links = card.querySelectorAll("a[href]");
+      if (!links.length) return;
+      // Tab from the mention goes into its card, Shift+Tab from its first link back out.
+      if (!ev.shiftKey && document.activeElement === owner) { ev.preventDefault(); links[0].focus(); }
+      else if (ev.shiftKey && document.activeElement === links[0]) { ev.preventDefault(); owner.focus(); }
+    });
+    window.addEventListener("resize", function () { if (owner) place(owner); });
+    // The link's own hover gives way: a native title, Quarto's reference and cross-reference
+    // previews (tippy, set up when the page loads), and the evidence popover, which evidence
+    // draws with CSS and which html.asta-cards hides (asta-pages.css) where a card stands in.
+    function quiet_links() {
+      document.querySelectorAll("[data-asta-card]").forEach(function (el) {
+        [el].concat([].slice.call(el.querySelectorAll ? el.querySelectorAll("a, [title]") : [])).forEach(function (n) {
+          if (n._tippy && n._tippy.destroy) { try { n._tippy.destroy(); } catch (e) { /* gone */ } }
+          if (n.removeAttribute && !(n.closest && n.closest(".ev-pop"))) n.removeAttribute("title");
+        });
+      });
+    }
+    document.documentElement.classList.add("asta-cards");
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", function () { setTimeout(quiet_links, 0); });
+    } else setTimeout(quiet_links, 0);
+    window.addEventListener("load", quiet_links);
+    return { open: open, close: close, current: function () { return card; }, quiet: quiet_links };
+  })();
+
   // The stylesheets and scripts a fetched page names that this document lacks, in its order.
   // Every link this document has counts, whatever its rel: Quarto turns the colour scheme it is
   // not showing into a disabled link, which must not come back as a live stylesheet.

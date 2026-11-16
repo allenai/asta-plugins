@@ -2,7 +2,7 @@
 """theorizer-site-data: write the slim data file a run's literature and theory pages read.
 
     theorizer-site-data <step>/theory <step>/data/theorizer.json [--bib references.bib]
-                        [--metadata hist/metadata.json]
+                        [--metadata hist/metadata.json] [--gap G7]
 
 Reads a `theorize` project directory (asta-theorizer on PyPI) and writes one JSON file with
 only what the pages show: paper metadata (no full text), the searches, the extracted findings
@@ -21,6 +21,10 @@ the store key as `id`: `title`, `authors` as `literal` or `family`/`given`, `yea
 `doi`) replaces what the store has for those papers, field by field where the record has a
 value. Documents collected by hand were imported into the store before their metadata was
 checked; this puts the checked title, authors, year, venue and DOI on the pages.
+
+With `--gap ID`, the theories are tagged as generated for that gap of the run's gap map: each
+theory, and the file, carries `"gap": "ID"`. The site's link cards group a gap's theories by
+it (a mention of G7 in the text links G7's theories and its gap map entry).
 
 Standard library only. Exit status 0 on success, 2 for bad usage, 3 when the project cannot be
 read (no paperstore.json and no theorystore.json).
@@ -381,6 +385,14 @@ def papers_path(out: Path) -> Path:
 def main(argv: list[str]) -> int:
     bib = None
     metadata = None
+    gap = None
+    if "--gap" in argv:
+        i = argv.index("--gap")
+        if i + 1 >= len(argv) or not argv[i + 1].strip():
+            print("theorizer-site-data: --gap needs an id (G7)", file=sys.stderr)
+            return 2
+        gap = argv[i + 1].strip()
+        argv = argv[:i] + argv[i + 2:]
     if "--metadata" in argv:
         i = argv.index("--metadata")
         if i + 1 >= len(argv):
@@ -409,6 +421,10 @@ def main(argv: list[str]) -> int:
         return 3
     request, searches, ordered = data["request"], data["searches"], data["papers"]
     findings, theories = data["findings"], data["theories"]
+    if gap:
+        data["gap"] = gap
+        for t in theories:
+            t["gap"] = gap
     out.parent.mkdir(parents=True, exist_ok=True)
     text = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
     out.write_text(text)

@@ -1234,6 +1234,12 @@ end
 
 local DOC_ICON = '<svg class="ap-files-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 1.75h6l3 3v9.5h-9z M9.5 1.75v3h3" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>'
 
+-- The id an entry of a document starts with: "G1 …", "G1. …", "G1: …", "[G1, …] …" -> "G1"
+-- (a capital, digits, and an optional letter: "G1b").
+local function entry_id(text)
+  return text:match("^%s*%[?(%u%d+%l?)[%]%s,:%.;)]") or text:match("^%s*%[?(%u%d+%l?)$")
+end
+
 local function url_decode(s)
   return (s:gsub("%%(%x%x)", function(h) return string.char(tonumber(h, 16)) end))
 end
@@ -1264,7 +1270,19 @@ local function doc_panel(kwargs)
     if path == "" or path:match("^/") then return nil end
     return href_to(normalize(base .. "/" .. url_decode(path)), path:match("/$") ~= nil) .. rest
   end
+  -- A list item that starts with an id ("G1. …", "[G1, untested link] …") is an entry others
+  -- link to: it gets the anchor doc-<file>-<id> (autolink.lua's gap cards link there).
+  local function entry_anchors(list)
+    for _, item in ipairs(list.content) do
+      local first = item[1]
+      local id = first and (first.t == "Plain" or first.t == "Para") and entry_id(pandoc.utils.stringify(first))
+      if id then first.content:insert(1, pandoc.Span({}, pandoc.Attr("doc-" .. slug .. "-" .. id:lower()))) end
+    end
+    return list
+  end
   local blocks = doc.blocks:walk({
+    BulletList = entry_anchors,
+    OrderedList = entry_anchors,
     Header = function(h)
       h.level = math.max(1, math.min(6, h.level + shift))
       if h.identifier ~= "" then h.identifier = "doc-" .. slug .. "-" .. h.identifier end
@@ -1306,8 +1324,8 @@ end
 
 -- ---- the feed, and each page's sections in the sidebar -----------------------------------
 --
--- Every page one of the asta-pages shortcodes runs on carries two small JSON blocks for
--- asta-pages.js:
+-- Every page the asta-pages filter or one of its shortcodes runs on carries two small JSON blocks
+-- for asta-pages.js:
 --   script#asta-flow      where the site's root is. The feed's pages are the sidebar's links into
 --                         the site, in the sidebar's order: in a workspace the front page, then
 --                         the workflow pages (pages/<NNNN>-<workflow>.qmd, listed flat with
@@ -1317,6 +1335,11 @@ end
 --                         them, keyed by the page's place in the site, for the pages the project
 --                         renders. Listed under each page's sidebar link. Off with
 --                         `asta-pages: {sidebar-sections: false}` in _quarto.yml.
+
+local function meta_text(v)
+  if v == nil then return "" end
+  return pandoc.utils.stringify(v):match("^%s*(.-)%s*$")
+end
 
 -- A page's front matter as Pandoc metadata (an empty table when it has none).
 local function front_matter(path)
@@ -1339,6 +1362,16 @@ local function rendered_file(src)
   out = slashes(out)
   if not is_absolute(out) then out = root .. "/" .. out end
   return normalize(out .. "/" .. inside)
+end
+
+-- The workflow pages: pages/*.qmd, by file name (run order).
+local function workflow_pages()
+  local root = project_path("pages")
+  local out = {}
+  for _, name in ipairs(root and list_dir(root) or {}) do
+    if name:match("%.qmd$") and not name:match("^[_.]") then out[#out + 1] = normalize(root .. "/" .. name) end
+  end
+  return out
 end
 
 -- The project's render list (project.render in _quarto.yml), its globs expanded (a `*` in the
@@ -1421,8 +1454,8 @@ local function option(meta, name)
   return s ~= "false" and s ~= "no"
 end
 
--- The feed's and the sidebar's data, once per page (a page may run several shortcodes; it
--- renders in one Lua state, so the mark is kept in package.loaded).
+-- The feed's and the sidebar's data, once per page (the shortcodes and the filter each load
+-- this file; the page renders in one Lua state, so the mark is kept in package.loaded).
 local function page_extras(meta)
   local state = package.loaded["asta-pages/page"] or {}
   package.loaded["asta-pages/page"] = state
@@ -1449,6 +1482,55 @@ local function page_extras(meta)
   end
 end
 
+-- ---- asta-datasets: the workspace's datasets, from .asta/datasets.json -----------------------
+--
+-- [{"id", "name", "released_by", "used_for", "links": [{"label", "url"}]}] -> a table: Dataset,
+-- Released by, Used for, Links. It is an ordinary table of the page, so the page's link cards
+-- read it like the rest of the text (a dataset's links open its card; ids in "Used for" link).
+
+local function datasets_panel(kwargs)
+  local rel = kwarg(kwargs, "file")
+  if rel == "" then rel = ".asta/datasets.json" end
+  local abs, clean = project_path(rel)
+  if not abs then return error_box("datasets", "file " .. clean) end
+  local data = decode_json(read_file(abs))
+  if not is_list(data) then
+    return error_box("datasets", "cannot read " .. clean .. " as a list of datasets; a workflow step writes it.")
+  end
+  local function cell(v) return (tostring(v or ""):gsub("[\r\n]+", " "):gsub("|", "\\|")) end
+  local rows = { "| Dataset | Released by | Used for | Links |", "|---|---|---|---|" }
+  for _, d in ipairs(data) do
+    if type(d) == "table" then
+      local links = {}
+      for _, l in ipairs(is_list(d.links) and d.links or {}) do
+        if type(l) == "table" and type(l.url) == "string" then
+          links[#links + 1] = "[" .. cell(l.label or l.url):gsub("[%[%]]", "\\%0") .. "](" .. l.url .. ")"
+        end
+      end
+      rows[#rows + 1] = "| " .. cell(d.name or d.id) .. " | " .. cell(d.released_by) .. " | " .. cell(d.used_for) ..
+        " | " .. table.concat(links, " · ") .. " |"
+    end
+  end
+  css_dep()
+  local doc = pandoc.read(table.concat(rows, "\n") .. "\n", "markdown")
+  local blocks = pandoc.Blocks({ pandoc.RawBlock("html", files_bar({ { abs = abs } })) })
+  blocks:extend(doc.blocks)
+  return blocks
+end
+
+-- The helpers autolink.lua (the asta-pages filter) shares with the shortcodes: it loads this
+-- file and reads them from here.
+ASTA_PAGES_LIB = {
+  project_root = project_root, project_path = project_path, absolute = absolute, normalize = normalize,
+  relative = relative, rendered_dir = rendered_dir, rendered_file = rendered_file, url_path = url_path,
+  list_dir = list_dir, is_dir = is_dir, read_file = read_file, decode_json = decode_json,
+  split_list = split_list, natural_sort = natural_sort, is_list = is_list, skip_name = skip_name,
+  read_index = read_index, is_node_file = is_node_file, has_nodes = has_nodes, autods_runs = autods_runs,
+  front_matter = front_matter, workflow_pages = workflow_pages, meta_text = meta_text, page_extras = page_extras,
+  slim_summary = slim_summary, summary_files = SUMMARY_FILES, url_decode = url_decode, file_size = file_size,
+  human_size = human_size, site_root = site_root, entry_id = entry_id, href_to = href_to,
+}
+
 return {
   ["asta-workflow"] = function(args, kwargs, meta)
     page_extras(meta)
@@ -1473,6 +1555,10 @@ return {
   ["asta-doc"] = function(args, kwargs, meta)
     page_extras(meta)
     return doc_panel(kwargs)
+  end,
+  ["asta-datasets"] = function(args, kwargs, meta)
+    page_extras(meta)
+    return datasets_panel(kwargs)
   end,
   ["asta-tests"] = function(args, kwargs, meta)
     page_extras(meta)

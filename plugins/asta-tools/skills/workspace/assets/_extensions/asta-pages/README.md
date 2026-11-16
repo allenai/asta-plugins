@@ -12,6 +12,7 @@ results, and that link every panel to the files on disk it was built from:
 {{< asta-files dir=".asta/flows/0004-x/04-gap-map" >}}          <!-- a folder's files -->
 {{< asta-doc file=".asta/flows/0004-x/04-gap-map/gaps.md" >}}   <!-- a markdown file, inline -->
 {{< asta-tests dir=".asta/flows/0004-x/07-tests" index=".asta/flows/0004-x/06-designs/tests.json" >}}
+{{< asta-datasets >}}                               <!-- the datasets in .asta/datasets.json -->
 ```
 
 ## Conventions
@@ -25,8 +26,11 @@ writes:
   `pages/*.qmd`, and its sidebar lists the front page, then the pages flat by file name
   (`- auto: "pages/*.qmd"`).
 - **Data files.** The widgets' own data (Theorizer site data, test summaries and indexes,
-  AutoDS runs, inline documents).
-- **Front matter.** `title:` and Quarto's own keys.
+  AutoDS runs, inline documents); `.asta/datasets.json`, the datasets the work used,
+  `[{id, name, released_by, used_for, links: [{label, url}]}]`; a theory's `gap` (written by
+  `theorizer-site-data --gap G7`); and a test index's `seed: {test_id, experiment}`.
+- **Front matter.** `title:` and Quarto's own keys. `asta-autolink: false` turns the link
+  cards off on a page.
 
 **A workflow page is widgets only.** A workspace keeps one page per workflow run,
 `pages/<NNNN>-<workflow>.qmd`: its title, a heading per step, and under each heading the widgets
@@ -140,6 +144,11 @@ title: "Gap-driven theory testing"
   with each test's verdict, effect, p, animals, files and figures; tests naming no theory on the
   page are listed under the panel.
 
+- **Datasets** (`asta-datasets`, or `file=` another file): the datasets in
+  `.asta/datasets.json` as a table, Dataset, Released by, Used for, Links. It is a table of the
+  page itself, so its links open their dataset cards and the test ids in "Used for" link to
+  their tests.
+
 **Files.** Every panel carries a small "Files" line linking what it was built from: the data
 files (several files in one folder, or several files of one name, are their folder), a test
 table's folders and indexes, an AutoDiscovery run's folder. An AutoDiscovery run's header also
@@ -187,10 +196,10 @@ test's figures (their copies in the site) and the files the panels link are load
 reader opens them.
 
 **The feed: the site's pages, one after another.** Scrolling past the end of a page loads the
-next page in the sidebar's order below it, to the last: in a workspace the workflow pages in run
-order.
+next page in the sidebar's order below it, to the last: in a workspace the front page, then the
+workflow pages in run order.
 
-- **Which page comes next:** every page an asta-pages shortcode runs on carries
+- **Which page comes next:** every page the asta-pages filter or a shortcode runs on carries
   where the site's root is (`script#asta-flow`), and `asta-pages.js` takes the sidebar's links
   into the site, once each (links elsewhere and repeats skipped), in the sidebar's order.
 - **Sections in the sidebar:** under each page's sidebar link, its level-2 headings (read from
@@ -241,6 +250,72 @@ order.
   `mermaid.run`, not yet checked in a browser). A widget's elements
   (`#theory-2` on two pages) can share an id across pages: the panels look them up within their
   own page, but the browser's own jump to a fragment goes to the first.
+
+**Links and their cards (autolink).** Every page's links open a small card of what they
+point at, and mentions of tests, theories, gaps and experiments in the text become such links:
+in the review on the front page, and in the workflow pages' own prose (the inline documents
+`asta-doc` shows, such as a gap map or a data inventory). The extension's filter does it, once
+it is listed:
+
+```yaml
+# _quarto.yml (after the evidence filter, if the project has one)
+filters:
+  - _extensions/evidence/snippet.lua
+  - asta-pages
+```
+
+It runs on every page (`asta-autolink: false` in a page's front matter turns it off there),
+after Quarto has expanded the shortcodes and cross-references and before citations are
+formatted (the extension declares `at: pre-render`). When a page renders, it reads the workflow
+pages (`pages/*.qmd`), their asta-pages shortcodes and the
+files those name, and the page's own figures, tables, bibliography and evidence. Nothing is
+fetched when a card opens: the page carries its cards once (`script.asta-cards-data`, keyed) and
+each link names its card (`data-asta-card`).
+
+| Link | Becomes a link when | Its card | A click goes to |
+|---|---|---|---|
+| Test id (`T3`, `node_3_1`) | a subfolder of an `asta-tests` `dir`, or an id in its `index` | verdict chip, effect, p, mice; the dataset (the index entry's `dataset`); up to four lines on the theory it tests (`theory_name`, `kind`) | the test's row, `#test-<id>` |
+| AutoDS node id (`node_3_1`) | a local run's `mcts_node_3_1.json` | Discovery: "Experiment 4 · node_3_1", hypothesis, belief before → after, surprisal | `#node-3-1` |
+| Theory name | a theory in an `asta-theories` file, whatever its spacing and dashes (—, –, -) | its tests as verdict chips (from the panel's `tests=` indexes), supporting and conflicting findings, its summary in up to four lines | the theory |
+| Gap (`G7`) | a theory whose `gap` is that id (`theorizer-site-data --gap G7` writes it), on any theories tab | each tab with such a theory: its question in one line, how many theories, a tally of their tests ("6 tests: 1 met · 4 not met · 1 undecided"); the gap map entry (an inline document's heading or list item that starts with the id, `[G7, open] …`, which `asta-doc` anchors) | the first such tab, `#query-<n>` |
+| "Experiment N" | a test index's top-level `"seed": {"test_id": …, "experiment": N}` (older indexes: a string `"<id> (Experiment N …)"`); and the hosted experiment the run was seeded from (`args.json`'s `dataset_metadata` → its `lineage`: `parent_run_id`, `seed_experiment`), or a page link to `autodiscovery.allen.ai/…?exp=N` | Discovery (the hosted experiment, with the hypothesis and beliefs of `source-experiment-N.*.json` beside the metadata) and Verification (the test) | the test |
+| "Figure N", `@fig-…` | the page's `::: {#fig-…}` blocks, numbered as Quarto numbers them | a thumbnail, the caption's first sentence, n when the caption states a single `n = …`, and the audit's verdict when an `audit.json` with a `verdict` sits in the image's folder or in a step folder named for the figure (`.asta/flows/*/*/<fig-id>/`) | the figure |
+| External link | any `http(s)` link in the text | a paper (doi.org, semanticscholar.org, or a bibliography entry's URL or DOI): title, authors, year, venue; a dataset (one of a dataset's `links` in `.asta/datasets.json`): its `name`, `released_by` and `used_for`; anything else: the site and the link's text. Always "Opens in a new tab", and the link does | the link, in a new tab |
+| Citation (`[@key]`) | a bibliography entry | the quote of an evidence claim in the same paragraph citing it, then title, authors, year, venue, and Semantic Scholar and DOI links | the reference |
+| Evidence claim (`[…]{.ev}`) | the evidence filter's popover markup | its quote, then the source as for a citation | — |
+| Workspace file | a link to a file of the project outside the site (in the text, or an inline document's) | name, folder, size; "Opens in Files" in the app's frame, "Opens on GitHub" once a deployed site's links point there | the file |
+
+A mention that names several things (a node id that is both the AutoDS experiment and its
+reproduction test; "Experiment 7", the hosted seed and its test) links to the test, else the
+theory, the experiment, the hosted experiment, the figure, the gap, and its card lists each,
+with a footer saying where a click goes ("Clicking node_3_1 opens the test"); it is marked by a
+dotted underline. When two pages show the same thing, the first page by file name wins. Tests,
+theories, experiments and figures are linked at their first mention in a paragraph (list item,
+table cell); a gap at its first mention in a section (heading to heading). A mention must stand
+as a word (`node_3_1` does not link inside `node_3_12`, `G7` not inside `G7-T5`). Headings,
+code, the reference list and Quarto's navigation text are left as they are. `asta-doc` gives a
+list item or heading that starts with an id (`G1 …`, `[G1, open] …`) the anchor
+`doc-<file>-<id>`, which a gap's card links.
+
+**The cards.** One renderer (`asta-pages.js`) draws every card from the same parts: sections,
+each with any of a role, a linked title, a sub line, a thumbnail, a quote, text clamped to some
+lines, a test's verdict, tests' verdict chips, a tally, facts and links, then a footer. A new
+kind of link needs an adapter in `autolink.lua` that returns such a card, and no card code.
+Hovering a link, focusing it or tapping it opens its card beside it, below or above, never over
+it, the size of a short note (380 px at most); the card stays while the pointer is on it and
+closes when the pointer has left both for a moment, on Esc (focus back on the link) or on a
+click elsewhere; Tab from the link goes into the card; on a touch screen a first tap opens the
+card and a second follows the link. A link with a card has no native `title`, and Quarto's own
+reference and cross-reference previews are switched off on it, so one hover shows. The cards
+take the theme's colours (light and dark), and work in the app's site frame, on GitHub Pages,
+and in the feed (a page appended there brings its own cards; their links resolve from it). An AutoDS hypothesis, a theory's name and summary, and the theory a test belongs to show up to four lines (`DESCRIPTION_LINES` in `autolink.lua`).
+
+**With the evidence extension.** Evidence keeps owning the claims and their quotes (its filter
+writes them as a hidden popover, `.ev > .ev-pop`, shown with CSS). The asta-pages filter runs
+after it and reads that markup; where it gives a claim a card, `asta-pages.js` marks the page
+(`html.asta-cards`) and `asta-pages.css` keeps evidence's popover shut on those claims. Without
+asta-pages, or where its script does not run (the what-changed diff page), evidence's popover
+shows as before.
 
 `make workspace-assets` fetches this extension when a page uses one of its shortcodes, like the
 evidence extension. To customize it, commit a copy of `_extensions/asta-pages` and remove its
