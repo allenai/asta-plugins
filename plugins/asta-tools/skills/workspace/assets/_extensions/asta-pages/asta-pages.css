@@ -297,6 +297,148 @@ table.ap-ev-table { border-collapse: separate; border-spacing: 0; margin: 0; fon
 .ap-ev-schema .ap-legend { margin: 0 0 6px; }
 .ap-tt .ap-from { color: var(--ap-faint); font-size: 12px; font-weight: 400; white-space: nowrap; }
 
+/* ---- AutoDiscovery runs (asta-autods): autodiscovery.allen.ai's run view in these pages'
+   style: the run's header, its search tree, the experiments table, the selected experiment ---- */
+.asta-autods { --ap-surprise: #c46a00; }                    /* --color-warning-orange, deepened for cream */
+body.quarto-dark .asta-autods { --ap-surprise: #ffa31c; }   /* --color-warning-orange */
+.asta-autods .af-icon, .ap-ad-layer .af-icon { width: 18px; height: 18px; fill: currentColor; flex: none; }
+.ap-ad-runs { margin-bottom: 32px; }
+.ap-ad-run { scroll-margin-top: 80px; }
+.ap-ad-run > .ap-theory-head { padding-bottom: 12px; }
+.ap-ad-links { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 20px; margin-top: 10px; font-size: 14px; }
+.asta-panel .ap-ad-linkbtn {
+  background: none; border: 0; padding: 0; cursor: pointer; color: var(--ap-link); font-weight: 500;
+  text-decoration: underline; text-decoration-color: var(--ap-link-underline, var(--ap-accent));
+  text-decoration-thickness: var(--ap-link-thickness, 2px); text-underline-offset: var(--ap-link-offset, 3px);
+}
+.asta-panel .ap-ad-linkbtn:hover { color: var(--ap-link-hover); }
+
+/* ExperimentGraph */
+.ap-ad-tree {
+  position: relative; height: 440px; margin-top: 4px; border: 1px solid var(--ap-line); border-radius: var(--ap-r);
+  background: var(--ap-raised); overflow: hidden;
+}
+.ap-ad-tree-svg { width: 100%; height: 100%; display: block; cursor: grab; user-select: none; }
+.ap-ad-tree-svg:active { cursor: grabbing; }
+.ap-ad-tree-svg circle:focus { outline: none; stroke: var(--ap-accent); stroke-width: 3.5; }
+.ap-ad-zoom { position: absolute; top: 10px; right: 10px; display: flex; flex-direction: column; gap: 4px; }
+.ap-ad-zoom button {
+  width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center; padding: 0; cursor: pointer;
+  border: 1px solid var(--ap-line); border-radius: 6px; background: var(--ap-cream); color: var(--ap-muted);
+}
+.ap-ad-zoom button:hover { color: var(--ap-text); border-color: var(--ap-muted); }
+.ap-ad-tree + .ap-legend { margin-bottom: 28px; }
+
+/* ExperimentsTable */
+.ap-ad-exps-head { display: flex; align-items: center; gap: 16px; margin: 0 0 12px; }
+.ap-ad-exps-head .ap-tt-head { margin: 0; }
+.ap-ad-search {
+  margin-left: auto; font: inherit; font-size: 14px; color: var(--ap-text); background: var(--ap-raised);
+  border: 1px solid var(--ap-line); border-radius: var(--ap-r); padding: 5px 10px; width: 16rem; max-width: 50%;
+}
+.ap-ad-search::placeholder { color: var(--ap-faint); }
+.ap-tt.ap-collapsed .ap-ad-search, .ap-tt.ap-collapsed + .ap-legend { display: none; }
+.ap-tt.ap-collapsed > .ap-legend { display: none; }
+.ap-ad-scroll { max-height: 30rem; overflow: auto; }
+.ap-ad-exps table { table-layout: fixed; }
+.ap-ad-exps th { position: sticky; top: 0; z-index: 1; padding: 0; }
+.ap-ad-exps th button {
+  display: flex; align-items: center; gap: 4px; width: 100%; padding: 12px 16px; background: none; border: 0; cursor: pointer;
+  font-weight: 700; font-size: 13px; color: var(--ap-text); text-align: left; white-space: nowrap;
+}
+.ap-ad-exps th.ap-ad-c-num button { justify-content: flex-end; }
+.ap-ad-sort { display: inline-flex; opacity: 0; color: var(--ap-muted); transition: transform 160ms ease-out; }
+.ap-ad-sort .af-icon { width: 14px; height: 14px; }
+.ap-ad-exps th button:hover .ap-ad-sort, .ap-ad-exps th button.ap-ad-sorted .ap-ad-sort { opacity: 1; }
+.ap-ad-exps th button.ap-ad-desc .ap-ad-sort { transform: rotate(180deg); }
+.ap-ad-exps td { vertical-align: top; }
+.ap-ad-c-id { width: 56px; color: var(--ap-muted); font-variant-numeric: tabular-nums; }
+.ap-ad-c-num { width: 104px; text-align: right !important; font-variant-numeric: tabular-nums; color: var(--ap-muted); }
+.ap-ad-c-belief, .ap-ad-c-dir { width: 124px; color: var(--ap-muted); }
+.ap-ad-exps td.ap-ad-surprising { color: var(--ap-surprise); font-weight: 700; }
+.ap-ad-hyp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--ap-link); font-weight: 500; }
+.ap-ad-exps tbody tr.ap-selected .ap-ad-hyp { color: var(--ap-text); font-weight: 700; }
+.ap-ad-exps tbody tr:focus-visible { outline: 2px solid var(--ap-link); outline-offset: -2px; }
+.ap-ad-none { text-align: center; color: var(--ap-muted); cursor: default; }
+@media (max-width: 760px) { .ap-ad-c-belief, .ap-ad-c-dir { display: none; } }
+
+/* The selected experiment: ExperimentDetails, as the theory page shows a theory */
+.ap-ad-exp { margin-top: 36px; scroll-margin-top: 80px; }
+.ap-ad-exp .ap-theory-head p { max-width: 90ch; }
+.ap-chip.ap-ad-chiplink { text-decoration: none; color: var(--ap-link); }
+.ap-chip.ap-ad-chiplink:hover { color: var(--ap-link-hover); }
+.ap-ad-panel { display: flex; flex-direction: column; gap: 24px; }
+.ap-ad-panel[hidden] { display: none; }
+.ap-ad-panel p { margin: 0 0 8px; max-width: 90ch; }
+.ap-ad-panel p:last-child { margin-bottom: 0; }
+.ap-ad-panel code { font-size: 0.9em; }
+
+/* BeliefDistributionPlot */
+.ap-ad-belief { --ap-before: var(--ap-accent); --ap-after: var(--ap-link); position: relative; max-width: 90ch; margin-top: 4px; }
+.ap-ad-belief-labels { position: relative; height: 22px; }
+.ap-ad-b-top { position: absolute; bottom: 2px; transform: translateX(-50%); white-space: nowrap; font-size: 13px; font-weight: 600; }
+.ap-ad-b-top.ap-ad-b-pre { color: var(--ap-before); }
+.ap-ad-b-top.ap-ad-b-post { color: var(--ap-after); }
+.ap-ad-belief-axis { position: relative; height: 14px; }
+.ap-ad-belief-axis::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; border-top: 1px solid var(--ap-line); }
+.ap-ad-b-dot { position: absolute; top: 50%; width: 14px; height: 14px; border-radius: 50%; transform: translate(-50%, -50%); }
+.ap-ad-b-dot.ap-ad-b-pre { background: var(--ap-before); }
+.ap-ad-b-dot.ap-ad-b-post { background: var(--ap-after); }
+.ap-ad-b-arrow { position: absolute; top: 50%; border-top: 2px solid var(--ap-muted); }
+.ap-ad-surprising .ap-ad-b-arrow { border-top-color: var(--ap-surprise); }
+.ap-ad-b-arrow::after { content: ""; position: absolute; top: -6px; right: 6px; border: 5px solid transparent; border-left: 8px solid var(--ap-muted); border-right: 0; }
+.ap-ad-surprising .ap-ad-b-arrow::after { border-left-color: var(--ap-surprise); }
+.ap-ad-b-arrow.ap-ad-b-left::after { right: auto; left: 6px; border-left: 0; border-right: 8px solid var(--ap-muted); }
+.ap-ad-surprising .ap-ad-b-arrow.ap-ad-b-left::after { border-right-color: var(--ap-surprise); }
+.ap-ad-belief-ends { display: flex; justify-content: space-between; color: var(--ap-faint); font-size: 12px; margin-top: 4px; }
+
+/* RichOutputsSection: the figures, in the experiment, each opening full size */
+.ap-ad-figs { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
+.ap-ad-fig {
+  display: flex; flex-direction: column; gap: 6px; padding: 8px; cursor: zoom-in; text-align: left;
+  border: 1px solid var(--ap-line); border-radius: var(--ap-r); background: var(--ap-raised);
+}
+.ap-ad-fig:hover { border-color: var(--ap-muted); }
+.ap-ad-fig img { width: 100%; height: auto; border-radius: 4px; background: #fff; }
+.ap-ad-fig span { font-size: 13px; color: var(--ap-muted); }
+.ap-ad-fig-text { margin: 0; white-space: pre-wrap; font-size: 13px; }
+
+/* CodeBlock: numbered lines, folded after twenty */
+.ap-ad-code { border: 1px solid var(--ap-line); border-radius: var(--ap-r); overflow: hidden; background: var(--ap-sunk); }
+.ap-ad-code pre { margin: 0; padding: 10px 0; max-height: 36rem; overflow: auto; background: transparent; border: 0; font-size: 12.5px; line-height: 1.55; color: var(--ap-text); }
+.ap-ad-code pre code { background: none; color: inherit; padding: 0; white-space: pre; }
+.ap-ad-line { display: block; padding-right: 12px; }
+.ap-ad-folded .ap-ad-past { display: none; }
+.ap-ad-ln { display: inline-block; width: 3.2em; padding-right: 1em; text-align: right; color: var(--ap-faint); user-select: none; }
+.ap-ad-unfold {
+  display: flex; align-items: center; gap: 6px; width: 100%; padding: 8px 12px; cursor: pointer;
+  background: var(--ap-raised); border: 0; border-top: 1px solid var(--ap-line); color: var(--ap-muted); font-size: 13px;
+}
+.ap-ad-unfold .ap-chevron { width: 14px; height: 14px; }
+.ap-ad-unfold.ap-ad-open .ap-chevron { transform: rotate(180deg); }
+
+/* The dialog layer: Session configuration and a figure at full size */
+.ap-ad-layer { position: fixed; inset: 0; z-index: 2000; display: flex; align-items: center; justify-content: center; padding: 32px; background: rgba(3, 38, 41, 0.6); }
+.ap-ad-layer[hidden] { display: none; }
+.ap-ad-dialog {
+  width: min(960px, 100%); max-height: 100%; display: flex; flex-direction: column; overflow: hidden;
+  background: var(--ap-cream); color: var(--ap-text); border: 1px solid var(--ap-line); border-radius: 12px; box-shadow: 0 16px 48px rgba(0, 0, 0, 0.3);
+}
+.ap-ad-dialog-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 20px; border-bottom: 1px solid var(--ap-line); }
+.ap-ad-dialog-head h3 { font-size: 18px; font-weight: 700; }
+.ap-ad-x { background: none; border: 0; padding: 4px; cursor: pointer; color: var(--ap-muted); display: inline-flex; border-radius: 6px; }
+.ap-ad-x:hover { color: var(--ap-text); }
+.ap-ad-dialog-body { padding: 20px; overflow: auto; }
+.ap-ad-fig-full { display: block; width: 100%; max-height: 75vh; object-fit: contain; background: #fff; border-radius: 4px; }
+.ap-ad-params { display: flex; flex-direction: column; gap: 16px; }
+.ap-ad-params h4 { font-size: 16px; font-weight: 700; margin: 4px 0 0; color: var(--ap-text); }
+.ap-ad-pre { white-space: pre-wrap; margin: 0; max-width: 90ch; }
+.ap-ad-dataset > summary { cursor: pointer; list-style: none; display: inline-flex; align-items: center; gap: 6px; }
+.ap-ad-dataset > summary::-webkit-details-marker { display: none; }
+.ap-ad-dataset > summary .ap-chevron { transform: rotate(-90deg); width: 14px; height: 14px; color: var(--ap-muted); }
+.ap-ad-dataset[open] > summary .ap-chevron { transform: none; }
+.ap-ad-dataset p { margin-top: 8px; padding: 12px 14px; background: var(--ap-sunk); border-radius: var(--ap-r); font-size: 14px; }
+
 /* The run's workflow diagram: a long left-to-right chain scrolls sideways rather than shrinking
    until its labels cannot be read (asta-pages.lua sizes it once Mermaid has drawn it). */
 .asta-workflow { overflow-x: auto; margin: 0.5rem 0 1.5rem; }

@@ -20,6 +20,18 @@
 -- is drawn by theories.js / literature.js. A missing or unreadable file renders a visible
 -- error box in place of the panel and a warning in the render log, never a silent blank.
 --
+--   {{< asta-autods data="autods" >}}                    AutoDiscovery runs, drawn as the hosted
+--                                                        run page (autodiscovery.allen.ai)
+--
+-- asta-autods's `data` is a run's own files: `asta autodiscovery results` JSON ({run,
+-- experiments}: tree, figures, settings), the hosted Download → JSON or → CSV (the CSV has no
+-- tree, code or figures), a local run's output folder (mcts_node_*.json, rich_outputs/), or a
+-- run folder (run.md with experiments.csv and/or results.json). A folder of such files and
+-- folders is several runs, one per file or folder, in name
+-- order; a run whose results and CSV both sit there is drawn once, from the results. The page
+-- carries the runs as JSON like the other panels (each figure in one form, the smallest; a
+-- local node without its LLM transcript); autods.js draws it. `name` titles a single run.
+--
 --   {{< asta-workflow >}}                                 the run's workflow diagram
 --
 -- reads `workflow.mmd` beside the page (or file="..."), a Mermaid diagram the agent keeps
@@ -99,6 +111,31 @@ local function split_list(s, sep)
     if item ~= "" then out[#out + 1] = item end
   end
   return out
+end
+
+local function read_file(path)
+  local f = io.open(path, "r")
+  if f == nil then return nil end
+  local text = f:read("a")
+  f:close()
+  return text
+end
+
+local function list_dir(path)
+  local ok, names = pcall(pandoc.system.list_directory, path)
+  if not ok then return nil end
+  table.sort(names)
+  return names
+end
+
+-- JSON from a file's text, or nil. Python writes NaN and Infinity, which JSON has no words for:
+-- read as null. Empty text is nil without asking the decoder (which logs what it cannot read).
+local function decode_json(text)
+  if type(text) ~= "string" or text:match("^%s*$") then return nil end
+  local clean = text:gsub("([:,%[]%s*)%-?NaN(%s*[,%]}])", "%1null%2"):gsub("([:,%[]%s*)%-?Infinity(%s*[,%]}])", "%1null%2")
+  local ok, data = pcall(quarto.json.decode, clean)
+  if ok then return data end
+  return nil
 end
 
 -- asta-theories: one or more data files (data="a.json,b.json"), one per Theorizer project,
@@ -210,6 +247,206 @@ local function theories_panel(kwargs)
     names_attr .. papers_attr .. '></div>\n' .. table.concat(scripts, "\n"))
 end
 
+-- ---- asta-autods ---------------------------------------------------------------------------
+
+
+local function is_node_file(name) return name:match("^mcts_node_%d+_%d+%.json$") ~= nil end
+
+local function has_nodes(names)
+  for _, n in ipairs(names or {}) do if is_node_file(n) then return true end end
+  return false
+end
+
+-- The fields of an mcts_node record the run view shows. The rest (the LLM messages, the
+-- untried and tried experiment lists) is most of the file and nothing a reader opens.
+local NODE_FIELDS = { "id", "parent_id", "creation_idx", "created_at", "success", "surprising",
+  "normalized_surprisal", "belief_change", "prior", "posterior", "hypothesis", "experiment_plan",
+  "code", "code_output", "analysis", "review", "time_elapsed" }
+-- A figure is kept in one form, the smallest of its images (the hosted RichOutputsSection shows
+-- SVG, then PNG, then JPEG; they are the same figure). A run's every figure in every form is
+-- 10-20 MB a run; one form is a third of that.
+local IMAGE_MIMES = { "image/svg+xml", "image/png", "image/jpeg" }
+
+local function slim_bundles(bundles)
+  if type(bundles) ~= "table" then return nil end
+  local out = {}
+  for _, b in ipairs(bundles) do
+    if type(b) == "table" then
+      local best
+      for _, mime in ipairs(IMAGE_MIMES) do
+        if type(b[mime]) == "string" and (best == nil or #b[mime] < #b[best]) then best = mime end
+      end
+      if best then out[#out + 1] = { [best] = b[best] }
+      elseif type(b["text/plain"]) == "string" then out[#out + 1] = { ["text/plain"] = b["text/plain"] } end
+    end
+  end
+  return out
+end
+
+-- A local run's settings and what it was told, for its Session configuration: AutoDiscovery
+-- writes the run's arguments to args.json in the output folder (`user_query` is the intent), and
+-- `dataset_metadata` names the file holding the run's name, description and datasets (a path
+-- from where the run was started, or absolute).
+local ARG_FIELDS = { "n_experiments", "exploration_weight", "mcts_selection", "surprisal_width", "evidence_weight" }
+
+local function local_meta(dir)
+  local args = decode_json(read_file(pandoc.path.join({ dir, "args.json" })))
+  if type(args) ~= "table" then return nil end
+  local meta = { intent = args.user_query }
+  for _, k in ipairs(ARG_FIELDS) do meta[k] = args[k] end
+  local mp = args.dataset_metadata
+  if type(mp) == "string" and mp ~= "" then
+    local paths = { mp }
+    if not pandoc.path.is_absolute(mp) then
+      paths = { pandoc.path.join({ quarto.project.directory or ".", mp }), pandoc.path.join({ dir, mp }) }
+    end
+    for _, p in ipairs(paths) do
+      local m = decode_json(read_file(p))
+      if type(m) == "table" then
+        meta.name, meta.description, meta.datasets = m.name, m.description, m.datasets
+        meta.intent = meta.intent or m.intent
+        break
+      end
+    end
+  end
+  return meta
+end
+
+local function node_run(dir, rel)
+  local nodes, skipped = {}, 0
+  for _, name in ipairs(list_dir(dir) or {}) do
+    -- mcts_node_1_0 loads the dataset; it is never an experiment (the hosted API drops it too).
+    if is_node_file(name) and name ~= "mcts_node_1_0.json" then
+      local node = decode_json(read_file(pandoc.path.join({ dir, name })))
+      if type(node) == "table" then
+        local slim = {}
+        for _, k in ipairs(NODE_FIELDS) do slim[k] = node[k] end
+        local suffix = tostring(node.id or name):match("(%d+_%d+)")
+        local ro = suffix and read_file(pandoc.path.join({ dir, "rich_outputs", "ro_" .. suffix .. ".json" }))
+        local figures = slim_bundles(decode_json(ro))
+        if figures and #figures > 0 then slim.figures = figures end
+        nodes[#nodes + 1] = slim
+      else
+        skipped = skipped + 1
+      end
+    end
+  end
+  if skipped > 0 then
+    quarto.log.warning("asta-autods: " .. skipped .. " node file(s) in " .. rel .. " could not be read")
+  end
+  return { kind = "nodes", source = rel, nodes = nodes, skipped = skipped, meta = local_meta(dir) }
+end
+
+local function file_run(path, rel)
+  local text = read_file(path)
+  if text == nil then return nil end
+  if not rel:lower():match("%.json$") then
+    return { kind = "csv", source = rel, text = text }
+  end
+  -- Results JSON (`asta autodiscovery results`, the hosted Download → JSON): each experiment's
+  -- figures kept in one form. A file that does not parse is passed as text, for the page to
+  -- say so.
+  local ok, data = pcall(quarto.json.decode, text)
+  if not ok or type(data) ~= "table" then
+    return { kind = "json", source = rel, text = text }
+  end
+  local list = data.experiments or data
+  if type(list) == "table" then
+    for _, e in ipairs(list) do
+      if type(e) == "table" then
+        if type(e.rich_outputs) == "table" then e.rich_outputs = slim_bundles(e.rich_outputs) end
+        if type(e.richOutputs) == "table" then e.richOutputs = slim_bundles(e.richOutputs) end
+      end
+    end
+  end
+  return { kind = "json", source = rel, data = data }
+end
+
+-- A run folder: the run's record (run.md: title, label, name, link, ## Prompt) beside its files,
+-- experiments.csv (the download, perhaps with review columns of its own) and results.json
+-- (`asta autodiscovery results`). Both files are passed; the page draws from the results and
+-- takes the CSV's own columns beside them.
+local function is_run_folder(names)
+  for _, n in ipairs(names or {}) do
+    if n == "run.md" or n == "experiments.csv" or n == "results.json" or n:match("%.results%.json$") then return true end
+  end
+  return false
+end
+
+local function folder_run(dir, rel, names)
+  local run = { kind = "folder", source = rel, runmd = read_file(pandoc.path.join({ dir, "run.md" })) }
+  for _, n in ipairs(names) do
+    local child, crel = pandoc.path.join({ dir, n }), rel .. "/" .. n
+    if n == "results.json" or n:match("%.results%.json$") then
+      run.results = file_run(child, crel)
+    elseif n == "experiments.csv" then
+      run.csv = read_file(child)
+      run.csvSource = crel
+    end
+  end
+  if has_nodes(names) then
+    local nr = node_run(dir, rel)
+    run.nodes, run.meta = nr.nodes, nr.meta
+  end
+  return run
+end
+
+-- The runs `data` names: one file, one local output folder or run folder, or a folder of them.
+local function autods_runs(rel)
+  rel = rel:gsub("/$", "")
+  local path = pandoc.path.join({ page_dir(), rel })
+  local names = list_dir(path)
+  if names == nil then
+    local run = file_run(path, rel)
+    return run and { run } or nil
+  end
+  if is_run_folder(names) then return { folder_run(path, rel, names) } end
+  if has_nodes(names) then return { node_run(path, rel) } end
+  local runs = {}
+  for _, name in ipairs(names) do
+    local child, crel = pandoc.path.join({ path, name }), rel .. "/" .. name
+    local lower = name:lower()
+    local sub = list_dir(child)
+    if sub ~= nil then
+      if is_run_folder(sub) then runs[#runs + 1] = folder_run(child, crel, sub)
+      elseif has_nodes(sub) then runs[#runs + 1] = node_run(child, crel) end
+    elseif name:sub(1, 1) ~= "." and (lower:match("%.csv$") or lower:match("%.json$")) then
+      runs[#runs + 1] = file_run(child, crel)
+    end
+  end
+  return runs
+end
+
+local function autods(kwargs)
+  if not quarto.doc.is_format("html") then
+    return pandoc.Null()
+  end
+  add_deps("autods")
+  local rel = pandoc.utils.stringify(kwargs["data"] or "")
+  local err
+  local runs = rel ~= "" and autods_runs(rel) or nil
+  if rel == "" then
+    err = "the shortcode names no run files; use data=\"autods\" (a folder) or a run's CSV."
+  elseif runs == nil then
+    err = "cannot read " .. rel .. ". Put the run's results (asta autodiscovery results), its download or its output folder there, then render again."
+  elseif #runs == 0 then
+    err = rel .. " holds no AutoDiscovery runs (no .csv or .json files, no mcts_node_*.json)."
+  end
+  if err then
+    quarto.log.warning("asta-autods: " .. err)
+    return pandoc.RawBlock("html",
+      '<div class="asta-panel"><div class="ap-error">This page has no data yet: ' ..
+      html_escape(err) .. '</div></div>')
+  end
+  local name = pandoc.utils.stringify(kwargs["name"] or "")
+  if name ~= "" and #runs == 1 then runs[1].name = name end
+  local text = quarto.json.encode({ format = "asta-pages/autods@1", runs = runs })
+  local safe = text:gsub("</", "<\\/")
+  return pandoc.RawBlock("html",
+    '<div class="asta-panel asta-autods" data-asta-source="' .. html_escape(rel) .. '"></div>\n' ..
+    '<script type="application/json" id="asta-autods-data">' .. safe .. '</script>')
+end
+
 local function workflow(kwargs)
   if not quarto.doc.is_format("html") then
     return pandoc.Null()
@@ -265,5 +502,8 @@ return {
   end,
   ["asta-literature"] = function(args, kwargs, meta)
     return panel("literature", "literature", kwargs)
+  end,
+  ["asta-autods"] = function(args, kwargs, meta)
+    return autods(kwargs)
   end,
 }

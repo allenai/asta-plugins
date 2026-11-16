@@ -29,7 +29,7 @@ workspace-assets:
 	if find . -type d \( -path ./build -o -path ./_site -o -path ./venv -o -path ./paper-previews -o -name _extensions -o -name node_modules -o \( ! -path . -name '.*' \) -o \( ! -path . -exec test -e '{}/.git' \; \) \) -prune -o -type f \( -name slides.qmd -o \( -name '*.qmd' -exec grep -q 'asta-slides-revealjs' {} \; \) \) -print -quit | grep -q .; then \
 		required_exts="$$required_exts asta-slides"; \
 	fi; \
-	if find . -type d \( -path ./build -o -path ./_site -o -path ./venv -o -path ./paper-previews -o -name _extensions -o -name node_modules -o \( ! -path . -name '.*' \) -o \( ! -path . -exec test -e '{}/.git' \; \) \) -prune -o -type f -name '*.qmd' -exec grep -Eq '\{\{< *asta-(theories|literature|workflow) ' {} \; -print -quit | grep -q .; then \
+	if find . -type d \( -path ./build -o -path ./_site -o -path ./venv -o -path ./paper-previews -o -name _extensions -o -name node_modules -o \( ! -path . -name '.*' \) -o \( ! -path . -exec test -e '{}/.git' \; \) \) -prune -o -type f -name '*.qmd' -exec grep -Eq '\{\{< *asta-(theories|literature|autods|workflow) ' {} \; -print -quit | grep -q .; then \
 		required_exts="$$required_exts asta-pages"; \
 	fi; \
 	if cat _quarto*.yml 2>/dev/null | sed '/^[[:space:]]*#/d' | grep -Eq '_extensions/asta-theme/(light\.scss|dark\.scss|asta\.css|asta-head\.html)'; then \

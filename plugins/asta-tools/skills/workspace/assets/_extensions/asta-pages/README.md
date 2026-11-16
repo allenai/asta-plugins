@@ -1,4 +1,4 @@
-# asta-pages — theory and paper pages for a run
+# asta-pages — theory, paper and AutoDiscovery pages for a run
 
 Shortcodes that turn a run's files into page panels, the way the Asta app shows Theorizer's
 results:
@@ -7,6 +7,7 @@ results:
 {{< asta-theories data="data/theorizer.json" >}}    <!-- the Theorizer panel -->
 {{< asta-theories data="data/theorizer.json,data/theorizer-v2.json" >}}  <!-- several projects -->
 {{< asta-literature data="data/papers.json" >}}     <!-- the paper list -->
+{{< asta-autods data="autods" >}}                   <!-- AutoDiscovery runs -->
 {{< asta-workflow >}}                               <!-- workflow.mmd beside the page, if any -->
 ```
 
@@ -35,12 +36,27 @@ results:
 - **Paper list:** the run's papers, each marked as used by the theories, read in full but not
   used, or not read (abstract only), with a text filter and facets (sort, part in the run, year,
   venue, author). Copies of one work (a preprint and its published version) are shown once.
+- **AutoDiscovery runs:** a run as autodiscovery.allen.ai's run page shows it, in these pages'
+  style and the site's light and dark colours: the run's header (status, when it finished, how
+  many experiments and how many surprising; Open in AutoDiscovery, the CSV, and Session
+  configuration with the run's prompt, data and settings), its search tree (circles numbered as
+  the table, orange for a surprising result; click to open, drag, zoom), the experiments table
+  (sortable, filterable), and the selected experiment: its hypothesis, then Result (belief
+  shift, analysis, figures that open full size, review), Plan and Code tabs. `data` names a
+  run's `asta autodiscovery results` JSON, the hosted Download → JSON or → CSV, a local run's
+  output folder, or a run folder (`run.md` with `experiments.csv` and/or `results.json`: the
+  record's title, label, link and `## Prompt` are used, and the CSV's own columns, such as an
+  agent review, join the results). The CSV download keeps no tree, code, figures or settings.
+  One run per page keeps a page to a few MB (each figure is embedded once, in its smallest
+  form); a folder of runs lists them first. Anchors: `#experiment-7` (`#run-2/experiment-7`
+  with several runs), and a local run's node id, `#node-3-1` or `#node_3_1` (the node of
+  `mcts_node_3_1.json`; `#run-2/node-3-1`).
 - **Workflow:** the Mermaid diagram in `workflow.mmd` (or `file="..."`) under a "Workflow"
   heading, drawn by the Mermaid runtime that Quarto ships, copied into the site. With no file it
   renders nothing, so a page can carry it before a diagram exists.
 
 `data` is relative to the page. The file is read at render time and embedded in the page, so the
-page makes no request at view time. A
+page makes no request at view time (a 50-experiment run with its figures is about 4 MB). A
 missing or unreadable file renders a visible error box and a render warning. Anchors: `#theory-2` selects a theory, `#finding-<uuid>` opens the Evidence tab
 at that row, `#query-2` selects a query's tab, `#paper-<corpus id>` scrolls to a paper.
 
