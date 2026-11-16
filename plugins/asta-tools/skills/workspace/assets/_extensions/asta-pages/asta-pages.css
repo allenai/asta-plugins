@@ -688,6 +688,19 @@ body.quarto-dark .asta-panel.asta-al-card { box-shadow: 0 8px 24px rgba(0, 0, 0,
 .asta-al-card .ap-al-links { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 4px; font-size: 12.5px; }
 .asta-al-card .ap-al-foot { margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--ap-hairline); font-size: 12px; color: var(--ap-faint); }
 
+/* ---- a figure's provenance (provenance.lua): "Made from make_figure.py · 3 inputs · audit PASS" ---- */
+.asta-made-from {
+  margin: -0.4rem 0 1.4rem; font-family: Manrope, Arial, sans-serif; font-size: 0.82rem; line-height: 1.5;
+  color: var(--bs-secondary-color, #6e9291);
+}
+.asta-made-from a { color: inherit; text-decoration: underline; text-underline-offset: 2px; text-decoration-thickness: 1px; }
+.asta-made-from a:hover { color: var(--bs-link-color, inherit); }
+.asta-made-from details.asta-made-inputs { display: inline; }
+.asta-made-from details.asta-made-inputs > summary { display: inline; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 2px; }
+.asta-made-from details.asta-made-inputs > summary::-webkit-details-marker { display: none; }
+.asta-made-from details.asta-made-inputs[open] > ul { display: block; margin: 0.25rem 0 0.25rem 1rem; padding: 0; }
+.asta-made-from .asta-made-dir, .asta-made-from .asta-made-missing { opacity: 0.75; }
+
 /* "On this page" while it lists just the sections the sidebar lists for the page in view. */
 nav[role="doc-toc"].asta-toc-same {
   display: none;

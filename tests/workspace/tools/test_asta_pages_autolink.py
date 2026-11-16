@@ -76,6 +76,18 @@ Figure 1 shows it, as does @fig-one.
 Alpha across mice, n = 5. More words here.
 :::
 
+::: {#fig-two}
+![](fig2.png)
+
+A figure with no record of what it was made from.
+:::
+
+::: {#fig-three}
+![](fig3.png)
+
+A figure whose record names a file that is not there.
+:::
+
 ## Data
 
 {{< asta-datasets >}}
@@ -116,7 +128,34 @@ def site(tmp_path_factory):
         ],
     )
     _write(project / "fig.png", "png")
+    _write(project / "fig2.png", "png")
+    _write(project / "fig3.png", "png")
+    # What the figures were made from: fig-one's folder is named for it; fig-three's record is
+    # found by its id; fig-two has none.
     _json(project / FIGS / "fig-one/audit.json", {"verdict": "PASS"})
+    _write(project / FIGS / "fig-one/make_figure.py", "print(1)\n")
+    _json(
+        project / FIGS / "fig-one/figure.json",
+        {
+            "id": "fig-one",
+            "script": "make_figure.py",
+            "inputs": ["notes/a.md", "notes/b.csv", "notes/c.csv", "notes/d.csv"],
+            "audit": "audit.json",
+        },
+    )
+    for name in ("b.csv", "c.csv", "d.csv"):
+        _write(project / "notes" / name, "x\n")
+    _json(
+        project / FIGS / "third/figure.json",
+        {
+            "id": "fig-three",
+            "inputs": [
+                "notes/a.md",
+                "notes/missing.csv",
+                "/data/archive/session-1.nwb",
+            ],
+        },
+    )
     # An AutoDS run seeded from a hosted experiment (mcts_node_1_0 loads the data).
     _json(
         project / RUN / "args.json",
@@ -378,6 +417,45 @@ def test_a_gap_is_the_theories_gap_field(site):
     store = _store(pages["index.html"])
     assert "m:Q9" not in store, "a query that starts with an id names no gap"
     assert "#query-" not in str([t for t, _ in _links(_main(pages["index.html"]))])
+
+
+def test_a_figure_shows_what_it_was_made_from(site):
+    pages, log = site
+    page = pages["index.html"]
+    lines = re.findall(r'<div class="asta-made-from">(.*?)</div>', page, re.S)
+    assert len(lines) == 2, "fig-one and fig-three; fig-two has no figure.json"
+    one, three = lines
+    hrefs = re.findall(r'href="([^"]+)"', one)
+    assert hrefs == [
+        f"../{FIGS}/fig-one/make_figure.py",
+        "../notes/a.md",
+        "../notes/b.csv",
+        "../notes/c.csv",
+        "../notes/d.csv",
+        f"../{FIGS}/fig-one/audit.json",
+    ]
+    assert re.sub(r"<[^>]+>", "", one).startswith("Made from make_figure.py · 4 inputs")
+    assert ">audit PASS</a>" in one
+    # A file the record names that is not there: a warning, and no link to it.
+    assert "missing.csv" in three and 'missing.csv"' not in three
+    assert "(missing)" in three
+    assert "figure fig-three: input notes/missing.csv not found" in log
+    # Data outside the workspace is named, never linked, and does not warn.
+    assert (
+        'session-1.nwb</span> <span class="asta-made-missing">(outside the workspace)'
+        in three
+    )
+    assert "session-1.nwb" not in log
+    card = _store(page)["g:fig-one"]["sections"][0]
+    assert [link["label"] for link in card["links"]] == [
+        "make_figure.py",
+        "a.md",
+        "b.csv",
+        "c.csv",
+        "+1 more",
+        "audit PASS",
+    ]
+    assert card["links"][4]["href"] == f"../{FIGS}/fig-one/"
 
 
 def test_workflow_pages_link_their_own_prose(site):

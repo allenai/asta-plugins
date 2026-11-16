@@ -28,7 +28,8 @@ writes:
 - **Data files.** The widgets' own data (Theorizer site data, test summaries and indexes,
   AutoDS runs, inline documents); `.asta/datasets.json`, the datasets the work used,
   `[{id, name, released_by, used_for, links: [{label, url}]}]`; a theory's `gap` (written by
-  `theorizer-site-data --gap G7`); and a test index's `seed: {test_id, experiment}`.
+  `theorizer-site-data --gap G7`); a test index's `seed: {test_id, experiment}`; and a figure
+  folder's `figure.json`.
 - **Front matter.** `title:` and Quarto's own keys. `asta-autolink: false` turns the link
   cards off on a page.
 
@@ -279,7 +280,7 @@ each link names its card (`data-asta-card`).
 | Theory name | a theory in an `asta-theories` file, whatever its spacing and dashes (—, –, -) | its tests as verdict chips (from the panel's `tests=` indexes), supporting and conflicting findings, its summary in up to four lines | the theory |
 | Gap (`G7`) | a theory whose `gap` is that id (`theorizer-site-data --gap G7` writes it), on any theories tab | each tab with such a theory: its question in one line, how many theories, a tally of their tests ("6 tests: 1 met · 4 not met · 1 undecided"); the gap map entry (an inline document's heading or list item that starts with the id, `[G7, open] …`, which `asta-doc` anchors) | the first such tab, `#query-<n>` |
 | "Experiment N" | a test index's top-level `"seed": {"test_id": …, "experiment": N}` (older indexes: a string `"<id> (Experiment N …)"`); and the hosted experiment the run was seeded from (`args.json`'s `dataset_metadata` → its `lineage`: `parent_run_id`, `seed_experiment`), or a page link to `autodiscovery.allen.ai/…?exp=N` | Discovery (the hosted experiment, with the hypothesis and beliefs of `source-experiment-N.*.json` beside the metadata) and Verification (the test) | the test |
-| "Figure N", `@fig-…` | the page's `::: {#fig-…}` blocks, numbered as Quarto numbers them | a thumbnail, the caption's first sentence, n when the caption states a single `n = …`, and the audit's verdict when an `audit.json` with a `verdict` sits in the image's folder or in a step folder named for the figure (`.asta/flows/*/*/<fig-id>/`) | the figure |
+| "Figure N", `@fig-…` | the page's `::: {#fig-…}` blocks, numbered as Quarto numbers them | a thumbnail, the caption's first sentence, n when the caption states a single `n = …`, the audit's verdict, and links to what it was made from (`figure.json`, below; without one, the verdict of an `audit.json` in the image's folder or in `.asta/flows/*/*/<fig-id>/`) | the figure |
 | External link | any `http(s)` link in the text | a paper (doi.org, semanticscholar.org, or a bibliography entry's URL or DOI): title, authors, year, venue; a dataset (one of a dataset's `links` in `.asta/datasets.json`): its `name`, `released_by` and `used_for`; anything else: the site and the link's text. Always "Opens in a new tab", and the link does | the link, in a new tab |
 | Citation (`[@key]`) | a bibliography entry | the quote of an evidence claim in the same paragraph citing it, then title, authors, year, venue, and Semantic Scholar and DOI links | the reference |
 | Evidence claim (`[…]{.ev}`) | the evidence filter's popover markup | its quote, then the source as for a citation | — |
@@ -296,6 +297,25 @@ as a word (`node_3_1` does not link inside `node_3_12`, `G7` not inside `G7-T5`)
 code, the reference list and Quarto's navigation text are left as they are. `asta-doc` gives a
 list item or heading that starts with an id (`G1 …`, `[G1, open] …`) the anchor
 `doc-<file>-<id>`, which a gap's card links.
+
+**What a figure was made from (`figure.json`).** A figure's folder may carry a `figure.json`:
+
+```json
+{"id": "fig-drift", "script": "make_figure.py", "inputs": [".asta/flows/0003-x/06-findings/calibration.json"], "audit": "audit.json"}
+```
+
+`script` and `audit` are relative to that folder, `inputs` to the project root. The folder is the
+image's own, a step folder named for the figure (`.asta/flows/*/*/<fig-id>/`), or any step
+folder whose `figure.json` gives the figure's `id`. Under each such figure the extension's
+`provenance.lua` filter (it runs before Quarto turns `::: {#fig-…}` blocks into figures,
+`at: pre-ast`) adds a small line: "Made from make_figure.py · 3 inputs · audit PASS", each part a
+link to its file, written relative to the rendered page (so it opens in the app's Files tab, or
+on GitHub once a deployed site's links point there); "3 inputs" opens to list each input with
+its folder. A figure made of sub-figures gets one line with an entry per sub-figure that has a
+`figure.json`, "(a) …; (b) …". A figure without one gets nothing. A file the `figure.json` names
+that does not exist is a render warning and is shown as "(missing)", never as a link. The
+figure's card links the same files: the script, the first three inputs ("+N more" opens the
+folder), and the audit.
 
 **The cards.** One renderer (`asta-pages.js`) draws every card from the same parts: sections,
 each with any of a role, a linked title, a sub line, a thumbnail, a quote, text clamped to some

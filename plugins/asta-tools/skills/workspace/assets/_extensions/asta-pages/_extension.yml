@@ -6,5 +6,7 @@ contributes:
   shortcodes:
     - asta-pages.lua
   filters:
+    - path: provenance.lua
+      at: pre-ast
     - path: autolink.lua
       at: pre-render

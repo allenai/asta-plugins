@@ -410,7 +410,16 @@ local function scan_page(doc)
           for k = #b.content, 1, -1 do
             if b.content[k].t == "Para" then caption = pandoc.utils.stringify(b.content[k]); break end
           end
-          figures[b.identifier] = { n = tostring(nfig), src = img, caption = caption }
+          -- Its sub-figures (with their first images), for its provenance when it has none.
+          local subs = {}
+          for _, c in ipairs(b.content) do
+            if c.t == "Div" and c.identifier:match("^fig%-") then
+              local si = nil
+              c:walk({ Image = function(i) si = si or i.src end })
+              subs[#subs + 1] = { id = c.identifier, src = si }
+            end
+          end
+          figures[b.identifier] = { n = tostring(nfig), src = img, caption = caption, subs = subs }
         end
         figs(b.content, inside or is_fig)
       elseif b.content and type(b.content) == "table" and (b.t == "BlockQuote") then
@@ -571,10 +580,39 @@ function ADAPT.figure(t)
   local facts, ns = {}, {}
   for n in f.caption:gmatch("%f[%w][nN]%s*=%s*(%d+)") do ns[#ns + 1] = n end
   if #ns == 1 then facts[#facts + 1] = "n = " .. ns[1] end
-  local verdict = audit_of(t.id, f.src)
+  -- What it was made from (figure.json): its script, its first inputs, its audit; for a figure
+  -- of sub-figures, those of each sub-figure that has one, marked (a), (b) ...
+  local links, verdict = {}, nil
+  local function image_abs(src)
+    if not src or src:match("^%a[%w+.-]*:") or src:match("^/") then return nil end
+    return L.normalize(here_dir .. "/" .. L.url_decode(src))
+  end
+  local function add_links(p, mark)
+    if p.script and not p.script.missing then links[#links + 1] = { label = mark .. p.script.name, href = p.script.href } end
+    local shown, rest = 0, 0
+    for _, it in ipairs(p.inputs) do
+      if not it.missing and not it.outside then
+        if shown < 3 then links[#links + 1] = { label = it.name, href = it.href }; shown = shown + 1 else rest = rest + 1 end
+      end
+    end
+    if rest > 0 then links[#links + 1] = { label = "+" .. rest .. " more", href = p.folder } end
+    if p.audit and not p.audit.missing then
+      links[#links + 1] = { label = "audit" .. (p.verdict and (" " .. p.verdict) or ""), href = p.audit.href }
+    end
+    verdict = verdict or p.verdict
+  end
+  local own = L.figure_provenance(t.id, image_abs(f.src), true)
+  if own then add_links(own, "")
+  else
+    for k, sub in ipairs(f.subs or {}) do
+      local p = L.figure_provenance(sub.id, image_abs(sub.src), true)
+      if p then add_links(p, "(" .. string.char(96 + k) .. ") ") end
+    end
+  end
+  verdict = verdict or audit_of(t.id, f.src)
   if verdict then facts[#facts + 1] = "audit: " .. verdict end
   return { role = "Figure", title = "Figure " .. f.n, href = "#" .. t.id, image = f.src,
-    text = first_sentence(f.caption), clamp = 3, facts = #facts > 0 and facts or nil }
+    text = first_sentence(f.caption), clamp = 3, facts = #facts > 0 and facts or nil, links = #links > 0 and links or nil }
 end
 
 -- A gap: each of its theories tabs (its question, how many theories, a tally of their tests),

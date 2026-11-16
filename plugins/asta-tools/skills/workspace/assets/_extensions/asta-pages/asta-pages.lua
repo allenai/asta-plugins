@@ -1482,6 +1482,69 @@ local function page_extras(meta)
   end
 end
 
+-- ---- a figure's provenance: figure.json --------------------------------------------------
+--
+-- A figure's folder may carry a figure.json naming what the figure was made from:
+--   {"id": "<fig-id>", "script": "make_figure.py", "inputs": ["<project path>", …], "audit": "audit.json"}
+-- `script` and `audit` are relative to that folder, `inputs` to the project root; an input
+-- outside the workspace (an absolute path or a URL, e.g. a mounted dataset) is named but not linked. The folder is
+-- the image's own, a step folder named for the figure (.asta/flows/*/*/<fig-id>/), or any step
+-- folder whose figure.json gives that id. Returns nil without one; files it names that do not
+-- exist are reported with a render warning (unless quiet) and come back as missing, never as
+-- links.
+
+local function figure_provenance(id, image_abs, quiet)
+  local tries = {}
+  if image_abs then tries[#tries + 1] = pandoc.path.directory(image_abs) .. "/figure.json" end
+  local flows = project_path(".asta/flows")
+  local steps = {}
+  for _, flow in ipairs(flows and list_dir(flows) or {}) do
+    for _, step in ipairs(list_dir(flows .. "/" .. flow) or {}) do steps[#steps + 1] = flows .. "/" .. flow .. "/" .. step end
+  end
+  for _, st in ipairs(steps) do tries[#tries + 1] = st .. "/" .. id .. "/figure.json" end
+  local file, data = nil, nil
+  for _, f in ipairs(tries) do
+    local d = decode_json(read_file(f))
+    if type(d) == "table" and not is_list(d) and (d.id == nil or d.id == id) then file, data = f, d; break end
+  end
+  if not data then
+    for _, st in ipairs(steps) do
+      for _, sub in ipairs(list_dir(st) or {}) do
+        local d = decode_json(read_file(st .. "/" .. sub .. "/figure.json"))
+        if type(d) == "table" and d.id == id then file, data = st .. "/" .. sub .. "/figure.json", d; break end
+      end
+      if data then break end
+    end
+  end
+  if not data then return nil end
+  local dir = pandoc.path.directory(file)
+  local function one(abs, label)
+    if file_size(abs) == nil then
+      if not quiet then quarto.log.warning("asta-pages: figure " .. id .. ": " .. label .. " " .. project_rel(abs) .. " not found") end
+      return { name = pandoc.path.filename(abs), rel = project_rel(abs), missing = true }
+    end
+    return { name = pandoc.path.filename(abs), rel = project_rel(abs), href = href_to(abs) }
+  end
+  local out = { id = id, dir = dir, folder = href_to(dir, true), inputs = {} }
+  if type(data.script) == "string" and data.script ~= "" then out.script = one(normalize(dir .. "/" .. data.script), "script") end
+  for _, rel in ipairs(is_list(data.inputs) and data.inputs or {}) do
+    if type(rel) == "string" then
+      local abs, clean = project_path(rel)
+      if abs then out.inputs[#out.inputs + 1] = one(abs, "input")
+      elseif rel:match("^/") or rel:match("^%a[%w+.-]*://") then
+        -- Data outside the workspace (a mounted dataset, an archive URL): named, never linked.
+        out.inputs[#out.inputs + 1] = { name = pandoc.path.filename((rel:gsub("/$", ""))), rel = rel, outside = true }
+      elseif not quiet then quarto.log.warning("asta-pages: figure " .. id .. ": input " .. clean) end
+    end
+  end
+  if type(data.audit) == "string" and data.audit ~= "" then
+    out.audit = one(normalize(dir .. "/" .. data.audit), "audit")
+    local a = not out.audit.missing and decode_json(read_file(normalize(dir .. "/" .. data.audit)))
+    if type(a) == "table" and type(a.verdict) == "string" then out.verdict = a.verdict end
+  end
+  return out
+end
+
 -- ---- asta-datasets: the workspace's datasets, from .asta/datasets.json -----------------------
 --
 -- [{"id", "name", "released_by", "used_for", "links": [{"label", "url"}]}] -> a table: Dataset,
@@ -1518,8 +1581,8 @@ local function datasets_panel(kwargs)
   return blocks
 end
 
--- The helpers autolink.lua (the asta-pages filter) shares with the shortcodes: it loads this
--- file and reads them from here.
+-- The helpers autolink.lua and provenance.lua (the asta-pages filters) share with the
+-- shortcodes: they load this file and read them from here.
 ASTA_PAGES_LIB = {
   project_root = project_root, project_path = project_path, absolute = absolute, normalize = normalize,
   relative = relative, rendered_dir = rendered_dir, rendered_file = rendered_file, url_path = url_path,
@@ -1529,6 +1592,7 @@ ASTA_PAGES_LIB = {
   front_matter = front_matter, workflow_pages = workflow_pages, meta_text = meta_text, page_extras = page_extras,
   slim_summary = slim_summary, summary_files = SUMMARY_FILES, url_decode = url_decode, file_size = file_size,
   human_size = human_size, site_root = site_root, entry_id = entry_id, href_to = href_to,
+  html_escape = html_escape, attr_escape = attr_escape, figure_provenance = figure_provenance,
 }
 
 return {
