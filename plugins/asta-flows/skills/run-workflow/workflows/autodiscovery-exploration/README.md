@@ -8,4 +8,4 @@ Three ways to explore a dataset with AutoDS. Pick one with the person.
 | Theories first | Generate theories from the literature, then seed AutoDS with their predictions | [Gap-Driven Theory Testing](../gap-driven-theory-testing/README.md) |
 | Experiments first | Run AutoDS, then generate theories that have to explain what it found | [Data Driven Theory Generation](../data-driven-theory-generation/README.md) |
 
-How to describe the data and write the prompt is in the `autodiscovery` skill.
+How to describe the data and write the prompt is in the `autodiscovery` skill. The report's sections are in [index.md](index.md).

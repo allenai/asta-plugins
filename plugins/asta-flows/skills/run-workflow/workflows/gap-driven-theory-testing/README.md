@@ -125,4 +125,4 @@ Gaps come from what the authors say is open, from Theorizer's sweep, and from wh
 8. **Tests.** Exactly the committed tests, audited, with Secondary reproduction's verdicts. AutoDS may explore alongside; its findings are exploratory, never tests of the theories.
 9. **What's missing,** in `missing.md`: for each undecided prediction and each data gap, what to measure, the design and the rival it separates, the sample size and where its effect size came from (never invented), whether such data may exist, and what each result would mean. Then ask the person whether they have such data.
 10. **Revision,** optional: the verdicts as the mission, as in Secondary reproduction.
-11. **Report,** in the person's format or [index.md](index.md)'s.
+11. **Report,** in the person's format or [index.md](index.md)'s. The run's page is `templates/page.qmd`, with `{{RUN}}` set to the run's folder name.

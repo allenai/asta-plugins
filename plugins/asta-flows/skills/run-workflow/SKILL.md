@@ -17,9 +17,9 @@ allowed-tools: Bash(theorize *) Bash(auto-discovery *) Bash(asta auth *) Bash(as
 | [AutoDiscovery exploration](workflows/autodiscovery-exploration/README.md) | Three ways to explore a dataset with AutoDS: on its own in rounds, theories first, or experiments first |
 | [Computational review](workflows/computational-review/README.md) | The project's report, written as a critical review of the evidence |
 
-Pick one with the person and read its README. A workflow can bring its own template for the report, as `index.md` in its folder.
+Pick one with the person and read its README.
 
-Every run is tracked in a workspace: the `workspace` skill says where its files and its page go.
+Track every run in a workspace, with the `workspace` skill. The project's report, `index.qmd`, opens with the person's mission in their words and a short abstract, then follows the template of the workflow it reports on: `index.md` in the workflow's folder, or the workspace's cover if there is none. A workflow's `templates/page.qmd`, when it has one, is the run's page.
 
 ## Running Workflows
 
