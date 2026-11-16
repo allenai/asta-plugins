@@ -4,6 +4,7 @@
     python3 skill-runs/run.py --list
     python3 skill-runs/run.py pieces                 # each tool in each mode
     python3 skill-runs/run.py e2e                    # whole workflows, after the pieces they use
+    python3 skill-runs/run.py edge                   # requests where a rule should change what it does
     python3 skill-runs/run.py all
     python3 skill-runs/run.py autods-cli exploration-e2e
     python3 skill-runs/run.py all --jobs 4           # side by side
@@ -58,6 +59,48 @@ Task: {task}
 When you're done, write FEEDBACK.md in this folder: a table with one row per instruction you followed, giving file:line, worked / wrong / missing / unclear, what happened, and the exact fix. Then reply with one line: PASS if the task is done, or FAIL and why."""
 
 
+EDGE_PROMPT = """{skill} {task}
+
+(This is a test of the skills, run with no person to answer. Follow the skills' files as written. If they say to ask the person something or to check in, write exactly what you would send to REPLY.md in this folder and stop there. Work only in this folder. Never print, echo or copy any key value. Run one shell command per call. When you stop, also write FEEDBACK.md: the instructions in the skills that decided what you did, by file:line.)"""
+
+JUDGE_PROMPT = """You are checking whether an agent followed one rule from its instructions.
+
+The person asked: {task}
+
+The rule: {rubric}
+
+Read REPLY.md, FEEDBACK.md and any other files in this folder that you need. Reply with only a JSON object: {{"pass": true or false, "reason": "<one sentence>"}}"""
+
+
+def judge(case, args, work, settings):
+    command = [
+        args.claude, "-p", JUDGE_PROMPT.format(task=case.task, rubric=case.rubric), "--bare",
+        "--settings", settings, "--model", args.judge_model, "--max-budget-usd", "0.2",
+        "--output-format", "json", "--permission-mode", "dontAsk", "--no-session-persistence",
+        "--allowedTools", "Read", "Glob", "Grep",
+    ]  # fmt: skip
+    done = subprocess.run(
+        command, cwd=work, capture_output=True, text=True, timeout=600
+    )
+    try:
+        result = json.loads(done.stdout)
+        verdict = json.loads(
+            re.search(r"\{.*\}", result.get("result", ""), re.S).group(0)
+        )
+        check = {
+            "check": "judge: " + case.rubric[:60],
+            "ok": bool(verdict.get("pass")),
+            "detail": verdict.get("reason", ""),
+        }
+        return check, result.get("total_cost_usd") or 0
+    except (ValueError, AttributeError):
+        return {
+            "check": "judge",
+            "ok": False,
+            "detail": "no verdict: " + done.stdout[-200:],
+        }, 0
+
+
 def credits():
     out = subprocess.run(
         ["asta", "autodiscovery", "credits"], capture_output=True, text=True
@@ -72,8 +115,9 @@ def credits():
 def run_case(case, args, keys, out_dir, secrets):
     work = os.path.join(out_dir, "work")
     os.makedirs(os.path.join(work, ".asta"))
-    with open(os.path.join(work, ".asta", "mode.json"), "w") as f:
-        json.dump({"mode": case.mode}, f)
+    if case.mode:
+        with open(os.path.join(work, ".asta", "mode.json"), "w") as f:
+            json.dump({"mode": case.mode}, f)
     for name in case.fixtures:
         shutil.copy(os.path.join(HERE, "fixtures", name), work)
 
@@ -102,9 +146,12 @@ def run_case(case, args, keys, out_dir, secrets):
             + args.theorizer
             + "` instead (that release isn't on PyPI yet)."
         )
-    prompt = PROMPT.format(
-        skill=case.skill, mode=case.mode, task=case.task, extra=extra
-    )
+    if case.tier == "edge":
+        prompt = EDGE_PROMPT.format(skill=case.skill, task=case.task)
+    else:
+        prompt = PROMPT.format(
+            skill=case.skill, mode=case.mode, task=case.task, extra=extra
+        )
     with open(os.path.join(out_dir, "prompt.md"), "w") as f:
         f.write(prompt)
 
@@ -153,13 +200,18 @@ def run_case(case, args, keys, out_dir, secrets):
         }
     )
     reply = (result.get("result") or "").strip()
-    checks.append(
-        {
-            "check": "agent says PASS",
-            "ok": reply.startswith("PASS"),
-            "detail": reply[:200],
-        }
-    )
+    judge_cost = 0
+    if case.tier == "edge":
+        verdict, judge_cost = judge(case, args, work, settings)
+        checks.append(verdict)
+    else:
+        checks.append(
+            {
+                "check": "agent says PASS",
+                "ok": reply.startswith("PASS"),
+                "detail": reply[:200],
+            }
+        )
     report = {
         "case": case.name,
         "tier": case.tier,
@@ -167,7 +219,7 @@ def run_case(case, args, keys, out_dir, secrets):
         "passed": code == 0 and all(c["ok"] for c in checks),
         "exit_code": code,
         "minutes": round(minutes, 1),
-        "claude_cost_usd": result.get("total_cost_usd"),
+        "claude_cost_usd": (result.get("total_cost_usd") or 0) + judge_cost,
         "turns": result.get("num_turns"),
         "credits_used": (after - before)
         if (before is not None and after is not None)
@@ -185,12 +237,12 @@ def run_case(case, args, keys, out_dir, secrets):
 
 def choose(names):
     if names in (["all"], []):
-        return [c for c in CASES if c.tier == "pieces"] + [
-            c for c in CASES if c.tier == "e2e"
+        return [
+            c for tier in ("pieces", "edge", "e2e") for c in CASES if c.tier == tier
         ]
     chosen = []
     for name in names:
-        if name in ("pieces", "e2e"):
+        if name in ("pieces", "e2e", "edge"):
             chosen += [c for c in CASES if c.tier == name]
         else:
             match = [c for c in CASES if c.name == name]
@@ -198,14 +250,18 @@ def choose(names):
                 sys.exit("No such case: " + name)
             chosen += match
     unique = list({c.name: c for c in chosen}.values())
-    return sorted(unique, key=lambda c: c.tier != "pieces")  # pieces first
+    return sorted(
+        unique, key=lambda c: ("pieces", "edge", "e2e").index(c.tier)
+    )  # pieces first
 
 
 def main():
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    parser.add_argument("cases", nargs="*", help="case names, 'pieces', 'e2e' or 'all'")
+    parser.add_argument(
+        "cases", nargs="*", help="case names, 'pieces', 'e2e', 'edge' or 'all'"
+    )
     parser.add_argument(
         "--list", action="store_true", help="list the cases and what each spends"
     )
@@ -217,6 +273,11 @@ def main():
     )
     parser.add_argument("--claude", default="claude")
     parser.add_argument("--jobs", type=int, default=1, help="cases to run at once")
+    parser.add_argument(
+        "--judge-model",
+        default="claude-haiku-5-5",
+        help="model that grades the edge cases",
+    )
     args = parser.parse_args()
 
     if args.list or not args.cases:
