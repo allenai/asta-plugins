@@ -296,3 +296,8 @@ table.ap-ev-table { border-collapse: separate; border-spacing: 0; margin: 0; fon
 .ap-legend { color: var(--ap-muted); font-size: 13px; margin: 8px 0 0; max-width: 90ch; }
 .ap-ev-schema .ap-legend { margin: 0 0 6px; }
 .ap-tt .ap-from { color: var(--ap-faint); font-size: 12px; font-weight: 400; white-space: nowrap; }
+
+/* The run's workflow diagram: a long left-to-right chain scrolls sideways rather than shrinking
+   until its labels cannot be read (asta-pages.lua sizes it once Mermaid has drawn it). */
+.asta-workflow { overflow-x: auto; margin: 0.5rem 0 1.5rem; }
+.asta-workflow pre.mermaid { background: transparent; border: 0; padding: 0; margin: 0; }

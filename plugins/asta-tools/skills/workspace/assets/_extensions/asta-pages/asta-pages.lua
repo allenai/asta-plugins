@@ -19,7 +19,13 @@
 -- embedded in the page as JSON, so the rendered page needs no request at view time; the panel
 -- is drawn by theories.js / literature.js. A missing or unreadable file renders a visible
 -- error box in place of the panel and a warning in the render log, never a silent blank.
-
+--
+--   {{< asta-workflow >}}                                 the run's workflow diagram
+--
+-- reads `workflow.mmd` beside the page (or file="..."), a Mermaid diagram the agent keeps
+-- current, and renders it under a "Workflow" heading with the Mermaid runtime that Quarto
+-- ships (copied into the site, so nothing loads from elsewhere). With no such file it renders
+-- nothing, heading included, so a run page can carry the shortcode before a diagram exists.
 
 local function page_dir()
   local input = quarto.doc.input_file
@@ -204,7 +210,56 @@ local function theories_panel(kwargs)
     names_attr .. papers_attr .. '></div>\n' .. table.concat(scripts, "\n"))
 end
 
+local function workflow(kwargs)
+  if not quarto.doc.is_format("html") then
+    return pandoc.Null()
+  end
+  local rel = pandoc.utils.stringify(kwargs["file"] or "")
+  if rel == "" then rel = "workflow.mmd" end
+  local f = io.open(pandoc.path.join({ page_dir(), rel }), "r")
+  local src = f and f:read("a")
+  if f then f:close() end
+  if src == nil or src:match("^%s*$") then
+    return pandoc.Blocks({})
+  end
+  local title = pandoc.utils.stringify(kwargs["title"] or "")
+  if title == "" then title = "Workflow" end
+  local head = pandoc.Header(2, title, pandoc.Attr("workflow"))
+  local share = os.getenv("QUARTO_SHARE_PATH")
+  local dir = share and pandoc.path.join({ share, "formats", "html", "mermaid" })
+  local probe = dir and io.open(pandoc.path.join({ dir, "mermaid.min.js" }), "r")
+  if probe == nil then
+    quarto.log.warning("asta-workflow: Quarto's Mermaid runtime was not found; showing the diagram source")
+    return pandoc.Blocks({ head, pandoc.CodeBlock(src) })
+  end
+  probe:close()
+  css_dep()
+  quarto.doc.add_html_dependency({
+    name = "asta-mermaid",
+    version = "0.1.0",
+    scripts = { pandoc.path.join({ dir, "mermaid.min.js" }), pandoc.path.join({ dir, "mermaid-init.js" }) },
+    stylesheets = { pandoc.path.join({ dir, "mermaid.css" }) },
+  })
+  -- Mermaid draws the chart to the column's width. Once it has, let it be up to 1.6 times wider
+  -- than the column (scrolling sideways) so a long chain keeps readable labels.
+  local sizer = [[<script>(function (box) {
+  function fit() {
+    var svg = box.querySelector("svg"), vb = svg && svg.viewBox && svg.viewBox.baseVal;
+    if (!vb || !vb.width) return false;
+    var w = Math.min(vb.width, box.clientWidth * 1.6);
+    svg.setAttribute("width", w); svg.style.maxWidth = "none"; svg.style.width = w + "px";
+    return true;
+  }
+  if (!fit()) new MutationObserver(function (_, o) { if (fit()) o.disconnect(); }).observe(box, { childList: true, subtree: true });
+})(document.currentScript.previousElementSibling);</script>]]
+  return pandoc.Blocks({ head, pandoc.RawBlock("html",
+    '<div class="cell asta-workflow"><pre class="mermaid mermaid-js">' .. html_escape(src) .. "</pre></div>" .. sizer) })
+end
+
 return {
+  ["asta-workflow"] = function(args, kwargs, meta)
+    return workflow(kwargs)
+  end,
   ["asta-theories"] = function(args, kwargs, meta)
     return theories_panel(kwargs)
   end,

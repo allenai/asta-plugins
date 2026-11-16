@@ -405,6 +405,7 @@ DECK = "## Opening\n\nOwn title.\n\n# First\n\n## One\n\nText.\n\n# Second\n\n##
     [
         ('{{< asta-theories data="data/theorizer.json" >}}\n', True),
         ('{{< asta-literature data="data/papers.json" >}}\n', True),
+        ("{{< asta-workflow >}}\n", True),
         ("A page without a run's panels.\n", False),
     ],
 )

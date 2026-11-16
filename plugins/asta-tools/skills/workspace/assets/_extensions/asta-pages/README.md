@@ -7,6 +7,7 @@ results:
 {{< asta-theories data="data/theorizer.json" >}}    <!-- the Theorizer panel -->
 {{< asta-theories data="data/theorizer.json,data/theorizer-v2.json" >}}  <!-- several projects -->
 {{< asta-literature data="data/papers.json" >}}     <!-- the paper list -->
+{{< asta-workflow >}}                               <!-- workflow.mmd beside the page, if any -->
 ```
 
 - **Theory page:** the theories with their supporting and conflicting counts; the selected
@@ -34,6 +35,9 @@ results:
 - **Paper list:** the run's papers, each marked as used by the theories, read in full but not
   used, or not read (abstract only), with a text filter and facets (sort, part in the run, year,
   venue, author). Copies of one work (a preprint and its published version) are shown once.
+- **Workflow:** the Mermaid diagram in `workflow.mmd` (or `file="..."`) under a "Workflow"
+  heading, drawn by the Mermaid runtime that Quarto ships, copied into the site. With no file it
+  renders nothing, so a page can carry it before a diagram exists.
 
 `data` is relative to the page. The file is read at render time and embedded in the page, so the
 page makes no request at view time. A
