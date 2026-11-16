@@ -52,6 +52,7 @@ Task: {task}
 
 - Work only in this folder. Read the skills' own files as they direct. Don't read other notes, other projects or the tools' source code unless a skill sends you there.
 - Never print, echo or copy any key value.
+- Shell commands run under an allowlist: the skills' allowed-tools plus a few basics. Run one command per call; a chain with `;`, `&&` or a pipe can be denied even when each part is allowed. If a command is denied, try it on its own, and note it in FEEDBACK.md. Don't conclude the shell is unavailable from one denial.
 - If something a skill says doesn't work, find the smallest fix that does, carry on, and note it.{extra}
 
 When you're done, write FEEDBACK.md in this folder: a table with one row per instruction you followed, giving file:line, worked / wrong / missing / unclear, what happened, and the exact fix. Then reply with one line: PASS if the task is done, or FAIL and why."""
