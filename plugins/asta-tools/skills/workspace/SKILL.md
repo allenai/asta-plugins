@@ -93,7 +93,7 @@ Where the agent runs in a sandbox whose app shows `_site/` in the workspace's fi
 
 The site is where you maintain the notes for the human collaborator.
 
-- **Front page** (`index.qmd`, started from `assets/cover.qmd`): a cover page shaped like a paper. Mission, then Abstract, together about one page; then Findings, Null results and Next steps. No list of runs.
+- **Front page** (`index.qmd`, started from `assets/cover.qmd`): a cover page shaped like a paper. Mission, then Abstract, together about one page; then Findings, Null results and Next steps. No list of runs. For updating the lab notebook, follow the `run-workflow` skill's Computational review workflow.
 - **Workflow pages** (`pages/<NNNN>-<workflow>.qmd`, one per run, NNNN the run's number in `.asta/flows/<NNNN>-<workflow>/`; its front matter only `title:`, normally the workflow's name; the sidebar lists them flat in run order): the `asta-pages` widgets and nothing else, started from the workflow's template: the theory, paper and AutoDiscovery panels and the workflow diagram (see `assets/_extensions/asta-pages/README.md`). No ledger, no prose, no hand-written tables or status notes: what was run is in the run's files, and your reading of it goes on the front page.
 
 A workflow may say more about its pages.
