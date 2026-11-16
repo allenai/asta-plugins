@@ -1,6 +1,10 @@
 project:
   type: website
   output-dir: _site
+  # The front page, and the workflow pages: pages/<NNNN>-<workflow>.qmd, one per run.
+  render:
+    - index.qmd
+    - "pages/*.qmd"
   preview:
     port: 4848
 
@@ -17,6 +21,8 @@ metadata-files:
 # The filter is a no-op when a document has no `.ev` spans.
 filters:
   - _extensions/evidence/snippet.lua
+  # Links mentions of theories, tests, gaps, experiments and figures, with a card for each.
+  - asta-pages
 
 website:
   title: "{{TITLE}}"
@@ -26,7 +32,12 @@ website:
         href: "{{REPO_URL}}"
         text: "GitHub repo"
         target: _blank
-    contents: auto
+    # The front page, then the workflow pages, flat, by file name: run order. The workflow
+    # pages' feed follows this order.
+    contents:
+      - text: "Home"
+        href: index.qmd
+      - auto: "pages/*.qmd"
 
 format:
   html:

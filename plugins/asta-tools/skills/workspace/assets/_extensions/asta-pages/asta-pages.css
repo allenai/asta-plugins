@@ -1,0 +1,707 @@
+/* asta-pages: the theory page (the product's Theorizer panel) and the literature page (its
+   Paper Finder panel). Colours are Asta design tokens: the light set is the cream theme, and
+   Quarto's dark toggle (body.quarto-dark) switches to the dark set. Type comes from the
+   asta-theme extension (Manrope). */
+
+.asta-panel {
+  --ap-cream: #faf2e9;            /* --color-cream: page */
+  --ap-raised: #fffaf4;           /* cards and rows: cream lifted toward --color-white */
+  --ap-sunk: #f0eae1;             /* table heads, chips: cream under extra-dark-teal */
+  --ap-text: #0a3235;             /* --color-dark-teal: text-reversed */
+  --ap-muted: #3f7274;            /* --color-teal-80 */
+  --ap-faint: #6e9291;            /* --color-teal-60 */
+  --ap-line: #cbd2cc;             /* --color-teal-20 */
+  --ap-hairline: rgba(3, 38, 41, 0.1);   /* --color-extra-dark-teal-10 */
+  --ap-link: #105257;             /* --color-teal: interactive-default */
+  --ap-link-hover: #3f7274;       /* --color-teal-80: interactive-default-hover */
+  --ap-accent: #f0529c;           /* --color-pink: accent */
+  --ap-link-underline: #105257;   /* light: the link's own dark teal, 1px, 2px below */
+  --ap-link-thickness: 1px;
+  --ap-link-offset: 2px;
+  --ap-accent-soft: #f8d2da;      /* --color-pink-20 */
+  --ap-halo-fill: rgba(248, 210, 218, 0.45);  /* the halo a link lands on: pink-20, softened */
+  --ap-halo-ring: #f8d2da;
+  --ap-green-soft: #cbead6;       /* --color-green-20 */
+  --ap-r: 8px;                    /* --rounded-2xs */
+  font-family: Manrope, Arial, sans-serif;
+  color: var(--ap-text);
+  font-size: 15px;
+  line-height: 1.55;
+}
+body.quarto-dark .asta-panel {
+  --ap-cream: #032629;            /* --color-extra-dark-teal */
+  --ap-raised: #0a3235;           /* --color-dark-teal */
+  --ap-sunk: #072b2e;
+  --ap-text: #faf2e9;             /* --color-cream */
+  --ap-muted: #cbd2cc;            /* --color-teal-20 */
+  --ap-faint: #9cb2af;            /* --color-teal-40 */
+  --ap-line: rgba(250, 242, 233, 0.2);     /* --color-cream-20 */
+  --ap-hairline: rgba(250, 242, 233, 0.1); /* --color-cream-10 */
+  --ap-link: #0fcb8c;             /* --color-green: link */
+  --ap-link-hover: #6ddbb1;       /* --color-green-60 */
+  --ap-link-underline: rgba(15, 203, 140, 0.45);  /* the link's own green, softened: no pink */
+  --ap-link-thickness: 2px;
+  --ap-link-offset: 3px;
+  --ap-accent-soft: rgba(240, 82, 156, 0.2);
+  --ap-halo-fill: rgba(240, 82, 156, 0.1);
+  --ap-halo-ring: rgba(240, 82, 156, 0.45);
+  --ap-green-soft: rgba(15, 203, 140, 0.2);
+}
+.asta-panel *, .asta-panel *::before, .asta-panel *::after { box-sizing: border-box; }
+/* Links must read as links against body text: the link colour, a little weight, and an
+   underline: in light mode 1px in the link's own dark teal, as the site's text links (asta-theme);
+   in dark mode 2px in the link's own green, softened. */
+.asta-panel a {
+  color: var(--ap-link); font-weight: 500;
+  text-decoration: underline; text-decoration-color: var(--ap-link-underline);
+  text-decoration-thickness: var(--ap-link-thickness, 2px); text-underline-offset: var(--ap-link-offset, 3px);
+}
+.asta-panel a:hover { color: var(--ap-link-hover); text-decoration-color: var(--ap-link-hover); }
+.asta-panel a.ap-anchor { text-decoration: none; font-weight: 400; }
+.asta-panel h2, .asta-panel h3, .asta-panel h4 {
+  color: var(--ap-text); margin: 0; border: 0; padding: 0;
+  font-family: "PP Telegraf", Manrope, Arial, sans-serif;
+}
+.asta-panel button { font: inherit; color: inherit; }
+.asta-panel :focus-visible { outline: 2px solid var(--ap-link); outline-offset: 2px; border-radius: 4px; }
+.asta-panel .ap-muted { color: var(--ap-muted); }
+
+.ap-chevron { width: 16px; height: 16px; flex: none; transition: transform 160ms ease-out; }
+.ap-chip {
+  display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 8px;
+  border-radius: 4px; font-size: 12px; font-weight: 500; line-height: 1;
+  background: var(--ap-sunk); color: var(--ap-muted); white-space: nowrap; vertical-align: middle;
+  border: 1px solid transparent;
+}
+.ap-chip.ap-novel { background: var(--ap-accent-soft); color: var(--ap-text); border-color: var(--ap-accent); }
+.ap-chip.ap-good { background: var(--ap-green-soft); color: var(--ap-text); }
+.ap-chip.ap-warn { background: transparent; color: var(--ap-text); border: 1px dashed var(--ap-muted); }
+.ap-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.ap-empty {
+  border: 1px dashed var(--ap-line); border-radius: var(--ap-r); background: var(--ap-raised);
+  color: var(--ap-muted); padding: 24px; text-align: center;
+}
+.ap-empty strong { display: block; color: var(--ap-text); font-size: 15px; margin-bottom: 4px; }
+.ap-error {
+  border: 1px solid #d02f2e; background: #fff1f0; color: #8c1d1c; border-radius: var(--ap-r);
+  padding: 12px 16px;
+}
+
+/* ---- theory list (TheoryTable) ------------------------------------------------------ */
+.ap-tt { margin: 4px 0 0; }
+.ap-tt-head {
+  display: inline-flex; align-items: center; gap: 8px; cursor: pointer; user-select: none;
+  background: none; border: 0; padding: 0; margin: 0 0 12px;
+}
+.ap-tt-head h2 { font-size: 18px; font-weight: 700; }
+.ap-tt.ap-collapsed .ap-chevron { transform: rotate(-90deg); }
+.ap-tt.ap-collapsed .ap-tt-wrap { display: none; }
+.ap-tt-wrap { border: 1px solid var(--ap-line); border-radius: var(--ap-r); overflow: hidden; overflow-x: auto; background: var(--ap-raised); }
+.ap-tt table { width: 100%; border-collapse: collapse; margin: 0; font-size: 14px; }
+.ap-tt th, .ap-tt td { padding: 12px 16px; border-bottom: 1px solid var(--ap-hairline); text-align: left; vertical-align: middle; }
+.ap-tt tbody tr:last-child td { border-bottom: 0; }
+.ap-tt th {
+  background: var(--ap-sunk); font-weight: 700; font-size: 13px; color: var(--ap-text);
+  white-space: nowrap; border-bottom: 1px solid var(--ap-line);
+}
+.ap-tt th .ap-help { color: var(--ap-faint); cursor: help; margin-left: 2px; font-weight: 600; }
+.ap-tt .ap-num { width: 1%; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.ap-tt td.ap-num { color: var(--ap-muted); }
+.ap-tt tbody tr { cursor: pointer; transition: background-color 160ms ease-out; }
+.ap-tt tbody tr:hover { background: rgba(3, 38, 41, 0.04); }
+.ap-tt tbody td:first-child { box-shadow: inset 4px 0 0 transparent; }
+.ap-tt tbody tr.ap-selected { background: var(--ap-cream); }
+.ap-tt tbody tr.ap-selected td:first-child { box-shadow: inset 4px 0 0 var(--ap-accent); }
+.ap-tt-name-cell { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.ap-tt-name { color: var(--ap-link); font-weight: 500; }
+.ap-tt tbody tr.ap-selected .ap-tt-name { color: var(--ap-text); font-weight: 700; }
+.ap-tt td.ap-num.ap-has-conflict { color: var(--ap-text); font-weight: 600; }
+
+/* ---- the selected theory -------------------------------------------------------------- */
+.ap-theory { margin-top: 32px; scroll-margin-top: 80px; }
+.ap-theory-head { padding: 0 0 16px; }
+.ap-theory-head h2 { font-size: 22px; font-weight: 700; line-height: 1.3; margin-bottom: 8px; }
+.ap-theory-head p { margin: 0 0 12px; max-width: 100ch; }
+.ap-theory-head .ap-anchor { font-size: 14px; margin-left: 8px; color: var(--ap-faint); opacity: 0; }
+.ap-theory-head:hover .ap-anchor, .ap-theory-head .ap-anchor:focus { opacity: 1; }
+
+.ap-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--ap-line); flex-wrap: wrap; }
+.ap-tab {
+  background: none; border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px;
+  color: var(--ap-muted); padding: 10px 14px; cursor: pointer; font-size: 15px; font-weight: 500;
+}
+.ap-tab:hover { color: var(--ap-text); }
+.ap-tab[aria-selected="true"] { color: var(--ap-text); border-bottom-color: var(--ap-accent); font-weight: 700; }
+body.quarto-dark .ap-tab[aria-selected="true"] { border-bottom-color: var(--ap-link); }  /* no pink underline in dark */
+.ap-tab .ap-count { color: var(--ap-faint); font-weight: 500; margin-left: 4px; }
+.ap-tabpanel { padding: 20px 0 8px; }
+.ap-tabpanel[hidden] { display: none; }
+
+/* ---- the query the theories answer, and one tab per query when there are several ---- */
+.ap-query {
+  margin: 0 0 24px; padding: 12px 16px; max-width: 100ch;
+  background: var(--ap-raised); border: 1px solid var(--ap-line); border-left: 3px solid var(--ap-accent);
+  border-radius: var(--ap-r);
+}
+body.quarto-dark .ap-query { border-left-color: var(--ap-link); }   /* no pink in dark, as the tabs */
+.ap-query figcaption { margin: 0 0 4px; }
+.asta-panel .ap-query blockquote {
+  margin: 0; padding: 0; border: 0; color: var(--ap-muted); font-size: 14px; line-height: 1.6;
+  font-style: normal; white-space: pre-line;
+}
+.ap-qtabs { margin: 0 0 20px; }
+.ap-qtab { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; max-width: 24rem; }
+.ap-qtab-excerpt { font-size: 12px; font-weight: 400; color: var(--ap-faint); line-height: 1.4; }
+.ap-qpanel[hidden] { display: none; }
+
+/* Statements (TheoryStatements) */
+.ap-stmts { display: flex; flex-direction: column; gap: 8px; }
+.ap-stmt { border: 1px solid var(--ap-line); border-radius: var(--ap-r); background: var(--ap-raised); }
+.ap-stmt > summary {
+  cursor: pointer; padding: 14px 16px; list-style: none; display: grid; color: var(--ap-text);
+  grid-template-columns: 16px 1fr; column-gap: 10px; align-items: start;
+}
+.ap-stmt > summary::-webkit-details-marker { display: none; }
+.ap-stmt > summary .ap-chevron { margin-top: 3px; transform: rotate(-90deg); color: var(--ap-muted); }
+.ap-stmt[open] > summary .ap-chevron { transform: none; }
+.ap-stmt-title { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-weight: 700; font-size: 15px; }
+.ap-stmt-brief { grid-column: 2; color: var(--ap-muted); margin-top: 4px; font-size: 14px; }
+.ap-stmt-body { padding: 4px 16px 20px 42px; display: flex; flex-direction: column; gap: 24px; }
+.ap-stmt-body p { margin: 0; max-width: 90ch; }
+.ap-section { display: flex; flex-direction: column; gap: 6px; }
+.ap-label {
+  font-family: Manrope, Arial, sans-serif; font-weight: 700; font-size: 12px;
+  letter-spacing: 0.06em; text-transform: uppercase; color: var(--ap-link);
+}
+.ap-ev-list { display: flex; flex-direction: column; gap: 12px; }
+.ap-ev-item { display: grid; grid-template-columns: 16px 1fr; column-gap: 10px; max-width: 90ch; }
+.ap-ev-item .ap-ev-icon { width: 16px; height: 16px; margin-top: 3px; color: var(--ap-link); }
+.ap-ev-item.ap-conflict .ap-ev-icon { color: var(--ap-accent); }
+.ap-ev-item.ap-open .ap-ev-icon { color: var(--ap-faint); }
+.ap-ev-paper { display: inline-block; margin-top: 2px; font-size: 13px; font-weight: 600; }
+.ap-list { margin: 0; padding-left: 20px; }
+.ap-list li { margin-bottom: 6px; max-width: 90ch; }
+.ap-list li::marker { color: var(--ap-faint); }
+.ap-dims { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.ap-dims details > summary { list-style: none; cursor: pointer; }
+.ap-dims details > summary::-webkit-details-marker { display: none; }
+.ap-dims details[open] { flex-basis: 100%; }
+.ap-dims details > div { padding: 8px 0 0 4px; font-size: 14px; }
+
+/* Predictions (TheoryPredictions) */
+.ap-pred { display: flex; flex-direction: column; gap: 24px; }
+.ap-pred .ap-list li { margin-bottom: 8px; }
+
+/* Evidence (TheoryEvidence) */
+.ap-ev-schema { margin-bottom: 24px; }
+.ap-ev-query { color: var(--ap-muted); font-size: 14px; margin: 0 0 10px; max-width: 90ch; }
+.ap-ev-query strong { color: var(--ap-text); font-weight: 700; margin-right: 4px; }
+.ap-ev-table-wrap { border: 1px solid var(--ap-line); border-radius: var(--ap-r); overflow: auto; max-height: 36rem; background: var(--ap-raised); }
+table.ap-ev-table { border-collapse: separate; border-spacing: 0; margin: 0; font-size: 13px; line-height: 1.5; }
+.ap-ev-table th, .ap-ev-table td {
+  padding: 8px 12px; border-bottom: 1px solid var(--ap-hairline); border-right: 1px solid var(--ap-hairline);
+  vertical-align: top; min-width: 16rem; max-width: 22rem; text-align: left;
+}
+.ap-ev-table th {
+  position: sticky; top: 0; z-index: 2; background: var(--ap-sunk); font-weight: 700;
+  font-size: 12px; color: var(--ap-text); border-bottom: 1px solid var(--ap-line); white-space: nowrap;
+}
+.ap-ev-table td:first-child, .ap-ev-table th:first-child {
+  position: sticky; left: 0; z-index: 1; background: var(--ap-sunk); min-width: 14rem; max-width: 16rem;
+}
+.ap-ev-table th:first-child { z-index: 3; }
+.ap-ev-table td.ap-finding strong { display: block; margin-bottom: 2px; }
+.ap-ev-table tr.ap-target td { background: var(--ap-accent-soft); }
+
+/* ---- paper cards (Referenced papers and the literature page) -------------------------- */
+.ap-papers { display: flex; flex-direction: column; }
+.ap-paper {
+  display: grid; grid-template-columns: 28px 1fr; column-gap: 14px; padding: 16px 8px 16px 0;
+  border-bottom: 1px solid var(--ap-hairline); scroll-margin-top: 96px;
+}
+.ap-paper:first-child { padding-top: 4px; }
+.ap-paper:last-child { border-bottom: 0; }
+/* The paper a link lands on (#paper-…, from a theory's evidence): a light pink accent halo, a
+   soft ring and a softer fill, the look of a bibliography entry a citation lands on (asta-theme). */
+.ap-paper.ap-target {
+  background: var(--ap-halo-fill);
+  box-shadow: 0 0 0 2px var(--ap-halo-ring), 0 0 18px 2px var(--ap-accent-soft);
+  border-radius: var(--ap-r); border-bottom-color: transparent; padding-left: 8px; margin-inline: -8px 0;
+}
+.ap-paper-num {
+  width: 28px; height: 24px; display: flex; align-items: center; justify-content: center;
+  border-radius: 4px; background: var(--ap-sunk); color: var(--ap-muted); font-size: 13px; margin-top: 1px;
+  font-variant-numeric: tabular-nums;
+}
+.ap-paper-body { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.ap-paper-title { font-weight: 700; font-size: 16px; line-height: 1.35; }
+.ap-paper-meta { color: var(--ap-muted); font-size: 13px; }
+.ap-paper-tldr { margin: 0; font-size: 14px; max-width: 90ch; }
+.ap-paper details > summary {
+  cursor: pointer; color: var(--ap-muted); font-size: 13px; list-style: none;
+  display: inline-flex; align-items: center; gap: 4px;
+}
+.ap-paper details > summary::-webkit-details-marker { display: none; }
+.ap-paper details > summary .ap-chevron { transform: rotate(-90deg); width: 14px; height: 14px; }
+.ap-paper details[open] > summary .ap-chevron { transform: none; }
+.ap-paper details p {
+  background: var(--ap-sunk); border-radius: var(--ap-r); padding: 12px 14px; margin: 8px 0 0;
+  font-size: 14px; max-width: 90ch;
+}
+.ap-papers-head { font-size: 16px; font-weight: 700; margin: 0 0 8px; }
+
+/* ---- literature page (PapersPanel + FacetsPanel) --------------------------------------- */
+.ap-lit-searches { color: var(--ap-muted); font-size: 14px; margin: 0 0 16px; }
+.ap-lit-searches div + div { margin-top: 4px; }
+.ap-lit-searches q { color: var(--ap-text); }
+.ap-lit { display: grid; grid-template-columns: minmax(0, 1fr) 240px; gap: 32px; align-items: start; }
+.ap-lit-main { min-width: 0; }
+.ap-lit-bar { display: flex; align-items: center; gap: 12px; margin: 0 0 8px; padding-bottom: 12px; border-bottom: 1px solid var(--ap-line); }
+.ap-lit-bar .ap-count { font-weight: 700; font-size: 18px; font-family: "PP Telegraf", Manrope, Arial, sans-serif; margin-right: auto; }
+.ap-lit-bar input[type="search"] {
+  font: inherit; font-size: 14px; color: var(--ap-text); background: var(--ap-raised);
+  border: 1px solid var(--ap-line); border-radius: var(--ap-r); padding: 6px 10px; width: 18rem;
+}
+.ap-lit-bar input[type="search"]::placeholder { color: var(--ap-faint); }
+.ap-facets { position: sticky; top: 80px; display: flex; flex-direction: column; gap: 16px; font-size: 14px; }
+.ap-facet { border-bottom: 1px solid var(--ap-hairline); padding-bottom: 14px; }
+.ap-facet:last-child { border-bottom: 0; }
+.ap-facet h4 {
+  font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--ap-link); margin: 0 0 8px; font-family: Manrope, Arial, sans-serif;
+}
+.ap-facet label { display: flex; align-items: center; gap: 8px; padding: 3px 0; cursor: pointer; color: var(--ap-text); min-width: 0; }
+.ap-facet label .ap-n { margin-left: auto; color: var(--ap-faint); font-variant-numeric: tabular-nums; font-size: 13px; }
+.ap-facet label .ap-term { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ap-facet input { accent-color: var(--ap-link); margin: 0; flex: none; }
+.ap-clear { background: none; border: 0; padding: 0; color: var(--ap-link); cursor: pointer; font-size: 14px; font-weight: 600; }
+.ap-clear:hover { text-decoration: underline; }
+
+@media (max-width: 900px) {
+  .ap-lit { grid-template-columns: 1fr; }
+  .ap-facets { position: static; order: -1; flex-direction: row; flex-wrap: wrap; gap: 24px; }
+  .ap-facet { border: 0; padding: 0; }
+  .ap-lit-bar input[type="search"] { width: 100%; }
+  .ap-lit-bar { flex-wrap: wrap; }
+  .ap-stmt-body { padding-left: 16px; }
+}
+
+/* Host pages (Quarto's Bootstrap) give details, p and ul their own margins; the panels set theirs. */
+.asta-panel details { margin: 0; }
+.asta-panel .ap-stmt-body ul, .asta-panel .ap-pred ul { margin-bottom: 0; }
+.ap-papers-head { margin-bottom: 12px; }
+
+/* Plain-language legends under tables and the evidence-count detail. */
+.ap-legend { color: var(--ap-muted); font-size: 13px; margin: 8px 0 0; max-width: 90ch; }
+.ap-ev-schema .ap-legend { margin: 0 0 6px; }
+.ap-tt .ap-from { color: var(--ap-faint); font-size: 12px; font-weight: 400; white-space: nowrap; }
+
+/* ---- AutoDiscovery runs (asta-autods): autodiscovery.allen.ai's run view in these pages'
+   style: the run's header, its search tree, the experiments table, the selected experiment ---- */
+.asta-autods { --ap-surprise: #c46a00; }                    /* --color-warning-orange, deepened for cream */
+body.quarto-dark .asta-autods { --ap-surprise: #ffa31c; }   /* --color-warning-orange */
+.asta-autods .af-icon, .ap-ad-layer .af-icon { width: 18px; height: 18px; fill: currentColor; flex: none; }
+.ap-ad-runs { margin-bottom: 32px; }
+.ap-ad-run { scroll-margin-top: 80px; }
+.ap-ad-run > .ap-theory-head { padding-bottom: 12px; }
+.ap-ad-links { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 20px; margin-top: 10px; font-size: 14px; }
+.asta-panel .ap-ad-linkbtn {
+  background: none; border: 0; padding: 0; cursor: pointer; color: var(--ap-link); font-weight: 500;
+  text-decoration: underline; text-decoration-color: var(--ap-link-underline, var(--ap-accent));
+  text-decoration-thickness: var(--ap-link-thickness, 2px); text-underline-offset: var(--ap-link-offset, 3px);
+}
+.asta-panel .ap-ad-linkbtn:hover { color: var(--ap-link-hover); }
+
+/* ExperimentGraph */
+.ap-ad-tree {
+  position: relative; height: 440px; margin-top: 4px; border: 1px solid var(--ap-line); border-radius: var(--ap-r);
+  background: var(--ap-raised); overflow: hidden;
+}
+.ap-ad-tree-svg { width: 100%; height: 100%; display: block; cursor: grab; user-select: none; }
+.ap-ad-tree-svg:active { cursor: grabbing; }
+.ap-ad-tree-svg circle:focus { outline: none; stroke: var(--ap-accent); stroke-width: 3.5; }
+.ap-ad-zoom { position: absolute; top: 10px; right: 10px; display: flex; flex-direction: column; gap: 4px; }
+.ap-ad-zoom button {
+  width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center; padding: 0; cursor: pointer;
+  border: 1px solid var(--ap-line); border-radius: 6px; background: var(--ap-cream); color: var(--ap-muted);
+}
+.ap-ad-zoom button:hover { color: var(--ap-text); border-color: var(--ap-muted); }
+.ap-ad-tree + .ap-legend { margin-bottom: 28px; }
+
+/* ExperimentsTable */
+.ap-ad-exps-head { display: flex; align-items: center; gap: 16px; margin: 0 0 12px; }
+.ap-ad-exps-head .ap-tt-head { margin: 0; }
+.ap-ad-search {
+  margin-left: auto; font: inherit; font-size: 14px; color: var(--ap-text); background: var(--ap-raised);
+  border: 1px solid var(--ap-line); border-radius: var(--ap-r); padding: 5px 10px; width: 16rem; max-width: 50%;
+}
+.ap-ad-search::placeholder { color: var(--ap-faint); }
+.ap-tt.ap-collapsed .ap-ad-search, .ap-tt.ap-collapsed + .ap-legend { display: none; }
+.ap-tt.ap-collapsed > .ap-legend { display: none; }
+.ap-ad-scroll { max-height: 30rem; overflow: auto; }
+.ap-ad-exps table { table-layout: fixed; }
+.ap-ad-exps th { position: sticky; top: 0; z-index: 1; padding: 0; }
+.ap-ad-exps th button {
+  display: flex; align-items: center; gap: 4px; width: 100%; padding: 12px 16px; background: none; border: 0; cursor: pointer;
+  font-weight: 700; font-size: 13px; color: var(--ap-text); text-align: left; white-space: nowrap;
+}
+.ap-ad-exps th.ap-ad-c-num button { justify-content: flex-end; }
+.ap-ad-sort { display: inline-flex; opacity: 0; color: var(--ap-muted); transition: transform 160ms ease-out; }
+.ap-ad-sort .af-icon { width: 14px; height: 14px; }
+.ap-ad-exps th button:hover .ap-ad-sort, .ap-ad-exps th button.ap-ad-sorted .ap-ad-sort { opacity: 1; }
+.ap-ad-exps th button.ap-ad-desc .ap-ad-sort { transform: rotate(180deg); }
+.ap-ad-exps td { vertical-align: top; }
+.ap-ad-c-id { width: 56px; color: var(--ap-muted); font-variant-numeric: tabular-nums; }
+.ap-ad-c-num { width: 104px; text-align: right !important; font-variant-numeric: tabular-nums; color: var(--ap-muted); }
+.ap-ad-c-belief, .ap-ad-c-dir { width: 124px; color: var(--ap-muted); }
+.ap-ad-exps td.ap-ad-surprising { color: var(--ap-surprise); font-weight: 700; }
+.ap-ad-hyp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--ap-link); font-weight: 500; }
+.ap-ad-exps tbody tr.ap-selected .ap-ad-hyp { color: var(--ap-text); font-weight: 700; }
+.ap-ad-exps tbody tr:focus-visible { outline: 2px solid var(--ap-link); outline-offset: -2px; }
+.ap-ad-none { text-align: center; color: var(--ap-muted); cursor: default; }
+@media (max-width: 760px) { .ap-ad-c-belief, .ap-ad-c-dir { display: none; } }
+
+/* The selected experiment: ExperimentDetails, as the theory page shows a theory */
+.ap-ad-exp { margin-top: 36px; scroll-margin-top: 80px; }
+.ap-ad-exp .ap-theory-head p { max-width: 90ch; }
+.ap-chip.ap-ad-chiplink { text-decoration: none; color: var(--ap-link); }
+.ap-chip.ap-ad-chiplink:hover { color: var(--ap-link-hover); }
+.ap-ad-panel { display: flex; flex-direction: column; gap: 24px; }
+.ap-ad-panel[hidden] { display: none; }
+.ap-ad-panel p { margin: 0 0 8px; max-width: 90ch; }
+.ap-ad-panel p:last-child { margin-bottom: 0; }
+.ap-ad-panel code { font-size: 0.9em; }
+
+/* BeliefDistributionPlot */
+.ap-ad-belief { --ap-before: var(--ap-accent); --ap-after: var(--ap-link); position: relative; max-width: 90ch; margin-top: 4px; }
+.ap-ad-belief-labels { position: relative; height: 22px; }
+.ap-ad-b-top { position: absolute; bottom: 2px; transform: translateX(-50%); white-space: nowrap; font-size: 13px; font-weight: 600; }
+.ap-ad-b-top.ap-ad-b-pre { color: var(--ap-before); }
+.ap-ad-b-top.ap-ad-b-post { color: var(--ap-after); }
+.ap-ad-belief-axis { position: relative; height: 14px; }
+.ap-ad-belief-axis::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; border-top: 1px solid var(--ap-line); }
+.ap-ad-b-dot { position: absolute; top: 50%; width: 14px; height: 14px; border-radius: 50%; transform: translate(-50%, -50%); }
+.ap-ad-b-dot.ap-ad-b-pre { background: var(--ap-before); }
+.ap-ad-b-dot.ap-ad-b-post { background: var(--ap-after); }
+.ap-ad-b-arrow { position: absolute; top: 50%; border-top: 2px solid var(--ap-muted); }
+.ap-ad-surprising .ap-ad-b-arrow { border-top-color: var(--ap-surprise); }
+.ap-ad-b-arrow::after { content: ""; position: absolute; top: -6px; right: 6px; border: 5px solid transparent; border-left: 8px solid var(--ap-muted); border-right: 0; }
+.ap-ad-surprising .ap-ad-b-arrow::after { border-left-color: var(--ap-surprise); }
+.ap-ad-b-arrow.ap-ad-b-left::after { right: auto; left: 6px; border-left: 0; border-right: 8px solid var(--ap-muted); }
+.ap-ad-surprising .ap-ad-b-arrow.ap-ad-b-left::after { border-right-color: var(--ap-surprise); }
+.ap-ad-belief-ends { display: flex; justify-content: space-between; color: var(--ap-faint); font-size: 12px; margin-top: 4px; }
+
+/* RichOutputsSection: the figures, in the experiment, each opening full size */
+.ap-ad-figs { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
+.ap-ad-fig {
+  display: flex; flex-direction: column; gap: 6px; padding: 8px; cursor: zoom-in; text-align: left;
+  border: 1px solid var(--ap-line); border-radius: var(--ap-r); background: var(--ap-raised);
+}
+.ap-ad-fig:hover { border-color: var(--ap-muted); }
+.ap-ad-fig img { width: 100%; height: auto; border-radius: 4px; background: #fff; }
+.ap-ad-fig span { font-size: 13px; color: var(--ap-muted); }
+.ap-ad-fig-text { margin: 0; white-space: pre-wrap; font-size: 13px; }
+
+/* CodeBlock: numbered lines, folded after twenty */
+.ap-ad-code { border: 1px solid var(--ap-line); border-radius: var(--ap-r); overflow: hidden; background: var(--ap-sunk); }
+.ap-ad-code pre { margin: 0; padding: 10px 0; max-height: 36rem; overflow: auto; background: transparent; border: 0; font-size: 12.5px; line-height: 1.55; color: var(--ap-text); }
+.ap-ad-code pre code { background: none; color: inherit; padding: 0; white-space: pre; }
+.ap-ad-line { display: block; padding-right: 12px; }
+.ap-ad-folded .ap-ad-past { display: none; }
+.ap-ad-ln { display: inline-block; width: 3.2em; padding-right: 1em; text-align: right; color: var(--ap-faint); user-select: none; }
+.ap-ad-unfold {
+  display: flex; align-items: center; gap: 6px; width: 100%; padding: 8px 12px; cursor: pointer;
+  background: var(--ap-raised); border: 0; border-top: 1px solid var(--ap-line); color: var(--ap-muted); font-size: 13px;
+}
+.ap-ad-unfold .ap-chevron { width: 14px; height: 14px; }
+.ap-ad-unfold.ap-ad-open .ap-chevron { transform: rotate(180deg); }
+
+/* The dialog layer: Session configuration and a figure at full size */
+.ap-ad-layer { position: fixed; inset: 0; z-index: 2000; display: flex; align-items: center; justify-content: center; padding: 32px; background: rgba(3, 38, 41, 0.6); }
+.ap-ad-layer[hidden] { display: none; }
+.ap-ad-dialog {
+  width: min(960px, 100%); max-height: 100%; display: flex; flex-direction: column; overflow: hidden;
+  background: var(--ap-cream); color: var(--ap-text); border: 1px solid var(--ap-line); border-radius: 12px; box-shadow: 0 16px 48px rgba(0, 0, 0, 0.3);
+}
+.ap-ad-dialog-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 20px; border-bottom: 1px solid var(--ap-line); }
+.ap-ad-dialog-head h3 { font-size: 18px; font-weight: 700; }
+.ap-ad-x { background: none; border: 0; padding: 4px; cursor: pointer; color: var(--ap-muted); display: inline-flex; border-radius: 6px; }
+.ap-ad-x:hover { color: var(--ap-text); }
+.ap-ad-dialog-body { padding: 20px; overflow: auto; }
+.ap-ad-fig-full { display: block; width: 100%; max-height: 75vh; object-fit: contain; background: #fff; border-radius: 4px; }
+.ap-ad-params { display: flex; flex-direction: column; gap: 16px; }
+.ap-ad-params h4 { font-size: 16px; font-weight: 700; margin: 4px 0 0; color: var(--ap-text); }
+.ap-ad-pre { white-space: pre-wrap; margin: 0; max-width: 90ch; }
+.ap-ad-dataset > summary { cursor: pointer; list-style: none; display: inline-flex; align-items: center; gap: 6px; }
+.ap-ad-dataset > summary::-webkit-details-marker { display: none; }
+.ap-ad-dataset > summary .ap-chevron { transform: rotate(-90deg); width: 14px; height: 14px; color: var(--ap-muted); }
+.ap-ad-dataset[open] > summary .ap-chevron { transform: none; }
+.ap-ad-dataset p { margin-top: 8px; padding: 12px 14px; background: var(--ap-sunk); border-radius: var(--ap-r); font-size: 14px; }
+
+/* The run's workflow diagram: a long left-to-right chain scrolls sideways rather than shrinking
+   until its labels cannot be read (asta-pages.lua sizes it once Mermaid has drawn it). */
+.asta-workflow { overflow-x: auto; margin: 0.5rem 0 1.5rem; }
+.asta-workflow pre.mermaid { background: transparent; border: 0; padding: 0; margin: 0; }
+
+/* ---- files on disk: the "Files" line over each panel, asta-files, asta-doc ------------------- */
+.asta-panel.ap-files-bar, .asta-files .ap-files-bar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; margin: 0 0 10px;
+  font-size: 13px; line-height: 1.5; color: var(--ap-muted);
+}
+.ap-files-icon { width: 15px; height: 15px; flex: none; color: var(--ap-faint); }
+.ap-files-label {
+  font-weight: 700; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ap-faint);
+  margin-right: 2px;
+}
+.asta-panel.ap-files-bar a, .asta-files a, .ap-ts-links a, .ap-ad-files a { word-break: break-word; }
+.asta-files { margin: 0 0 1.5rem; }
+.asta-files .ap-files-bar { margin-bottom: 6px; }
+.ap-fl { list-style: none; margin: 0; padding: 0; font-size: 14px; }
+.asta-files > .ap-fl {
+  border: 1px solid var(--ap-line); border-radius: var(--ap-r); background: var(--ap-raised); padding: 6px 0;
+}
+.ap-fl li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 12px; padding: 3px 14px; margin: 0; }
+.ap-fl li > a { min-width: 0; }
+.ap-fl .ap-fl-meta { margin-left: auto; color: var(--ap-faint); font-size: 12.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ap-fl .ap-fl-dir > a { font-weight: 700; }
+.ap-fl .ap-fl { flex-basis: 100%; border-left: 1px solid var(--ap-hairline); margin: 2px 0 2px 4px; }
+.ap-fl .ap-fl li { padding-right: 0; }
+.ap-fl .ap-fl-more { color: var(--ap-muted); font-size: 13px; }
+
+.ap-doc-head { margin-bottom: 6px; }
+.asta-doc {
+  border-left: 3px solid var(--ap-line, #cbd2cc); padding: 2px 0 2px 18px; margin: 0 0 1.75rem;
+  overflow-x: auto;
+}
+body.quarto-dark .asta-doc { border-left-color: rgba(250, 242, 233, 0.2); }
+.asta-doc > :first-child { margin-top: 0; }
+.asta-doc table { font-size: 0.9em; }
+.asta-doc .ap-doc-img { max-width: 100%; height: auto; border-radius: 4px; background: #fff; }
+
+/* ---- verdicts -------------------------------------------------------------------------- */
+.asta-panel { --ap-amber-soft: #fbe3bd; --ap-amber: #c46a00; }
+body.quarto-dark .asta-panel { --ap-amber-soft: rgba(255, 163, 28, 0.2); --ap-amber: #ffa31c; }
+.ap-chip.ap-v { font-weight: 600; }
+.ap-chip.ap-v-met { background: var(--ap-green-soft); color: var(--ap-text); }
+.ap-chip.ap-v-partial { background: var(--ap-amber-soft); color: var(--ap-text); }
+.ap-chip.ap-v-notmet { background: var(--ap-sunk); color: var(--ap-text); border-color: var(--ap-line); }
+.ap-chip.ap-v-undecided { background: transparent; color: var(--ap-text); border: 1px dashed var(--ap-muted); }
+.ap-chip.ap-v-running { background: transparent; color: var(--ap-muted); border: 1px dashed var(--ap-line); font-style: italic; }
+.ap-chip.ap-v-notrun, .ap-chip.ap-v-notstarted { background: transparent; color: var(--ap-faint); border: 1px solid var(--ap-hairline); }
+.ap-chip.ap-v-other { background: var(--ap-sunk); color: var(--ap-text); }
+.ap-ts-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; background: var(--ap-faint); }
+.ap-ts-dot.ap-v-met { background: #0fa36f; }
+.ap-ts-dot.ap-v-partial { background: var(--ap-amber); }
+.ap-ts-dot.ap-v-notmet { background: var(--ap-muted); }
+.ap-ts-dot.ap-v-undecided { background: transparent; border: 1.5px dashed var(--ap-muted); }
+.ap-ts-dot.ap-v-running { background: transparent; border: 1.5px dotted var(--ap-faint); }
+.ap-ts-dot.ap-v-notrun, .ap-ts-dot.ap-v-notstarted { background: var(--ap-hairline); }
+.ap-ts-parts { margin-top: 4px; font-size: 12px; color: var(--ap-muted); display: flex; flex-wrap: wrap; gap: 2px 8px; }
+.ap-ts-parts .ap-ts-yes { color: var(--ap-text); font-weight: 600; }
+
+/* ---- asta-tests: the tests table --------------------------------------------------------- */
+.ap-ts { margin-bottom: 1.5rem; }
+.ap-ts-filters { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
+.ap-ts-filter {
+  display: inline-flex; align-items: center; gap: 2px; padding: 3px 10px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--ap-line); background: var(--ap-raised); color: var(--ap-muted); font-size: 13px;
+}
+.ap-ts-filter .ap-n { color: var(--ap-faint); margin-left: 4px; font-variant-numeric: tabular-nums; }
+.ap-ts-filter:hover { color: var(--ap-text); border-color: var(--ap-muted); }
+.ap-ts-filter[aria-pressed="true"] { color: var(--ap-text); border-color: var(--ap-text); font-weight: 700; }
+.ap-ts-scroll { max-height: 42rem; overflow: auto; }
+.ap-tt table.ap-ts-table { table-layout: fixed; min-width: 720px; }
+.ap-tt .ap-ts-table th { position: sticky; top: 0; z-index: 1; padding: 0; }
+.ap-ts-table th button, .ap-ts-table th .ap-ts-th {
+  display: flex; align-items: center; gap: 4px; width: 100%; padding: 10px 12px; background: none; border: 0; cursor: pointer;
+  font-weight: 700; font-size: 13px; color: var(--ap-text); text-align: left; white-space: nowrap;
+}
+.ap-ts-table th .ap-ts-th { cursor: default; }
+.ap-ts-table th.ap-ts-c-num button { justify-content: flex-end; }
+.ap-ts-table th button:hover .ap-ad-sort, .ap-ts-table th button.ap-ad-sorted .ap-ad-sort { opacity: 1; }
+.ap-ts-table th button.ap-ad-desc .ap-ad-sort { transform: rotate(180deg); }
+.ap-tt .ap-ts-table td { padding: 10px 12px; vertical-align: top; font-size: 13.5px; }
+.ap-ts-table tr.ap-ts-row { cursor: pointer; }
+.ap-ts-table tr.ap-ts-row.ap-open { background: var(--ap-cream); }
+.ap-ts-table tr.ap-ts-row.ap-open td:first-child { box-shadow: inset 4px 0 0 var(--ap-accent); }
+body.quarto-dark .ap-ts-table tr.ap-ts-row.ap-open td:first-child { box-shadow: inset 4px 0 0 var(--ap-link); }
+.ap-ts-table tr.ap-ts-row:focus-visible { outline: 2px solid var(--ap-link); outline-offset: -2px; }
+.ap-ts-c-id { width: 96px; white-space: nowrap; }
+.ap-ts-idcell { display: inline-flex; align-items: center; gap: 6px; }
+.ap-ts-idcell .ap-chevron { width: 14px; height: 14px; color: var(--ap-muted); transform: rotate(-90deg); }
+.ap-ts-row.ap-open .ap-ts-idcell .ap-chevron { transform: none; }
+
+.ap-ts-what { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--ap-text); }
+.ap-ts-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.ap-ts-tags .ap-chip { height: 20px; font-size: 11px; padding: 0 6px; }
+.ap-ts-c-verdict { width: 118px; }
+.ap-ts-c-effect { width: 190px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.ap-ts-effect { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.ap-ts-sub-line {
+  color: var(--ap-faint); font-size: 12px; line-height: 1.35; margin-top: 2px;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.ap-tt .ap-ts-table .ap-ts-c-num { width: 84px; text-align: right; font-variant-numeric: tabular-nums; color: var(--ap-muted); overflow-wrap: anywhere; }
+.ap-tt .ap-ts-table .ap-ts-c-n { width: 64px; }
+.ap-ts-c-files { width: 150px; font-size: 12.5px; }
+.ap-ts-c-files a { white-space: nowrap; }
+.ap-ts-table tr.ap-ts-detail td { background: var(--ap-cream); padding: 4px 16px 18px 34px; cursor: default; }
+.ap-ts-others { margin-top: 6px; }
+@media (max-width: 760px) {
+  /* Narrow screens: the table scrolls sideways inside its box; the Files and n columns give way
+     (an opened row still has both), and a theory's name keeps a readable width. */
+  .ap-tt table.ap-ts-table { min-width: 600px; }
+  .ap-tt .ap-ts-table .ap-ts-c-files, .ap-tt .ap-ts-table .ap-ts-c-n { display: none; width: 0; padding: 0; }
+  .ap-ts-c-id { width: 82px; }
+  .ap-ts-c-effect { width: 150px; }
+  .ap-tt td:first-child .ap-tt-name-cell { min-width: 12rem; }
+  .ap-ts-table tr.ap-ts-detail td { padding-left: 14px; }
+}
+
+/* A test as a card: an opened row, and a theory's Tests tab */
+.ap-ts-cards { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; }
+.ap-ts-cards .ap-ts-card { border: 1px solid var(--ap-line); border-radius: var(--ap-r); background: var(--ap-raised); padding: 14px 16px; }
+.ap-ts-card { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.ap-ts-card-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.ap-ts-card-head .ap-ts-id { font-size: 15px; font-weight: 700; margin-right: 2px; }
+.ap-ts-facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr)); gap: 10px 20px; margin: 0; }
+.ap-ts-facts > div { min-width: 0; }
+.ap-ts-facts dt, .ap-ts-leaves dt { font-weight: 700; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ap-faint); }
+.ap-ts-facts dd { margin: 2px 0 0; font-size: 14px; overflow-wrap: anywhere; }
+.ap-ts-leaves dl { display: grid; grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr)); gap: 2px 20px; margin: 6px 0 0; font-size: 13px; }
+.ap-ts-leaves dl > div { display: flex; gap: 8px; justify-content: space-between; border-bottom: 1px solid var(--ap-hairline); padding: 2px 0; min-width: 0; }
+.ap-ts-leaves dt { text-transform: none; letter-spacing: 0; font-weight: 500; font-size: 12.5px; color: var(--ap-muted); overflow-wrap: anywhere; }
+.ap-ts-leaves dd { margin: 0; font-variant-numeric: tabular-nums; white-space: nowrap; text-align: right; }
+.ap-ts-leaves dl > div.ap-ts-text { grid-column: 1 / -1; flex-direction: column; gap: 0; }
+.ap-ts-leaves dl > div.ap-ts-text dd { white-space: normal; text-align: left; }
+.ap-ts-sub table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 6px; }
+.ap-ts-sub th, .ap-ts-sub td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--ap-hairline); vertical-align: top; }
+.ap-ts-sub th { font-size: 12px; color: var(--ap-muted); }
+.ap-ts-links { font-size: 13px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 4px; }
+.ap-ts-figs { display: flex; flex-wrap: wrap; gap: 10px; }
+.asta-panel a.ap-ts-fig {
+  display: flex; flex-direction: column; gap: 4px; width: 168px; padding: 6px; text-decoration: none; font-weight: 400;
+  border: 1px solid var(--ap-line); border-radius: var(--ap-r); background: var(--ap-raised);
+}
+.asta-panel a.ap-ts-fig:hover { border-color: var(--ap-muted); }
+.ap-ts-fig img { width: 100%; height: 104px; object-fit: contain; background: #fff; border-radius: 4px; }
+.ap-ts-fig span { font-size: 11.5px; color: var(--ap-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A figure too large to copy into the site: a link to the file, the size of a thumbnail. */
+.ap-ts-fig-big .ap-ts-fig-note {
+  display: flex; align-items: center; justify-content: center; height: 104px; padding: 0 8px; text-align: center;
+  white-space: normal; border-radius: 4px; background: var(--ap-sunk);
+}
+
+/* The theory table's Tests column */
+.ap-tt th.ap-tt-tests, .ap-tt td.ap-tt-tests { width: 1%; white-space: nowrap; }
+.ap-tt td.ap-tt-tests { font-size: 13px; color: var(--ap-muted); }
+.ap-tt-unmatched { margin-top: 12px; }
+.ap-ad-files { margin-top: 8px; font-size: 13px; }
+
+/* ---- a flow's feed (asta-pages.js): the next workflow pages of the flow, appended below ---- */
+.asta-flow {
+  --ap-text: #0a3235; --ap-muted: #3f7274; --ap-faint: #6e9291; --ap-line: #cbd2cc;
+  --ap-link: #105257; --ap-link-hover: #3f7274; --ap-accent: #f0529c;
+}
+body.quarto-dark .asta-flow {
+  --ap-text: #faf2e9; --ap-muted: #cbd2cc; --ap-faint: #9cb2af; --ap-line: rgba(250, 242, 233, 0.2);
+  --ap-link: #0fcb8c; --ap-link-hover: #6ddbb1;
+}
+.asta-flow-page { margin-top: 4.5rem; }
+.asta-flow-divider {
+  position: relative; padding-top: 1.6rem; margin-bottom: 1.5rem;
+  border-top: 1px solid var(--ap-line);
+  font-family: Manrope, Arial, sans-serif;
+}
+/* A short accent stroke on the rule marks where one workflow ends and the next begins. */
+.asta-flow-divider::before {
+  content: ""; position: absolute; top: -2px; left: 0; width: 3rem; height: 3px;
+  border-radius: 2px; background: var(--ap-accent);
+}
+.asta-flow-kicker {
+  font-size: 0.78rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--ap-faint); margin-bottom: 0.35rem;
+}
+.asta-flow-step { font-weight: 500; letter-spacing: 0.02em; margin-left: 0.4em; }
+main .asta-flow-divider h1.asta-flow-title { margin: 0 0 0.3rem; border: 0; padding: 0; }
+/* The title links its page, quietly: the heading's colour, underlined on hover (above the
+   asta-theme's rule for links in the page body). */
+body #quarto-document-content .asta-flow .asta-flow-divider h1.asta-flow-title a { color: inherit; text-decoration: none; }
+body #quarto-document-content .asta-flow .asta-flow-divider h1.asta-flow-title a:hover { color: var(--ap-link-hover); text-decoration: underline; text-underline-offset: 4px; text-decoration-thickness: 2px; }
+.asta-flow-status {
+  display: flex; align-items: center; gap: 0.6rem; padding: 1.2rem 0 3rem;
+  font-family: Manrope, Arial, sans-serif; font-size: 0.92rem; color: var(--ap-muted);
+}
+.asta-flow-status a, .asta-flow-retry { color: var(--ap-link); font-weight: 500; }
+.asta-flow-retry {
+  font: inherit; font-weight: 600; background: none; border: 1px solid var(--ap-line); border-radius: 6px;
+  padding: 0.15rem 0.6rem; cursor: pointer;
+}
+.asta-flow-retry:hover { border-color: var(--ap-link); }
+.asta-flow-spinner {
+  width: 14px; height: 14px; border-radius: 50%; flex: none;
+  border: 2px solid var(--ap-line); border-top-color: var(--ap-link);
+  animation: asta-flow-spin 0.9s linear infinite;
+}
+@keyframes asta-flow-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .asta-flow-spinner { animation: none; } }
+.asta-flow-sentinel { height: 1px; }
+.asta-flow-end {
+  margin: 4rem 0 2rem; padding-top: 1rem; border-top: 1px solid var(--ap-line); text-align: center;
+  font-family: Manrope, Arial, sans-serif; font-size: 0.85rem; color: var(--ap-faint);
+}
+
+/* ---- autolink (autolink.lua): links and the cards they open (asta-pages.js) ---- */
+/* A mention that names several things is marked by a dotted underline. */
+a.asta-al-many { text-decoration-style: dotted; }
+/* Where a card stands in for the evidence popover (asta-pages.js sets html.asta-cards), the
+   popover evidence draws with CSS stays shut; without asta-pages.js it shows as before. */
+html.asta-cards .ev[data-asta-card] > .ev-pop { display: none !important; }
+.asta-panel.asta-al-card {
+  position: absolute; z-index: 1080; width: min(380px, calc(100vw - 16px));
+  padding: 10px 12px 8px; border-radius: var(--ap-r); border: 1px solid var(--ap-line);
+  background: var(--ap-raised); box-shadow: 0 8px 24px rgba(3, 38, 41, 0.16); font-size: 13.5px; line-height: 1.45;
+}
+body.quarto-dark .asta-panel.asta-al-card { box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45); }
+.asta-al-card .ap-al-item + .ap-al-item { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--ap-hairline); }
+.asta-al-card .ap-al-role {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ap-faint);
+}
+.asta-al-card a.ap-al-go { font-weight: 600; }
+.asta-al-card .ap-al-title { font-weight: 600; color: var(--ap-text); }
+.asta-al-card .ap-al-page { font-size: 12px; color: var(--ap-muted); }
+/* Text clamped to the lines a section asks for (style="-webkit-line-clamp: n"). */
+.asta-al-card .ap-al-clamp[style] { display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; }
+.asta-al-card .ap-al-text { margin: 3px 0 0; color: var(--ap-text); }
+.asta-al-card .ap-al-quote {
+  margin: 3px 0 0; padding: 0 0 0 8px; border-left: 2px solid var(--ap-line); font-style: italic; color: var(--ap-text);
+  font-size: 13px;
+}
+.asta-al-card .ap-al-thumb {
+  display: block; width: 100%; max-height: 120px; object-fit: contain; margin: 4px 0;
+  background: var(--ap-raised); border-radius: 4px; border: 1px solid var(--ap-hairline);
+}
+.asta-al-card .ap-al-meta { margin-top: 4px; font-size: 12.5px; color: var(--ap-muted); }
+.asta-al-card .ap-al-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+.asta-al-card .ap-al-chips .ap-chip { font-size: 11.5px; padding: 1px 6px; }
+.asta-al-card .ap-al-links { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 4px; font-size: 12.5px; }
+.asta-al-card .ap-al-foot { margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--ap-hairline); font-size: 12px; color: var(--ap-faint); }
+
+/* ---- a figure's provenance (provenance.lua): "Made from make_figure.py · 3 inputs · audit PASS" ---- */
+.asta-made-from {
+  margin: -0.4rem 0 1.4rem; font-family: Manrope, Arial, sans-serif; font-size: 0.82rem; line-height: 1.5;
+  color: var(--bs-secondary-color, #6e9291);
+}
+.asta-made-from a { color: inherit; text-decoration: underline; text-underline-offset: 2px; text-decoration-thickness: 1px; }
+.asta-made-from a:hover { color: var(--bs-link-color, inherit); }
+.asta-made-from details.asta-made-inputs { display: inline; }
+.asta-made-from details.asta-made-inputs > summary { display: inline; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 2px; }
+.asta-made-from details.asta-made-inputs > summary::-webkit-details-marker { display: none; }
+.asta-made-from details.asta-made-inputs[open] > ul { display: block; margin: 0.25rem 0 0.25rem 1rem; padding: 0; }
+.asta-made-from .asta-made-dir, .asta-made-from .asta-made-missing { opacity: 0.75; }
+
+/* "On this page" while it lists just the sections the sidebar lists for the page in view. */
+nav[role="doc-toc"].asta-toc-same {
+  display: none;
+}
