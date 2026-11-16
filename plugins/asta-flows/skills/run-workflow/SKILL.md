@@ -21,6 +21,8 @@ Pick one with the person and read its README.
 
 Track every run in a workspace, with the `workspace` skill. Before starting a workflow, set up the workspace scaffold, start the local Quarto preview, and give the person its URL once it serves this project. The project's report, `index.qmd`, opens with the person's mission in their words and a short abstract, then follows the template of the workflow it reports on: `index.md` in the workflow's folder, or the workspace's cover if there is none. A workflow's `templates/page.qmd`, when it has one, is the run's page.
 
+After each workflow, update the report with what the run found, and check it with the `check-claims` skill. Before the report is shared, run the [Review](workflows/review/README.md) workflow on it.
+
 ## Running Workflows
 
 There are three ways to run workflows. Settle which one before anything else, once per project.
