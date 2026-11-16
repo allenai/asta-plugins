@@ -1,4 +1,78 @@
 <script>
+// A page shown in a sandboxed frame (no allow-same-origin) throws on any touch of
+// localStorage or sessionStorage, and Quarto's own scripts read them for the colour mode
+// and reader mode. Put an in-memory stand-in in their place there, so the page renders.
+(function () {
+  function memory() {
+    var m = {};
+    return {
+      getItem: function (k) { return Object.prototype.hasOwnProperty.call(m, k) ? m[k] : null; },
+      setItem: function (k, v) { m[k] = String(v); },
+      removeItem: function (k) { delete m[k]; },
+      clear: function () { m = {}; },
+      key: function (i) { return Object.keys(m)[i] || null; },
+      get length() { return Object.keys(m).length; }
+    };
+  }
+  ["localStorage", "sessionStorage"].forEach(function (name) {
+    try { window[name].getItem("asta-probe"); }
+    catch (e) { try { Object.defineProperty(window, name, { value: memory(), configurable: true }); } catch (e2) {} }
+  });
+})();
+</script>
+<script>
+// The colour theme. Dark is the default (_quarto.yml lists it first). On an ordinary site
+// Quarto keeps the reader's choice in localStorage itself. In a sandboxed frame that storage
+// lasts one page, so the embedder keeps the choice: it puts it on <html data-wsfd-theme> or
+// in the frame's name ("wsfd:theme=light"), and this script hands it to Quarto before Quarto
+// picks the stylesheets, so the page never paints in the wrong theme. A switch is announced
+// with a "wsfd:theme" event and written back to the frame's name.
+(function () {
+  var root = document.documentElement;
+  var framed = window.parent !== window;
+  var named = framed ? /^wsfd:theme=(light|dark)$/.exec(String(window.name || "")) : null;
+  var wanted = root.getAttribute("data-wsfd-theme") || (named && named[1]);
+  if (wanted === "light" || wanted === "dark") {
+    // Quarto's sentinel names the stylesheet set ("alternate" or "default"), not the theme.
+    var alt = document.querySelector("link.quarto-color-scheme.quarto-color-alternate[data-mode]");
+    var altIsDark = !alt || alt.getAttribute("data-mode") !== "light";
+    try {
+      window.localStorage.setItem("quarto-color-scheme", (wanted === "dark") === altIsDark ? "alternate" : "default");
+    } catch (e) {}
+  }
+  function theme() { return document.body.classList.contains("quarto-dark") ? "dark" : "light"; }
+  function describe() {
+    var dark = theme() === "dark";
+    document.querySelectorAll(".quarto-color-scheme-toggle").forEach(function (t) {
+      t.setAttribute("role", "switch");
+      t.setAttribute("aria-checked", String(dark));
+      t.setAttribute("aria-label", "Dark theme");
+      t.setAttribute("title", dark ? "Switch to the light theme" : "Switch to the dark theme");
+    });
+  }
+  document.addEventListener("DOMContentLoaded", function () {
+    describe();
+    document.querySelectorAll(".quarto-color-scheme-toggle").forEach(function (t) {
+      t.addEventListener("keydown", function (e) {   // a switch also answers Space
+        if (e.key === " ") { e.preventDefault(); t.click(); }
+      });
+    });
+    var toggle = window.quartoToggleColorScheme;
+    if (typeof toggle !== "function") return;
+    window.quartoToggleColorScheme = function () {
+      var result = toggle.apply(this, arguments);
+      var now = theme();
+      describe();
+      if (framed) {
+        try { window.name = "wsfd:theme=" + now; } catch (e) {}   // this frame's next page
+        window.dispatchEvent(new CustomEvent("wsfd:theme", { detail: { theme: now } }));
+      }
+      return result;
+    };
+  });
+})();
+</script>
+<script>
 document.addEventListener("DOMContentLoaded", () => {
   const header = document.getElementById("quarto-header");
   if (!header) return;
