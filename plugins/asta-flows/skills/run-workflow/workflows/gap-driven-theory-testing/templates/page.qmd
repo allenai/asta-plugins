@@ -1,0 +1,43 @@
+---
+title: "Gap-driven theory testing"
+---
+
+## Plan and papers
+
+{{< asta-files dir=".asta/flows/{{RUN}}/01-plan-and-papers" depth=2 limit=60 >}}
+
+## Extraction
+
+{{< asta-files dir=".asta/flows/{{RUN}}/02-extract" depth=2 limit=60 >}}
+
+## Field standards
+
+{{< asta-doc file=".asta/flows/{{RUN}}/03-field-standards/field-standards.md" >}}
+
+## Gap map
+
+{{< asta-doc file=".asta/flows/{{RUN}}/04-gap-map/gaps.md" >}}
+
+## Theories
+
+{{< asta-theories data="../.asta/flows/{{RUN}}/05-theories/data/theorizer-<gap ID>.json" >}}
+
+## Theory cards
+
+{{< asta-files dir=".asta/flows/{{RUN}}/06-theory-cards" depth=2 limit=80 >}}
+
+## Data
+
+{{< asta-doc file=".asta/flows/{{RUN}}/07-data/inventory.md" >}}
+
+## Tests
+
+{{< asta-tests dir=".asta/flows/{{RUN}}/08-tests/<gap ID>" >}}
+
+## Missing data
+
+{{< asta-files dir=".asta/flows/{{RUN}}/09-missing" depth=2 >}}
+
+## Papers
+
+{{< asta-literature data="../.asta/flows/{{RUN}}/01-plan-and-papers/data/papers.json" >}}
