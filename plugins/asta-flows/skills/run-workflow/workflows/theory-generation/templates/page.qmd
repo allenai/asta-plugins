@@ -1,0 +1,9 @@
+---
+title: "Theory generation"
+---
+
+{{< asta-workflow file="../.asta/flows/{{RUN}}/workflow.mmd" >}}
+
+## Theories
+
+{{< asta-theories data="../.asta/flows/{{RUN}}/data/theorizer.json" >}}

@@ -1,0 +1,502 @@
+#!/usr/bin/env python3
+"""theorizer-site-data: write the slim data file a run's literature and theory pages read.
+
+    theorizer-site-data <step>/theory <step>/data/theorizer.json [--bib references.bib]
+                        [--metadata hist/metadata.json] [--gap G7]
+
+Reads a `theorize` project directory (asta-theorizer on PyPI) and writes one JSON file with
+only what the pages show: paper metadata (no full text), the searches, the extracted findings
+once, and the theories with the query each was generated for, their statements, predictions and
+evidence links; and beside it
+papers.json, the papers and searches alone, which the literature page reads (papers-v2.json
+beside theorizer-v2.json, so a second project's files sit beside the first's). Run it again
+after every fetch, extraction or generation; it rewrites the file from the project each time.
+
+With `--bib FILE`, it also adds a BibTeX entry for each of the run's papers to FILE (the site's
+`references.bib`), keyed `s2-<corpus id>`, so evidence quotes can cite them (`cite: s2-267095315`).
+Entries already in the file are left as they are.
+
+With `--metadata FILE`, a collection's own metadata (a JSON list of CSL-style records, each with
+the store key as `id`: `title`, `authors` as `literal` or `family`/`given`, `year`, `container`,
+`doi`) replaces what the store has for those papers, field by field where the record has a
+value. Documents collected by hand were imported into the store before their metadata was
+checked; this puts the checked title, authors, year, venue and DOI on the pages.
+
+With `--gap ID`, the theories are tagged as generated for that gap of the run's gap map: each
+theory, and the file, carries `"gap": "ID"`. The site's link cards group a gap's theories by
+it (a mention of G7 in the text links G7's theories and its gap map entry).
+
+Standard library only. Exit status 0 on success, 2 for bad usage, 3 when the project cannot be
+read (no paperstore.json and no theorystore.json).
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import sys
+from pathlib import Path
+
+FORMAT = "asta-pages/theorizer@1"
+SAVE_RE = re.compile(r"^(\d+)-(.+)\.json$")
+
+
+def load(path: Path):
+    try:
+        return json.loads(path.read_text())
+    except (OSError, ValueError):
+        return None
+
+
+def saves(project: Path) -> list[tuple[str, dict]]:
+    """The project's numbered saves (`01-plan-theory-query.json`, ...), oldest first."""
+    found = []
+    for p in project.iterdir():
+        m = SAVE_RE.match(p.name)
+        if m:
+            data = load(p)
+            if isinstance(data, dict):
+                found.append((int(m.group(1)), m.group(2), data))
+    found.sort(key=lambda x: x[0])
+    return [(name, data) for _, name, data in found]
+
+
+def paper_view(key: str, entry: dict) -> dict:
+    # The store entry's own record (`authors`, `venue`, `doi` from the source its text came from,
+    # as asta-papers writes it) first; Semantic Scholar's only where the entry has none.
+    meta = entry.get("s2_metadata") or {}
+    corpus = entry.get("corpus_id") or meta.get("corpusId")
+    journal = meta.get("journal") or {}
+    venue = entry.get("venue") or meta.get("venue") or (journal.get("name") if isinstance(journal, dict) else None)
+    own_authors = [a for a in (entry.get("authors") or []) if isinstance(a, str) and a.strip()]
+    tldr = meta.get("tldr")
+    external = meta.get("externalIds") or {}
+    url = meta.get("url") or (f"https://www.semanticscholar.org/p/{corpus}" if corpus else None)
+    return {
+        "key": key,
+        "corpusId": str(corpus) if corpus is not None else None,
+        "title": entry.get("title") or meta.get("title") or "",
+        "authors": own_authors or [a.get("name") for a in (meta.get("authors") or []) if isinstance(a, dict) and a.get("name")],
+        "year": entry.get("publication_year") or entry.get("year") or meta.get("year"),
+        "venue": venue or None,
+        "abstract": meta.get("abstract"),
+        "tldr": tldr.get("text") if isinstance(tldr, dict) else (tldr or None),
+        "citationCount": meta.get("citationCount"),
+        "doi": entry.get("doi") or external.get("DOI"),
+        "url": url,
+        "status": entry.get("status"),
+        "rank": None,
+        "relevance": None,
+        "search": None,
+    }
+
+
+def csl_author(a) -> str:
+    if isinstance(a, str):
+        return a.strip()
+    if not isinstance(a, dict):
+        return ""
+    return (a.get("literal") or " ".join(x for x in (a.get("given"), a.get("family")) if x) or "").strip()
+
+
+def apply_metadata(papers: dict[str, dict], records) -> int:
+    """Put a collection's checked metadata on the papers it names; return how many it changed."""
+    changed = 0
+    for rec in records if isinstance(records, list) else []:
+        p = papers.get(rec.get("id")) if isinstance(rec, dict) else None
+        if p is None:
+            continue
+        fills = {"title": rec.get("title"), "year": rec.get("year"), "venue": rec.get("container"),
+                 "doi": rec.get("doi"),
+                 "authors": [n for n in (csl_author(a) for a in rec.get("authors") or []) if n]}
+        before = dict(p)
+        for k, v in fills.items():
+            if v:
+                p[k] = v
+        changed += p != before
+    return changed
+
+
+def ref_list(items) -> list[dict]:
+    out = []
+    for ev in items or []:
+        if isinstance(ev, dict):
+            out.append({"text": ev.get("text") or "", "uuids": [u for u in (ev.get("uuids") or []) if isinstance(u, str)]})
+        elif isinstance(ev, str):
+            out.append({"text": ev, "uuids": []})
+    return out
+
+
+class NotAProject(Exception):
+    pass
+
+
+def merge_patch(target, patch):
+    """RFC 7396: a dict patch merges key by key, null deletes, anything else replaces."""
+    if not isinstance(patch, dict):
+        return patch
+    out = dict(target) if isinstance(target, dict) else {}
+    for key, value in patch.items():
+        if value is None:
+            out.pop(key, None)
+        else:
+            out[key] = merge_patch(out.get(key), value)
+    return out
+
+
+def hosted_stores(project: Path):
+    """The stores a hosted Theorizer run sent back. Each saved task result (`*.result.json`, the
+    final task JSON `asta generate-theories` prints) carries the theory store as merge patches in
+    its artifacts; applied in file order, they rebuild what a CLI run keeps in paperstore.json
+    and theorystore.json."""
+    merged, found = {}, False
+    for path in sorted(project.glob("*.result.json"), key=lambda q: (q.stat().st_mtime, q.name)):
+        task = load(path)
+        for artifact in (task or {}).get("artifacts") or []:
+            if (artifact.get("metadata") or {}).get("type") != "theory_store":
+                continue
+            for part in artifact.get("parts") or []:
+                if isinstance(part.get("data"), dict):
+                    merged = merge_patch(merged, part["data"])
+                    found = True
+    if not found:
+        return None, None
+    return {"paperstore": merged.get("paperstore") or {}}, merged
+
+
+def build(project: Path, metadata=None) -> dict:
+    """The slim data for one theorize project, or one hosted run's saved task results. Raises
+    NotAProject when it has neither store nor a hosted result.
+    `metadata`: a collection's records (see --metadata), applied before copies are merged."""
+    project = Path(project)
+    paperstore = load(project / "paperstore.json")
+    store = load(project / "theorystore.json")
+    if paperstore is None and store is None:
+        paperstore, store = hosted_stores(project)
+    if paperstore is None and store is None:
+        raise NotAProject(f"{project} has no readable paperstore.json or theorystore.json; "
+                          "is it a theorize project (theorize -p DIR init)?")
+    store = store or {}
+    all_saves = saves(project)
+
+    # Papers, in the order the searches ranked them, then the rest in store order.
+    entries = (paperstore or {}).get("paperstore", paperstore or {})
+    papers = {k: paper_view(k, v) for k, v in entries.items() if isinstance(v, dict)}
+    if metadata:
+        apply_metadata(papers, metadata)
+    by_corpus = {p["corpusId"]: p for p in papers.values() if p["corpusId"]}
+    searches = []
+    request = None
+    for name, data in all_saves:
+        if "theory_request" in data and request is None:
+            request = data.get("theory_request")
+        if isinstance(data.get("candidates"), list):
+            cands = data["candidates"]
+            searches.append({"name": name, "query": data.get("paper_search_query"), "candidates": len(cands)})
+            for i, c in enumerate(cands):
+                p = by_corpus.get(str(c.get("corpus_id")))
+                if p and p["rank"] is None:
+                    p["rank"], p["relevance"], p["search"] = i + 1, c.get("relevance"), name
+                    tldr = c.get("tldr")
+                    tldr = tldr.get("text") if isinstance(tldr, dict) else tldr
+                    p["tldr"] = p["tldr"] or (tldr if isinstance(tldr, str) else None)
+                    p["abstract"] = p["abstract"] or c.get("abstract")
+    # Searches saved by the s2 CLI beside the project (<run>/searches/*.json), as the
+    # S2-to-asta-papers chain keeps them: rank each paper by its first search, and fill
+    # metadata the store does not carry (venue, TL;DR, citations).
+    for path in sorted((project.parent / "searches").glob("*.json"), key=lambda q: (q.stat().st_mtime, q.name)):
+        raw = load(path)
+        body = raw.get("data") if isinstance(raw, dict) else None
+        items = body.get("data") if isinstance(body, dict) else body
+        if not isinstance(items, list):
+            continue
+        query = raw.get("query") if isinstance(raw.get("query"), str) else None
+        searches.append({"name": path.stem, "query": query, "candidates": len(items)})
+        for i, item in enumerate(items):
+            if not isinstance(item, dict):
+                continue
+            for key in ("citedPaper", "citingPaper", "paper"):
+                if isinstance(item.get(key), dict):
+                    item = item[key]
+                    break
+            corpus = (item.get("externalIds") or {}).get("CorpusId", item.get("corpusId"))
+            p = by_corpus.get(str(corpus)) if corpus is not None else None
+            if p is None:
+                continue
+            if p["rank"] is None:
+                p["rank"], p["search"] = i + 1, path.stem
+            tldr = item.get("tldr")
+            fills = {"venue": item.get("venue") or None, "year": item.get("year"),
+                     "citationCount": item.get("citationCount"), "abstract": item.get("abstract"),
+                     "tldr": tldr.get("text") if isinstance(tldr, dict) else None,
+                     "authors": [a.get("name") for a in (item.get("authors") or []) if isinstance(a, dict) and a.get("name")]}
+            for k, v in fills.items():
+                if not p.get(k) and v:
+                    p[k] = v
+    search_order = {s["name"]: i for i, s in enumerate(searches)}
+    ordered = sorted(papers.values(), key=lambda p: (search_order.get(p["search"], len(searches)), p["rank"] or 0))
+
+    # Findings: every extraction result once, grouped by schema; the schemas come from the
+    # extraction saves (the theory store does not keep them).
+    schema_of_result: dict[str, dict] = {}
+    for name, data in all_saves:
+        if isinstance(data.get("extraction_schema"), list) and isinstance(data.get("results"), list):
+            spec = {"query": data.get("extraction_query"), "columns": [
+                {"name": c.get("name"), "type": c.get("type"), "description": c.get("description")}
+                for c in data["extraction_schema"] if isinstance(c, dict)], "save": name}
+            for r in data["results"]:
+                if isinstance(r, dict) and r.get("extraction_result_id"):
+                    schema_of_result[r["extraction_result_id"]] = spec
+    # A store that keeps its schemas (a hosted run's, or the library's) names them by id.
+    schema_by_id: dict[str, dict] = {}
+    for sid, entry in (store.get("extraction_schemas") or {}).items():
+        if isinstance(entry, dict) and isinstance(entry.get("schema"), list):
+            schema_by_id[sid] = {"query": entry.get("extraction_query"), "columns": [
+                {"name": c.get("name"), "type": c.get("type"), "description": c.get("description")}
+                for c in entry["schema"] if isinstance(c, dict)]}
+    findings: dict[str, dict] = {}
+    uuid_paper: dict[str, str] = {}
+    for rid, result in (store.get("extraction_results") or {}).items():
+        sid = result.get("extraction_schema_id") or "schema"
+        spec = schema_of_result.get(rid) or schema_by_id.get(sid) or {}
+        table = findings.setdefault(sid, {"query": spec.get("query"), "columns": spec.get("columns") or [], "rows": []})
+        for row in result.get("extracted_data") or []:
+            if not isinstance(row, dict):
+                continue
+            uuid = row.get("uuid")
+            if isinstance(uuid, str):
+                uuid_paper[uuid] = result.get("paper_id")
+            if not table["columns"]:
+                table["columns"] = [{"name": k, "type": None, "description": None} for k in row if k != "uuid"]
+            table["rows"].append({"result": rid, "uuid": uuid, "paper": result.get("paper_id"),
+                                  "data": {k: v for k, v in row.items() if k != "uuid"}})
+
+    def with_paper(refs: list[dict]) -> list[dict]:
+        for ev in refs:
+            ev["paper"] = next((uuid_paper[u] for u in ev["uuids"] if uuid_paper.get(u)), None)
+        return refs
+
+    evaluations = store.get("theory_evaluations") or {}
+    theories = []
+    for tid, theory in (store.get("theories") or {}).items():
+        comps = theory.get("components") or {}
+        statements = []
+        for i, item in enumerate(comps.get("theory_statements") or []):
+            law = item.get("law") if isinstance(item, dict) and isinstance(item.get("law"), dict) else item
+            if not isinstance(law, dict):
+                continue
+            nov = law.get("novelty_evaluation") if isinstance(law.get("novelty_evaluation"), dict) else {}
+            dims = evaluations.get(f"novelty-{tid}-{i}") or {}
+            statements.append({
+                "name": law.get("statement_name") or "",
+                "statement": law.get("theory_statement") or "",
+                "plain": law.get("theory_statement_plain_language") or "",
+                "scope": law.get("domain_scope") or "",
+                "special_cases": [s for s in (law.get("special_cases") or []) if isinstance(s, str)],
+                "kind": law.get("qual_or_quant"),
+                "novelty": {
+                    "label": nov.get("likely_classification"),
+                    "explanation": nov.get("classification_explanation"),
+                    "existing": nov.get("what_already_exists"),
+                    "novel": nov.get("what_is_novel"),
+                    "dimensions": [
+                        {"key": k, "degree": d.get("degree_of_novelty"), "introduced": d.get("what_introduced"),
+                         "known": d.get("what_is_known"), "novel": d.get("what_novel")}
+                        for k, d in dims.items() if k != "id" and isinstance(d, dict)],
+                },
+                "evidence": with_paper(ref_list(law.get("supporting_evidence"))),
+                "conflicting": with_paper(ref_list(law.get("conflicting_evidence"))),
+                "unaccounted": with_paper(ref_list(law.get("unaccounted_for"))),
+            })
+        result_ids = [r for r in (theory.get("supporting_evidence_ids") or []) if isinstance(r, str)]
+        cited = []
+        for st in statements:
+            for ev in st["evidence"] + st["conflicting"]:
+                if ev["paper"] and ev["paper"] not in cited:
+                    cited.append(ev["paper"])
+        for rid in result_ids:
+            pid = ((store.get("extraction_results") or {}).get(rid) or {}).get("paper_id")
+            if pid and pid not in cited:
+                cited.append(pid)
+        existing = comps.get("existing_theory") if isinstance(comps.get("existing_theory"), dict) else {}
+        theories.append({
+            "id": str(theory.get("id") or tid),
+            "name": comps.get("theory_name") or theory.get("name") or "",
+            # The query the theory was generated for, as Theorizer recorded it on the theory; the
+            # page groups theories by it. The run's first theory request when the theory has none.
+            "query": theory.get("theory_query") if isinstance(theory.get("theory_query"), str) else request,
+            "summary": comps.get("theory_description") or theory.get("description") or "",
+            "plain": comps.get("theory_description_plain_language") or "",
+            "kind": comps.get("theory_type_general_specific") or theory.get("type"),
+            "generator": comps.get("method"),
+            # The proxy prefix ("openai/claude-opus-5") is plumbing, not the model's name.
+            "model": str(theory.get("model_str") or "").split("/")[-1] or None,
+            "novelty": {"label": existing.get("likely_classification"), "explanation": existing.get("classification_explanation")},
+            "predictions_likely": [x for x in comps.get("new_predictions_likely") or [] if isinstance(x, str)],
+            "predictions_unknown": [x for x in comps.get("new_predictions_unknown") or [] if isinstance(x, str)],
+            "negative_experiments": [x for x in comps.get("negative_experiments") or [] if isinstance(x, str)],
+            "statements": statements,
+            "supporting": sum(len(s["evidence"]) for s in statements),
+            "conflicting": sum(len(s["conflicting"]) for s in statements),
+            # How many distinct papers those pieces of evidence come from.
+            "supporting_papers": len({e["paper"] for s in statements for e in s["evidence"] if e["paper"]}),
+            "conflicting_papers": len({e["paper"] for s in statements for e in s["conflicting"] if e["paper"]}),
+            "evidence_results": result_ids,
+            "papers": [p for p in cited if p in papers],
+        })
+
+    # Each paper's role in the run, for a reader who was not there: used by a theory (its findings
+    # are cited as evidence), read in full but not used, or found with an abstract only (not read).
+    used = {e["paper"] for t in theories for s in t["statements"] for e in s["evidence"] + s["conflicting"] if e["paper"]}
+    findings_per_paper: dict[str, int] = {}
+    for table in findings.values():
+        for row in table["rows"]:
+            if row["paper"]:
+                findings_per_paper[row["paper"]] = findings_per_paper.get(row["paper"], 0) + 1
+    for p in ordered:
+        p["findings"] = findings_per_paper.get(p["key"], 0)
+        if p["key"] in used:
+            p["role"] = "used"
+        elif p["status"] == "full-text":
+            p["role"] = "read"
+        else:
+            p["role"] = "abstract"
+    # The same work under two ids (a preprint and its published version): keep one card, the one
+    # that did the most, and list the others on it.
+    # Two versions of one work share their title and first author; two studies that only share
+    # a title stay apart.
+    rank_of_role = {"used": 0, "read": 1, "abstract": 2}
+
+    def same_work(p):
+        title = re.sub(r"[^a-z0-9]+", "", (p["title"] or "").lower())
+        if not title:
+            return p["key"]
+        first = (p.get("authors") or [""])[0] or ""
+        surname = re.sub(r"[^a-z]+", "", (first.split() or [""])[-1].lower())
+        return title + "|" + surname
+
+    groups: dict[str, list[dict]] = {}
+    for p in ordered:
+        groups.setdefault(same_work(p), []).append(p)
+    kept = []
+    for p in ordered:
+        group = groups[same_work(p)]
+        primary = min(group, key=lambda q: (rank_of_role[q["role"]], group.index(q)))
+        if p is not primary:
+            continue
+        p["duplicates"] = [{"key": q["key"], "corpusId": q["corpusId"], "venue": q["venue"], "year": q["year"],
+                            "url": q["url"], "status": q["status"]} for q in group if q is not primary]
+        kept.append(p)
+
+    return {
+        "format": FORMAT,
+        "project": str(project),
+        "request": request,
+        "searches": searches,
+        "papers": kept,
+        "findings": findings,
+        "theories": theories,
+    }
+
+
+def bib_value(text) -> str:
+    return re.sub(r"[{}\\]", "", str(text)).strip()
+
+
+def add_bib(path: Path, papers: list[dict]) -> int:
+    """Append an entry for each paper whose key the file does not have yet; return how many."""
+    text = path.read_text() if path.exists() else ""
+    have = set(re.findall(r"@\w+\{([^,\s]+),", text))
+    added = []
+    for p in papers:
+        key = f"s2-{p.get('corpusId') or p['key']}"
+        if key in have or not p.get("title"):
+            continue
+        fields = [("title", "{" + bib_value(p["title"]) + "}")]
+        if p.get("authors"):
+            fields.append(("author", " and ".join(bib_value(a) for a in p["authors"])))
+        for name, value in (("year", p.get("year")), ("journal", p.get("venue")), ("doi", p.get("doi")),
+                            ("url", p.get("url"))):
+            if value:
+                fields.append((name, bib_value(value)))
+        added.append(f"@article{{{key},\n" + ",\n".join(f"  {n} = {{{v}}}" for n, v in fields) + "\n}\n")
+        have.add(key)
+    if added:
+        path.write_text(text + ("\n" if text and not text.endswith("\n") else "") + "\n".join(added))
+    return len(added)
+
+
+def papers_path(out: Path) -> Path:
+    """The literature page's file beside OUT: theorizer.json -> papers.json, theorizer-v2.json ->
+    papers-v2.json, so a second project's data does not overwrite the first one's papers."""
+    stem = out.stem
+    if stem.startswith("theorizer"):
+        return out.with_name("papers" + stem[len("theorizer"):] + out.suffix)
+    return out.with_name(stem + ".papers" + out.suffix)
+
+
+def main(argv: list[str]) -> int:
+    bib = None
+    metadata = None
+    gap = None
+    if "--gap" in argv:
+        i = argv.index("--gap")
+        if i + 1 >= len(argv) or not argv[i + 1].strip():
+            print("theorizer-site-data: --gap needs an id (G7)", file=sys.stderr)
+            return 2
+        gap = argv[i + 1].strip()
+        argv = argv[:i] + argv[i + 2:]
+    if "--metadata" in argv:
+        i = argv.index("--metadata")
+        if i + 1 >= len(argv):
+            print("theorizer-site-data: --metadata needs a file", file=sys.stderr)
+            return 2
+        metadata = load(Path(argv[i + 1]))
+        if not isinstance(metadata, list):
+            print(f"theorizer-site-data: {argv[i + 1]} is not a JSON list of records", file=sys.stderr)
+            return 2
+        argv = argv[:i] + argv[i + 2:]
+    if "--bib" in argv:
+        i = argv.index("--bib")
+        if i + 1 >= len(argv):
+            print("theorizer-site-data: --bib needs a file", file=sys.stderr)
+            return 2
+        bib = Path(argv[i + 1])
+        argv = argv[:i] + argv[i + 2:]
+    if len(argv) != 2 or argv[0] in ("-h", "--help"):
+        print(__doc__.strip(), file=sys.stderr if len(argv) != 2 else sys.stdout)
+        return 0 if argv[:1] in (["-h"], ["--help"]) else 2
+    project, out = Path(argv[0]), Path(argv[1])
+    try:
+        data = build(project, metadata)
+    except NotAProject as e:
+        print(f"theorizer-site-data: {e}", file=sys.stderr)
+        return 3
+    request, searches, ordered = data["request"], data["searches"], data["papers"]
+    findings, theories = data["findings"], data["theories"]
+    if gap:
+        data["gap"] = gap
+        for t in theories:
+            t["gap"] = gap
+    out.parent.mkdir(parents=True, exist_ok=True)
+    text = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
+    out.write_text(text)
+    # The literature page needs only the papers and the searches; give it its own small file.
+    papers_out = papers_path(out)
+    if papers_out != out:
+        papers_out.write_text(json.dumps({"format": FORMAT, "project": str(project), "request": request,
+                                          "searches": searches, "papers": ordered},
+                                         ensure_ascii=False, separators=(",", ":")))
+    full = sum(1 for p in ordered if p["status"] == "full-text")
+    rows = sum(len(t["rows"]) for t in findings.values())
+    print(f"wrote {out}: {len(ordered)} paper(s) ({full} full text), {rows} finding(s), "
+          f"{len(theories)} theor{'y' if len(theories) == 1 else 'ies'}, {len(text.encode()) / 1024:.1f} KB; "
+          f"and {papers_out} for the literature page")
+    if bib is not None:
+        n = add_bib(bib, ordered)
+        print(f"added {n} entr{'y' if n == 1 else 'ies'} to {bib} (keys s2-<corpus id>)")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
