@@ -11,10 +11,10 @@ Each shell command starts fresh, so call the venv's own `.venv/bin/theorize` and
 
 - **Open the project offline:** `th.Config.init(project_dir="<p>", offline=True)`. No model key is loaded, so a call that would reach a model fails instead of spending. Use the same folder for `theorize -p <p>`.
 - **The shapes:** `theorize guide --schema record` and `--schema theory` (also `paper` and `schema_slot`).
-- **Papers,** with the CLI, which calls no model here: `theorize -p <p> papers import --no-metadata <files>` for the person's own, or `theorize -p <p> papers fetch <corpus ids>` for open-access ones (Semantic Scholar corpus ids, from `s2`). Then `th.Project.load("papers")` gives you each paper's `paper_id`, title and markdown.
+- **Papers,** with the CLI, which calls no model here: `theorize -p <p> papers import --no-metadata <files>` for the person's own, or `theorize -p <p> papers fetch <corpus ids>` for open-access ones (Semantic Scholar corpus ids, from `s2`). Then `th.papers()` gives you each paper's `paper_id`, title and markdown, however the papers came in.
 - **Your findings:** `th.add_records(paper_id, records, extraction_schema=schema)` checks each record against the schema (null for a slot the paper doesn't report; no slots it doesn't have), saves the schema, and returns the records with the `uuid` each law cites.
 - **Your theories:** `th.add_theories(theories, query, extraction_schema=schema)` refuses a law that cites no record, or cites an id no record has, and returns the new theory ids.
-- **Each call adds.** Running one again adds the same records or theories again.
+- **Running it again.** `add_records` keeps a paper's records if it already has some under that schema, and returns them with `"existing": True`, so a loader can rerun. `add_theories` adds each time.
 - **Output:** `theorize -p <p> export html`, and `th.check_evidence()` for the counts.
 
-Read each paper yourself. You don't need a subagent per paper; keep going in one session, saving as you go.
+Read each paper yourself. You don't need a subagent per paper; keep going in one session, saving as you go. With subagents, run two at a time, give each its own folder, and have them write records to files that this session loads.

@@ -54,6 +54,7 @@ To seed a round, its prompt drills into the picks: "Explore further: <what each 
 - **Read every experiment before you trust any.** For each large belief change, ask what caused it. A bug, a leak or a quantity that's true by construction moves belief a lot and means nothing: mark it as an artifact. A result that confirms the prior is real, just not surprising.
 - **Count the surprising ones yourself,** from each experiment's flag. A hosted run's `stats.num_surprising_experiments` has read 0 with three flagged.
 - **If the beliefs barely vary** (they sit on a coarse grid and can collapse to two or three values), the surprising flags and the ranks are mostly ties. Say so.
+- **Group the repeats.** AutoDS often tests one finding several times in different words; report it once, with every experiment that found it. Flag a cutoff or subgroup an experiment chose after looking at the data: it overstates the result.
 - **Say why the search stopped,** and how many experiments ran and failed. A partial run, called partial, is still usable.
 - **When you show someone a run,** give the counts, a few of the most surprising experiments in their own words (hypothesis and analysis), and offer to go deeper. Show code only if asked.
 
@@ -64,7 +65,7 @@ To seed a round, its prompt drills into the picks: "Explore further: <what each 
 | Hosted | `asta autodiscovery results <runid> -o results.json` | `hypothesis`, `experiment_plan`, `code`, `code_output`, `analysis`, `review`, `prior`, `posterior` (means), `surprise` (signed), `is_surprising`, `id_in_run`, `experiment_id`, `parent_id` |
 | CLI, library | the run's `mcts_node_*.json` | `hypothesis`, `experiment_plan`, `code`, `code_output`, `analysis`, `review`, `success`, `prior.mean`, `posterior.mean`, `belief_change` (unsigned), `normalized_surprisal` (signed), `surprising`, `creation_idx`, `id`, `parent_id` |
 
-`experiment_plan` is an object (`objective`, `steps`, `deliverables`).
+`experiment_plan` is an object (`objective`, `steps`, `deliverables`). A hosted `results.json` can run to tens of megabytes; keep it out of git.
 
 - In CLI and library runs, `node_1_0` only loads the data: it has no hypothesis or beliefs, so skip it when you rank. Hosted results leave it out.
 - For a direction, use posterior minus prior (hosted `surprise` is already signed), not `belief_change`.

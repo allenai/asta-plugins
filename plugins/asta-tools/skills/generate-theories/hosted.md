@@ -23,7 +23,7 @@ On the first run in a session, ask once whether to run it straight through (`lit
 
 Before you submit, say what's going in, in one line: "Using N papers, novelty evaluation on, accuracy-focused. Say 'tune' to change anything."
 
-Each skill takes one JSON payload, inline or `@file.json`. The command polls by itself and prints the final task JSON when it's done, so run it in the background and wait; don't write your own loop.
+Each skill takes its fields as flags (`describe <skill>` lists them), or a payload file with `--input file.json`; flags override the file. The command polls by itself and prints the final task JSON when it's done, so run it in the background and wait; don't write your own loop.
 
 | Setting | Default | Change it when |
 |---|---|---|
@@ -31,9 +31,12 @@ Each skill takes one JSON payload, inline or `@file.json`. The command polls by 
 | `generation_objective` | `accuracy-focused` | `novelty-focused` when the person wants new theories |
 | `do_qualified_novelty_evaluation` | `true` (adds 30 to 60 minutes) | off for fast iteration |
 
+- **The mission statement goes in at `find-and-extract`** (or `literature-theory-generation`). `form-theory` has no field for it, so anything the theories must answer to has to be ready before the papers are found.
+- **You can't set the number of theories.** No skill takes a count. Say so if the person asks for one.
+
 ## When it's done
 
-Save the result in the step's folder as soon as it finishes. Outside a workflow, hand it to the `artifacts` skill to export and index (slug `YYYY-MM-DD-<short-query-slug>`). Then reply with where it lives, a few sentences on what the theories argue together, and a table of the theories: name and core idea, plus novelty if it was scored.
+Save the result in the step's folder as soon as it finishes. Outside a workflow, hand it to the `artifacts` skill to export and index (slug `YYYY-MM-DD-<short-query-slug>`). Then reply with where it lives, how many papers had full text, a few sentences on what the theories argue together, and a table of the theories: name and core idea, the paper findings each cites, plus novelty if it was scored. Flag a theory that cites no paper findings: it rests on the mission alone.
 
 - `state=input-required`: the command prints how to continue. Ask the person, then `asta generate-theories send-message --task-id <id> --context-id <ctx> '<reply>'`.
 - `state=failed`: report `status.message` and stop.

@@ -18,7 +18,7 @@ Keep the pins. 0.1.4 and older lack what this file uses, so the version pin make
 
 - **OpenAI or Anthropic,** for the models. The fix that needs no restart: `mkdir -p ~/.config/asta && echo '{"openai": "..."}' > ~/.config/asta/api_keys.donotcommit.json` (or `"anthropic"`). A copy in the working directory, or `--key-dir DIR`, is read first. `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` in the shell profile works for sessions started after it.
 - **Mistral,** optional, for scanned PDFs (`--ocr mistral`).
-- **Semantic Scholar** (`S2_API_KEY`), optional, for faster searches.
+- **Semantic Scholar** (`S2_API_KEY`), optional, for faster searches. Theorizer and `asta-papers` also read `SEMANTIC_SCHOLAR_API_KEY`; `s2` doesn't.
 
 Never ask for a key in chat, because it would stay in the transcript. The person sets it.
 
@@ -39,12 +39,13 @@ theorize -p <p> load plan --key output.extraction_schema
 theorize -p <p> extract
 theorize -p <p> theories generate [--mission-statement "<mission>"]
 theorize -p <p> show theories
+theorize -p <p> show theory-1          # one theory's laws, with the findings each cites
 ```
 
 - **One command at a time per project.** A second one exits 3, "in use by another theorize command".
 - **Ignore the hints `plan` prints** (an `s2 search … | theorize papers fetch -` line and `extract --max-papers 3`): papers come in as papers.md says, and extraction covers every paper.
-- **`extract` exits 0 even when papers fail,** so read its output. It lists each paper whose model call gave up, with the reason (`timeout`, `error`, `prompt_too_long`, `unreadable_answer`, `interpreter_shutdown`). Rerunning it retries only those; `--llm-timeout SECONDS` gives them longer. Results are kept per paper, so a rerun after adding papers extracts only the new ones.
-- **The evidence budget:** leave `--max-data-tokens` at its default (500,000), which fits every default model with room to spare. With 200 papers or more, add `--objective attribution-batched` to each `theories generate` (not `sweep`, which doesn't take it): it reads the evidence that doesn't fit in further batches instead of dropping it.
+- **`extract` exits 0 even when papers fail,** so read its output. It lists each paper whose model call gave up, with the reason (`timeout`, `error`, `prompt_too_long`, `unreadable_answer`, `interpreter_shutdown`). Rerun it whenever it lists one: it retries only those, and most succeed the second time. `--llm-timeout SECONDS` gives them longer. A "Could not convert response to JSON on first pass" warning is repaired by itself; "gave up" is the one to act on. Results are kept per paper, so a rerun after adding papers extracts only the new ones.
+- **The evidence budget:** leave `--max-data-tokens` at its default (500,000), which fits every default model with room to spare. If `theories generate` prints "evidence subsampled to N%", it dropped the rest: run it again with `--objective attribution-batched` (not on `sweep`, which doesn't take it), which reads the rest in further batches. Rich schemas hit this well under 200 papers.
 - **A generation that produces nothing** names the call that gave up. A call stopped by the model's safety filter answers with nothing: run it once more, and if it fails again, say which call.
 
 **Refine,** from the same findings, with the person's direction:

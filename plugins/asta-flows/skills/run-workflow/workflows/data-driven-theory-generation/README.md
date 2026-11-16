@@ -27,7 +27,7 @@ A focus goes into AutoDS's prompt and Theorizer's question.
 
 1. **Data.** If the person named data, use it. Otherwise search the portals and repositories for one dataset that loads and tests in minutes. Describe it.
 2. **Experiments.** AutoDS on the data. When it ends, read every experiment, mark the artifacts, and say why it stopped.
-3. **Theories.** Write the findings into Theorizer's mission statement, then run Theory generation's steps 1 to 6 with it, so the paper search and the schema are planned from the experiments:
+3. **Theories.** Write the findings into Theorizer's mission statement, then run Theory generation's steps 1 to 6 with it, so the paper search and the schema are planned from the experiments. Hosted, it goes in at `find-and-extract`, the only step that takes one:
 
    ```
    <the question>

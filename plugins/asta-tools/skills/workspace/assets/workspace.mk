@@ -43,7 +43,7 @@ workspace-assets:
 	exts=; \
 	for ext in $$required_exts; do \
 		if [ -L "_extensions/$$ext" ]; then \
-			echo "workspace-assets: _extensions/$$ext is a symlink (local development); not refreshing"; \
+			echo "workspace-assets: _extensions/$$ext is a symlink; not refreshing it. Quarto skips symlinked extension folders, so its shortcodes won't load: to test a branch, set ASTA_WORKSPACE_ARCHIVE (DEVELOPER.md)" >&2; \
 		elif git ls-files --error-unmatch "_extensions/$$ext" >/dev/null 2>&1; then \
 			echo "workspace-assets: _extensions/$$ext is committed (customized copy); not refreshing"; \
 		else exts="$$exts $$ext"; fi; \
@@ -166,8 +166,18 @@ workspace-viewers:
 	"$$python" "$$discovery" > "$$tmp"; \
 	"$$python" "$$viewer" < "$$tmp"
 
+# The port: ASTA_PREVIEW_PORT if set; in Codespaces 4848, the forwarded one; otherwise the
+# first free port from 4848 (skipping 4849, which `asta workspace preview --what-changed`
+# uses), so a second project's preview doesn't die on a taken port.
+ASTA_PREVIEW_PORT ?=
 preview: workspace-assets workspace-viewers
-	quarto preview --no-browser
+	@port='$(ASTA_PREVIEW_PORT)'; \
+	if [ -z "$$port" ] && [ -n "$${CODESPACE_NAME:-}" ]; then port=4848; fi; \
+	if [ -z "$$port" ]; then \
+		port=$$($(PYTHON) -c 'import socket; print(next(p for p in range(4848, 4948) if p != 4849 and socket.socket().connect_ex(("127.0.0.1", p)) != 0))' 2>/dev/null || echo 4848); \
+	fi; \
+	echo "preview: http://localhost:$$port/ (this project: $(CURDIR))"; \
+	exec quarto preview --no-browser --port "$$port"
 
 # Optional output override for callers that must leave the preview's _site alone,
 # and an optional whitespace-separated page list (no spaces within filenames).

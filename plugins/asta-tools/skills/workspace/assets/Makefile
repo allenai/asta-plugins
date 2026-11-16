@@ -129,8 +129,19 @@ workspace-assets:
 		echo "workspace-assets: installed $$ext extension from asta-plugins@$${ref:-$$url}"; \
 	done
 
+# The port: ASTA_PREVIEW_PORT if set; in Codespaces 4848, the forwarded one; otherwise the
+# first free port from 4848 (skipping 4849, which `asta workspace preview --what-changed`
+# uses), so a second project's preview doesn't die on a taken port.
+PYTHON ?= python3
+ASTA_PREVIEW_PORT ?=
 preview: workspace-assets
-	quarto preview --no-browser
+	@port='$(ASTA_PREVIEW_PORT)'; \
+	if [ -z "$$port" ] && [ -n "$${CODESPACE_NAME:-}" ]; then port=4848; fi; \
+	if [ -z "$$port" ]; then \
+		port=$$($(PYTHON) -c 'import socket; print(next(p for p in range(4848, 4948) if p != 4849 and socket.socket().connect_ex(("127.0.0.1", p)) != 0))' 2>/dev/null || echo 4848); \
+	fi; \
+	echo "preview: http://localhost:$$port/ (this project: $(CURDIR))"; \
+	exec quarto preview --no-browser --port "$$port"
 
 # Optional output override for callers that must leave the preview's _site alone,
 # and an optional whitespace-separated page list (no spaces within filenames).

@@ -43,6 +43,6 @@ Theorizer reads the papers and nothing else. Anything else the theories must ans
 
 ## Reading the theories
 
-- **Call a theory by its name,** everywhere.
+- **Call a theory by its name,** everywhere. `theorize show theory-1` prints one theory's laws and what each cites.
 - **Cluster them by the explanation they give.** Theories from different schemas often restate each other, and a cluster several schemas reached rests on more of the evidence. For each cluster, say what it's about plainly, then technically, and why the person should care. Point them to the clusters worth reading first.
 - **A theory's text can't be edited.** If its figures overstate their evidence, say which theory, in your own words.

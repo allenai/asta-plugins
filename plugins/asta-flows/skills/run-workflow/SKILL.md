@@ -19,13 +19,13 @@ allowed-tools: Bash(theorize *) Bash(auto-discovery *) Bash(asta auth *) Bash(as
 
 Pick one with the person and read its README.
 
-Track every run in a workspace, with the `workspace` skill. Before starting a workflow, set up the workspace scaffold, start the local Quarto preview, and give the person its URL. The project's report, `index.qmd`, opens with the person's mission in their words and a short abstract, then follows the template of the workflow it reports on: `index.md` in the workflow's folder, or the workspace's cover if there is none. A workflow's `templates/page.qmd`, when it has one, is the run's page.
+Track every run in a workspace, with the `workspace` skill. Before starting a workflow, set up the workspace scaffold, start the local Quarto preview, and give the person its URL once it serves this project. The project's report, `index.qmd`, opens with the person's mission in their words and a short abstract, then follows the template of the workflow it reports on: `index.md` in the workflow's folder, or the workspace's cover if there is none. A workflow's `templates/page.qmd`, when it has one, is the run's page.
 
 ## Running Workflows
 
 There are three ways to run workflows. Settle which one before anything else, once per project.
 
-- **Library.** Use this if you want to do it in a coding agent: the agent does the reading and the analysis itself, using the Theorizer and AutoDS libraries' types. Subagents welcome.
+- **Library.** Use this if you want to do it in a coding agent: the agent does the reading and the analysis itself, using the Theorizer and AutoDS libraries' types. Subagents welcome, two at a time unless the person says otherwise, each in its own folder.
 - **CLI.** Use this if you have an API key and want to just use the command line, which bakes in our preferences.
 - **Hosted.** We pay for it. Your data flows through our servers.
 
@@ -34,7 +34,7 @@ The library and the CLI run on this computer, and nothing goes to Asta.
 To pick one, look first, without printing any key:
 
 ```bash
-env | grep -oE '^(OPENAI|ANTHROPIC|MISTRAL|S2)_API_KEY'
+env | grep -oE '^(OPENAI|ANTHROPIC|MISTRAL|S2|SEMANTIC_SCHOLAR)_API_KEY'
 echo "CLAUDECODE=${CLAUDECODE:-}"
 asta auth status
 cat .asta/mode.json
