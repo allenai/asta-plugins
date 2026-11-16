@@ -20,7 +20,7 @@ Keep the pins. 0.1.4 and older lack what this file uses, so the version pin make
 - **Mistral,** optional, for scanned PDFs (`--ocr mistral`).
 - **Semantic Scholar** (`S2_API_KEY`), optional, for faster searches. Theorizer and `asta-papers` also read `SEMANTIC_SCHOLAR_API_KEY`; `s2` doesn't.
 
-Never ask for a key in chat, because it would stay in the transcript. The person sets it.
+Ask the person how you should reach their key, and use only what they tell you. Never ask for the key itself in chat, because it would stay in the transcript. The person sets it.
 
 ## Models
 

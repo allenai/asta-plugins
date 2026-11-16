@@ -1,7 +1,7 @@
 ---
 name: run-workflow
 description: Runs a research workflow with Theorizer, AutoDS, Semantic Scholar and Data Search. Use when someone brings a research question, papers, data or an AutoDS run and wants theories, hypotheses, experiments or a reproduction.
-allowed-tools: Bash(theorize *) Bash(auto-discovery *) Bash(asta auth *) Bash(asta generate-theories *) Bash(asta autodiscovery *) Bash(s2 *) Bash(asta-papers *) Bash(jq *) Bash(uv tool *) Bash(uv venv *) Bash(uv pip *) Bash(command -v *) Bash(env *) Bash(grep *) Bash(echo *) Bash(cat *) Bash(curl *) Bash(python3 *) Bash(git *) Bash(quarto *) Bash(make *) Bash(mkdir *) Bash(ls *) Bash(cp *) Bash(ln *) Bash(touch *) Write Edit
+allowed-tools: Bash(theorize *) Bash(auto-discovery *) Bash(asta auth *) Bash(asta generate-theories *) Bash(asta autodiscovery *) Bash(s2 *) Bash(asta-papers *) Bash(jq *) Bash(uv tool *) Bash(uv venv *) Bash(uv pip *) Bash(command -v *) Bash(grep *) Bash(echo *) Bash(cat *) Bash(curl *) Bash(python3 *) Bash(git *) Bash(quarto *) Bash(make *) Bash(mkdir *) Bash(ls *) Bash(cp *) Bash(ln *) Bash(touch *) Write Edit
 ---
 
 # Asta Flows
@@ -32,16 +32,7 @@ There are three ways to run workflows. Settle which one before anything else, on
 
 The library and the CLI run on this computer, and nothing goes to Asta.
 
-To pick one, look first, without printing any key:
-
-```bash
-env | grep -oE '^(OPENAI|ANTHROPIC|MISTRAL|S2|SEMANTIC_SCHOLAR)_API_KEY'
-echo "CLAUDECODE=${CLAUDECODE:-}"
-asta auth status
-cat .asta/mode.json
-```
-
-If that doesn't settle it, ask: "Is it okay for your data to leave this computer? If so, hosted is free. If not, I can use your API key with the CLI, or do it all here in this session with the library." In a hosted Asta sandbox, don't ask: use the CLI that's installed there.
+Ask which one they want, as part of the first conversation: "Which of these would you like? Hosted is free, but your data leaves this computer. With the CLI I use your API key, and with the library I do it all here in this session." Don't look for keys or logins to decide for them. The person tells you how to reach their credentials: for the CLI, ask where their key is (a key file, a variable in their shell, a password manager) and use only that; for hosted, they log in with `asta auth login`. In a hosted Asta sandbox, don't ask: use the CLI that's installed there.
 
 Write the answer to `.asta/mode.json` (`{"mode": "library" | "cli" | "hosted"}`), and don't switch without asking. Each tool's skill has a file per mode: `generate-theories` for Theorizer and `autodiscovery` for AutoDS. Set up what the mode needs before you propose a workflow, and say what's missing if something won't install.
 

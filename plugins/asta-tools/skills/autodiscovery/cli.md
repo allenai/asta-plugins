@@ -23,7 +23,7 @@ Pass `--model <provider>/<model>` (or set `AUTODISCOVERY_MODEL`); the belief and
 
 `--dedupe` needs an embedding model (`--embedding_model openai/text-embedding-3-large`), so with only an Anthropic key leave it off. For Gemini, the person makes a Google Cloud service-account key and sets `GOOGLE_APPLICATION_CREDENTIALS`, `VERTEXAI_PROJECT` and `VERTEXAI_LOCATION=global`.
 
-Never ask for a key in chat, because it would stay in the transcript. The person sets it in their shell.
+Ask the person how you should reach their key, and use only what they tell you. Never ask for the key itself in chat, because it would stay in the transcript. The person sets it in their shell.
 
 ## A run
 
