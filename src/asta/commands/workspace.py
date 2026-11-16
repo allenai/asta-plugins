@@ -530,13 +530,18 @@ def sync(
 
 
 SCAFFOLD_THEME = "    theme: cosmo\n"
-ASTA_THEME = """    theme:
-      dark: [cosmo, _extensions/asta-theme/dark.scss]
-      light: [cosmo, _extensions/asta-theme/light.scss]
-    # Asta's look: start dark, with a persistent toggle to light.
-    # Set your own theme here to replace it.
-    respect-user-color-scheme: false
-"""
+ASTA_THEME_DEFAULT_NOTE = (
+    "    # Asta's look: dark by default (Quarto starts with the theme listed first),\n"
+    "    # with a switch to light that the reader's browser remembers.\n"
+)
+ASTA_THEME = (
+    "    theme:\n"
+    "      dark: [cosmo, _extensions/asta-theme/dark.scss]\n"
+    "      light: [cosmo, _extensions/asta-theme/light.scss]\n"
+    + ASTA_THEME_DEFAULT_NOTE
+    + "    # Set your own theme here to replace it.\n"
+    "    respect-user-color-scheme: false\n"
+)
 ASTA_CSS = "_extensions/asta-theme/asta.css"
 ASTA_HEADER = "_extensions/asta-theme/asta-head.html"
 ASTA_THEME_FILES = (
@@ -614,9 +619,7 @@ def adopt_asta_theme(project: Path) -> bool:
         # An explicit project preference wins over the managed default.
         theme = ASTA_THEME.replace(
             "    respect-user-color-scheme: false\n", ""
-        ).replace(
-            "    # Asta's look: start dark, with a persistent toggle to light.\n", ""
-        )
+        ).replace(ASTA_THEME_DEFAULT_NOTE, "")
     else:
         theme = ASTA_THEME
     html = re.sub(
