@@ -1,0 +1,134 @@
+[
+  {
+    "objectID": "slides/attention/slides.html#how-can-a-sequence-model-connect-distant-tokens",
+    "href": "slides/attention/slides.html#how-can-a-sequence-model-connect-distant-tokens",
+    "title": "Attention in sequence models",
+    "section": "How can a sequence model connect distant tokens?",
+    "text": "How can a sequence model connect distant tokens?\nOur workspace follows the shift from recurrence to attention.\n\nRead the literature review.\nOpen the paper."
+  },
+  {
+    "objectID": "slides/attention/slides.html#attention-weights-the-available-context",
+    "href": "slides/attention/slides.html#attention-weights-the-available-context",
+    "title": "Attention in sequence models",
+    "section": "Attention weights the available context",
+    "text": "Attention weights the available context\n\n\\operatorname{Attention}(Q,K,V) = \\operatorname{softmax}\\left(\\frac{QK^T}{\\sqrt{d_k}}\\right)V\n\nThe weights combine values for each query."
+  },
+  {
+    "objectID": "slides/attention/slides.html#follow-the-computation",
+    "href": "slides/attention/slides.html#follow-the-computation",
+    "title": "Attention in sequence models",
+    "section": "Follow the computation",
+    "text": "Follow the computation\n\nCompare a query with the available keys.\n\n\nNormalize the scores into weights.\n\n\nCombine the values using those weights."
+  },
+  {
+    "objectID": "slides/attention/slides.html#keep-the-talk-beside-its-sources",
+    "href": "slides/attention/slides.html#keep-the-talk-beside-its-sources",
+    "title": "Attention in sequence models",
+    "section": "Keep the talk beside its sources",
+    "text": "Keep the talk beside its sources\nWrite the talk, review and paper in the same repository.\nReview changes together, then share the rendered talk as a single HTML file.\nReview local changes with asta workspace what-changed; PR previews use the same comparison."
+  },
+  {
+    "objectID": "slides/attention/slides.html#read-the-original-paper",
+    "href": "slides/attention/slides.html#read-the-original-paper",
+    "title": "Attention in sequence models",
+    "section": "Read the original paper",
+    "text": "Read the original paper\nThe transformer was introduced in Attention Is All You Need."
+  },
+  {
+    "objectID": "slides/attention/slides.html#a-figure-carried-inside-the-slide",
+    "href": "slides/attention/slides.html#a-figure-carried-inside-the-slide",
+    "title": "Attention in sequence models",
+    "section": "A figure carried inside the slide",
+    "text": "A figure carried inside the slide\n\nQueries, keys and valuesThe figure is an inline data: image, so the deck needs no separate file for it."
+  },
+  {
+    "objectID": "lit-review/index.html",
+    "href": "lit-review/index.html",
+    "title": "A small literature review",
+    "section": "",
+    "text": "This literature review is the editable Quarto source. To get a PDF or LaTeX source, render it with Quarto (see the workspace guide). This review cites the project-root references.bib. The separate paper/main.tex is edited directly and paired with Overleaf, so it keeps its own copy of the entries it cites.",
+    "crumbs": [
+      "A small literature review"
+    ]
+  },
+  {
+    "objectID": "lit-review/index.html#example-claim",
+    "href": "lit-review/index.html#example-claim",
+    "title": "A small literature review",
+    "section": "Example claim",
+    "text": "Example claim\nVaswani and colleagues proposed a Transformer architecture based on attention mechanisms“We propose a new simple network architecture, the Transformer, based solely on attention mechanisms”— (Vaswani et al. 2017, abstract) (Vaswani et al. 2017). The highlighted claim exposes its source quote on hover or keyboard focus.",
+    "crumbs": [
+      "A small literature review"
+    ]
+  },
+  {
+    "objectID": "lit-review/index.html#background",
+    "href": "lit-review/index.html#background",
+    "title": "A small literature review",
+    "section": "Background",
+    "text": "Background\nRecurrent networks read a sequence one token at a time, carrying a hidden state from each token to the next.\nGated cells, such as the LSTM’s, let that state carry information across longer spans, but a signal between two distant tokens still passes through every step between them.\nEncoder–decoder models used one recurrent network to read a sentence and a second to write its translation, joined only by the final state of the first.\nThat final state had to hold the whole sentence, so translations of long sentences lost detail from their beginnings.\nAttention was first added to these models to let the decoder look back at every encoder state, rather than at the last one alone.\nConvolutional sequence models shortened the path differently, stacking layers so that each widens the span a token can see.",
+    "crumbs": [
+      "A small literature review"
+    ]
+  },
+  {
+    "objectID": "lit-review/index.html#models-compared",
+    "href": "lit-review/index.html#models-compared",
+    "title": "A small literature review",
+    "section": "Models compared",
+    "text": "Models compared\n\n\n\nModel\nYear\nRecurrence\nSteps between distant tokens\n\n\n\n\nLSTM encoder–decoder\n2014\nyes\none per token between them\n\n\nRNN with attention\n2015\nyes\none, through attention\n\n\nTransformer\n2017\nno\none",
+    "crumbs": [
+      "A small literature review"
+    ]
+  },
+  {
+    "objectID": "lit-review/index.html#encoderdecoder-with-attention",
+    "href": "lit-review/index.html#encoderdecoder-with-attention",
+    "title": "A small literature review",
+    "section": "Encoder–decoder with attention",
+    "text": "Encoder–decoder with attention\n\n\n\n\n\nflowchart LR\n  src[Source sentence] --&gt; enc[Recurrent encoder]\n  enc --&gt; dec[Recurrent decoder]\n  enc -. every state .-&gt; att[Attention]\n  att --&gt; dec\n  dec --&gt; tgt[Translation]",
+    "crumbs": [
+      "A small literature review"
+    ]
+  },
+  {
+    "objectID": "lit-review/index.html#attention-in-one-line",
+    "href": "lit-review/index.html#attention-in-one-line",
+    "title": "A small literature review",
+    "section": "Attention in one line",
+    "text": "Attention in one line\nEach token’s output is a weighted average of every token’s value:\n\\[\n\\operatorname{Attention}(Q,K,V) = \\operatorname{softmax}\\left(QK^T\\right)V\n\\]\n\n\n\n\n\n\nReading the equation\n\n\n\nQ, K and V are the queries, keys and values, one row per token.\n\n\nscores = q @ k.T\nweights = softmax(scores, axis=-1)\nout = weights @ v",
+    "crumbs": [
+      "A small literature review"
+    ]
+  },
+  {
+    "objectID": "lit-review/index.html#how-far-a-signal-travels",
+    "href": "lit-review/index.html#how-far-a-signal-travels",
+    "title": "A small literature review",
+    "section": "How far a signal travels",
+    "text": "How far a signal travels\n\n\n\n\n\n\n\npath\n\n\n\nt1\n\nt1\n\n\n\nt2\n\nt2\n\n\n\nt1-&gt;t2\n\n\nstep\n\n\n\nt4\n\nt4\n\n\n\nt1-&gt;t4\n\n\nattention\n\n\n\nt3\n\nt3\n\n\n\nt2-&gt;t3\n\n\nstep\n\n\n\nt3-&gt;t4\n\n\nstep\n\n\n\n\n\n\n\n\n\n\n\nThe longest path a signal takes between two tokens of a sequence, by layer type. The convolution has kernel 5, stride 1 and no dilation, so each layer widens a token’s view by 4 and its path is the number of layers needed to span the sequence.\n\n\n\n\n\nThe tokens one position can see after each layer of that convolution, in a 512-token sequence.",
+    "crumbs": [
+      "A small literature review"
+    ]
+  },
+  {
+    "objectID": "lit-review/index.html#takeaways",
+    "href": "lit-review/index.html#takeaways",
+    "title": "A small literature review",
+    "section": "Takeaways",
+    "text": "Takeaways\n\nRecurrence reads one token at a time, so the tokens of a sequence can’t be processed in parallel during training.\nGating eases, but doesn’t remove, the long path between distant tokens.\nA fixed-size final state limits how much of a long input sentence a decoder can draw on.\nConvolutions shorten the path, but only by stacking more layers as the span grows.\nAttention connects every pair of tokens in one step.\nThe Transformer drops recurrence entirely.",
+    "crumbs": [
+      "A small literature review"
+    ]
+  },
+  {
+    "objectID": "index.html",
+    "href": "index.html",
+    "title": "Attention in sequence models",
+    "section": "",
+    "text": "A short project on how attention replaced recurrence in sequence models. It includes:\n\nA literature review of the work it builds on, citing the project’s bibliography.\nPresentation slides for a short talk on the same question.\nThe paper, written in LaTeX with co-authors in Overleaf.\n\nAn example workspace for the Asta workspace skill, built and published from main; see its README for the demo and how to start your own.",
+    "crumbs": [
+      "Attention in sequence models"
+    ]
+  }
+]
