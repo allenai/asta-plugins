@@ -1,4 +1,7 @@
--- asta-pages: shortcodes that turn a run's files into page panels.
+-- asta-pages: shortcodes that turn a run's files into page panels. A workflow page
+-- (pages/<NNNN>-<workflow>.qmd) holds a title, a heading per step and these widgets, nothing
+-- else: every widget links to the files on disk it was built from, so what was run is read
+-- from the files, not from prose on the page.
 --
 --   {{< asta-theories data="data/theorizer.json" >}}     the Theorizer panel
 --   {{< asta-literature data="data/papers.json" >}}      the paper list (papers and searches only;
@@ -38,6 +41,21 @@
 -- current, and renders it under a "Workflow" heading with the Mermaid runtime that Quarto
 -- ships (copied into the site, so nothing loads from elsewhere). With no such file it renders
 -- nothing, heading included, so a run page can carry the shortcode before a diagram exists.
+--
+--   {{< asta-files dir=".asta/flows/0004-x/04-gap-map" >}}       a folder's files (depth=1)
+--   {{< asta-doc file=".asta/flows/0004-x/04-gap-map/gaps.md" >}} a markdown file, inline
+--
+-- These name paths relative to the project root; an absolute path or a ".." that leaves the
+-- project is refused. asta-files lists folders first, then files, with sizes (skipping __pycache__,
+-- .DS_Store and names that look like credentials); past `limit=` entries (30) it gives a count
+-- and a link to the folder. asta-doc renders the file's markdown with its headings moved under
+-- the page's (its top heading at `level=`, 3 by default) and a header line linking the file.
+--
+-- Links to files are plain relative URLs from the rendered page (in the project's output
+-- directory) to the file in the project, written as raw HTML so Quarto neither copies the
+-- files into the site nor warns about them: from _site/pages/0004-x.html, the project's
+-- .asta/flows/0004-x/gaps.md is ../../.asta/flows/0004-x/gaps.md. Every panel carries a small
+-- "Files" line linking what it was built from.
 
 local function page_dir()
   local input = quarto.doc.input_file
@@ -79,26 +97,6 @@ local function html_escape(s)
   return (s:gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;"))
 end
 
-local function panel(kind, script, kwargs)
-  if not quarto.doc.is_format("html") then
-    return pandoc.Null()
-  end
-  add_deps(script)
-  local text, err, rel = read_data(kwargs)
-  if err then
-    quarto.log.warning("asta-" .. kind .. ": " .. err)
-    return pandoc.RawBlock("html",
-      '<div class="asta-panel"><div class="ap-error">This page has no data yet: ' ..
-      html_escape(err) .. '</div></div>')
-  end
-  -- "</" cannot appear raw inside a <script> element; "<\/" is the same string in JSON.
-  local safe = text:gsub("</", "<\\/")
-  local id = "asta-" .. kind .. "-data"
-  return pandoc.RawBlock("html",
-    '<div class="asta-panel asta-' .. kind .. '" data-asta-source="' .. html_escape(rel) .. '"></div>\n' ..
-    '<script type="application/json" id="' .. id .. '">' .. safe .. '</script>')
-end
-
 local function attr_escape(s)
   return (s:gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;"):gsub('"', "&quot;"))
 end
@@ -128,6 +126,8 @@ local function list_dir(path)
   return names
 end
 
+local function is_dir(path) return list_dir(path) ~= nil end
+
 -- JSON from a file's text, or nil. Python writes NaN and Infinity, which JSON has no words for:
 -- read as null. Empty text is nil without asking the decoder (which logs what it cannot read).
 local function decode_json(text)
@@ -137,6 +137,285 @@ local function decode_json(text)
   if ok then return data end
   return nil
 end
+
+local function file_size(path)
+  if is_dir(path) then return nil end
+  local f = io.open(path, "rb")
+  if f == nil then return nil end
+  local n = f:seek("end")
+  f:close()
+  return n
+end
+
+local function kwarg(kwargs, name)
+  return pandoc.utils.stringify(kwargs[name] or ""):match("^%s*(.-)%s*$")
+end
+
+-- "G1b-T10" after "G1b-T2": names compared with their runs of digits as numbers.
+local function natural_key(s)
+  return (s:lower():gsub("%d+", function(d) return string.rep("0", 12 - math.min(#d, 12)) .. d end))
+end
+local function natural_sort(list, get)
+  get = get or function(x) return x end
+  table.sort(list, function(a, b) return natural_key(get(a)) < natural_key(get(b)) end)
+  return list
+end
+
+-- ---- paths: the project root, where the page is rendered, and links to files on disk -------
+
+local function slashes(p) return (p:gsub("\\", "/")) end
+local function is_absolute(p) return p:match("^/") ~= nil or p:match("^%a:/") ~= nil end
+
+-- An absolute path with "." and ".." resolved (a drive prefix such as "C:" kept).
+local function normalize(p)
+  p = slashes(p)
+  local drive = p:match("^%a:") or ""
+  local parts = {}
+  for seg in p:sub(#drive + 1):gmatch("[^/]+") do
+    if seg == ".." then
+      if #parts > 0 then table.remove(parts) end
+    elseif seg ~= "." then
+      parts[#parts + 1] = seg
+    end
+  end
+  return drive .. "/" .. table.concat(parts, "/")
+end
+
+local function absolute(p)
+  p = slashes(p)
+  if is_absolute(p) then return normalize(p) end
+  return normalize(pandoc.system.get_working_directory() .. "/" .. p)
+end
+
+local function segments(p)
+  local t = {}
+  for s in p:gmatch("[^/]+") do t[#t + 1] = s end
+  return t
+end
+
+-- `to` relative to the folder `from` (both absolute and normalized).
+local function relative(to, from)
+  local a, b = segments(from), segments(to)
+  local i = 1
+  while i <= #a and i <= #b and a[i] == b[i] do i = i + 1 end
+  local out = {}
+  for _ = i, #a do out[#out + 1] = ".." end
+  for k = i, #b do out[#out + 1] = b[k] end
+  return table.concat(out, "/")
+end
+
+-- The project's root folder (the page's own folder when the page is rendered on its own).
+local function project_root()
+  return absolute(quarto.project.directory or page_dir())
+end
+
+-- The folder the rendered page is written to: the project's output directory (_site in a
+-- website), at the page's place in the project.
+local function rendered_dir()
+  local root, dir = project_root(), absolute(page_dir())
+  local out = quarto.project.output_directory
+  if out == nil or out == "" then return dir end
+  out = slashes(out)
+  if not is_absolute(out) then out = root .. "/" .. out end
+  local inside = relative(dir, root)
+  if inside:match("^%.%.") then return dir end
+  return normalize(out .. "/" .. inside)
+end
+
+local function url_path(p)
+  return (p:gsub("[^%w%-%._~/!$&'()*+,;=:@]", function(c) return string.format("%%%02X", c:byte()) end))
+end
+
+-- The link from the rendered page to a file (or, with a trailing slash, a folder) on disk.
+local function href_to(abs, is_folder)
+  local rel = relative(normalize(abs), rendered_dir())
+  if rel == "" then rel = "." end
+  if is_folder then rel = rel .. "/" end
+  return url_path(rel)
+end
+
+-- A path as the shortcodes name it: relative to the project root (".asta/flows/...").
+local function project_rel(abs) return relative(normalize(abs), project_root()) end
+
+-- A path named in a shortcode argument, relative to the project root: its absolute form and
+-- its clean relative form, or nil and why it is refused (absolute, or leaving the project).
+local function project_path(rel)
+  rel = slashes(rel or ""):match("^%s*(.-)%s*$")
+  if rel == "" then return nil, "names no path" end
+  if is_absolute(rel) or rel:match("^~") then
+    return nil, rel .. " is an absolute path; name it relative to the project root"
+  end
+  local parts = {}
+  for seg in rel:gmatch("[^/]+") do
+    if seg == ".." then
+      if #parts == 0 then return nil, rel .. " leaves the project; name a path inside it" end
+      table.remove(parts)
+    elseif seg ~= "." then
+      parts[#parts + 1] = seg
+    end
+  end
+  local clean = table.concat(parts, "/")
+  return normalize(project_root() .. "/" .. clean), clean
+end
+
+local function error_box(kind, msg)
+  quarto.log.warning("asta-" .. kind .. ": " .. msg)
+  return pandoc.RawBlock("html", '<div class="asta-panel"><div class="ap-error">' .. html_escape(msg) .. "</div></div>")
+end
+
+-- Names a listing leaves out: caches, the Finder's files, and anything that looks like a
+-- credential (keys, tokens, passwords, .env files).
+local SKIP_NAMES = { ["__pycache__"] = true, [".DS_Store"] = true, [".git"] = true, [".ipynb_checkpoints"] = true }
+local SECRET_WORDS = { secret = true, secrets = true, credential = true, credentials = true, password = true,
+  passwords = true, passwd = true, token = true, tokens = true, apikey = true, apikeys = true, privatekey = true }
+local function looks_secret(name)
+  local l = name:lower()
+  if l == ".env" or l:match("^%.env%.") or l:match("%.env$") or l == ".netrc" or l == ".npmrc" or l == ".pypirc"
+    or l == ".git-credentials" or l:match("^id_rsa") or l:match("^id_ed25519") or l:match("^id_ecdsa")
+    or l:match("%.pem$") or l:match("%.key$") or l:match("%.p12$") or l:match("%.pfx$") then
+    return true
+  end
+  local prev
+  for w in l:gmatch("[a-z0-9]+") do
+    if SECRET_WORDS[w] or (prev == "api" and w == "key") or (prev == "private" and w == "key") then return true end
+    prev = w
+  end
+  return false
+end
+local function skip_name(name) return SKIP_NAMES[name] or looks_secret(name) end
+
+local function human_size(n)
+  if n == nil then return "" end
+  if n < 1024 then return string.format("%d B", n) end
+  local units, v, i = { "KB", "MB", "GB", "TB" }, n, 0
+  repeat v = v / 1024; i = i + 1 until v < 1024 or i == #units
+  return (v < 10 and string.format("%.1f", v) or string.format("%.0f", v)) .. " " .. units[i]
+end
+
+-- ---- figures shown on a page: copied into the site -------------------------------------------
+--
+-- A link to a file opens the workspace's own file (../../.asta/...), but an image shown on the
+-- page must be served from the site itself (a host may serve the output directory and nothing
+-- else). Each figure a panel shows is copied, when the page renders, to
+-- <output dir>/_asta/files/<its path in the project> (a folder named with a leading dot gets
+-- "_" instead: "_asta/files/_asta/flows/..."), and the <img> points at the copy. Only figures
+-- the page shows are copied, each at most FIGURE_MAX bytes; a larger one is not copied and the
+-- page shows a link to the file instead. Without an output directory (a page rendered on its
+-- own) the image points at the file.
+
+local FIGURE_MAX = 2 * 1024 * 1024
+local copied = {}
+
+local function site_root()
+  local out = quarto.project.output_directory
+  if out == nil or out == "" then return nil end
+  out = slashes(out)
+  if not is_absolute(out) then out = project_root() .. "/" .. out end
+  return normalize(out)
+end
+
+-- The src for showing the file at abs: its copy in the site, or nil and its size when it is
+-- larger than FIGURE_MAX (or cannot be read).
+local function figure_src(abs)
+  abs = normalize(abs)
+  if copied[abs] ~= nil then return copied[abs] or nil, file_size(abs) end
+  local size = file_size(abs)
+  if size == nil or size > FIGURE_MAX then copied[abs] = false; return nil, size end
+  local site = site_root()
+  local rel = project_rel(abs)
+  if site == nil or rel:match("^%.%.") then copied[abs] = href_to(abs); return copied[abs], size end
+  local safe = rel:gsub("[^/]+", function(seg) return (seg:gsub("^%.", "_")) end)
+  local dest = site .. "/_asta/files/" .. safe
+  local src = io.open(abs, "rb")
+  local data = src and src:read("a")
+  if src then src:close() end
+  if data == nil then copied[abs] = false; return nil, size end
+  pcall(pandoc.system.make_directory, pandoc.path.directory(dest), true)
+  local out = io.open(dest, "wb")
+  if out == nil then
+    quarto.log.warning("asta-pages: cannot copy " .. rel .. " into the site")
+    copied[abs] = href_to(abs)
+    return copied[abs], size
+  end
+  out:write(data)
+  out:close()
+  copied[abs] = href_to(dest)
+  return copied[abs], size
+end
+
+local FOLDER_ICON = '<svg class="ap-files-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M1.75 3.25h4.1l1.5 1.5h6.9v8H1.75z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>'
+
+local function file_link(abs, is_folder, label, cls)
+  return "<a" .. (cls and (' class="' .. cls .. '"') or "") .. ' href="' .. attr_escape(href_to(abs, is_folder)) ..
+    '" title="' .. attr_escape(project_rel(abs) .. (is_folder and "/" or "")) .. '">' .. html_escape(label) .. "</a>"
+end
+
+-- The common folder of several absolute paths.
+local function common_dir(paths)
+  local common = segments(paths[1])
+  for i = 2, #paths do
+    local segs, k = segments(paths[i]), 1
+    while k <= #common and k <= #segs and common[k] == segs[k] do k = k + 1 end
+    for j = #common, k, -1 do common[j] = nil end
+  end
+  return "/" .. table.concat(common, "/")
+end
+
+-- The small "Files" line above a panel: the files or folders it was built from. More than
+-- three files in one folder are that folder; more than three files of one name (a tests.json
+-- per step) are the folder that holds them all; files of one name are told apart by folder.
+local function files_bar(items)
+  if #items == 0 then return "" end
+  local entries, byname, order = {}, {}, {}
+  local function add(e) entries[#entries + 1] = e end
+  local groups, gorder = {}, {}
+  for _, it in ipairs(items) do
+    local d = it.folder and ("\0" .. it.abs) or pandoc.path.directory(it.abs)
+    if not groups[d] then groups[d] = {}; gorder[#gorder + 1] = d end
+    table.insert(groups[d], it)
+  end
+  for _, d in ipairs(gorder) do
+    local g = groups[d]
+    if #g > 3 then
+      add({ html = file_link(d, true, pandoc.path.filename(d) .. "/") .. '<span class="ap-muted"> (' .. #g .. " files)</span>" })
+    else
+      for _, it in ipairs(g) do
+        if it.folder or it.label then
+          add({ html = file_link(it.abs, it.folder, it.label or (pandoc.path.filename(it.abs) .. "/")) })
+        else
+          local name = pandoc.path.filename(it.abs)
+          if not byname[name] then byname[name] = {}; order[#order + 1] = name; add({ name = name }) end
+          table.insert(byname[name], it.abs)
+        end
+      end
+    end
+  end
+  local links = {}
+  for _, e in ipairs(entries) do
+    if e.html then
+      links[#links + 1] = e.html
+    else
+      local list = byname[e.name]
+      if #list > 3 then
+        local d = common_dir(list)
+        links[#links + 1] = file_link(d, true, pandoc.path.filename(d) .. "/") ..
+          '<span class="ap-muted"> (' .. #list .. " × " .. html_escape(e.name) .. ")</span>"
+      else
+        for _, abs in ipairs(list) do
+          local label = #list > 1 and (pandoc.path.filename(pandoc.path.directory(abs)) .. "/" .. e.name) or e.name
+          links[#links + 1] = file_link(abs, false, label)
+        end
+      end
+    end
+  end
+  return '<div class="asta-panel ap-files-bar">' .. FOLDER_ICON .. '<span class="ap-files-label">Files</span> ' ..
+    table.concat(links, '<span class="ap-muted"> · </span>') .. "</div>\n"
+end
+
+-- A page-relative path (the `data` arguments) as an absolute one.
+local function page_abs(rel) return absolute(pandoc.path.join({ page_dir(), rel })) end
+
+local function is_list(t) return type(t) == "table" and t[1] ~= nil end
 
 -- asta-theories: one or more data files (data="a.json,b.json"), one per Theorizer project,
 -- each embedded as its own script element. A file that cannot be read gets an error box above
@@ -217,7 +496,7 @@ local function theories_panel(kwargs)
     return pandoc.RawBlock("html",
       '<div class="asta-panel"><div class="ap-error">This page has no data yet: ' .. html_escape(err) .. '</div></div>')
   end
-  local errors, scripts, read = {}, {}, {}
+  local errors, scripts, read, bar = {}, {}, {}, {}
   for _, rel in ipairs(rels) do
     local text, err = read_data({ data = rel })
     if err then
@@ -226,6 +505,7 @@ local function theories_panel(kwargs)
         html_escape(err) .. '</div></div>'
     else
       read[#read + 1] = rel
+      bar[#bar + 1] = { abs = page_abs(rel) }
       -- "</" cannot appear raw inside a <script> element; "<\/" is the same string in JSON.
       local safe = cited_findings_only(text):gsub("</", "<\\/")
       scripts[#scripts + 1] = '<script type="application/json" class="asta-theories-data"' ..
@@ -242,7 +522,7 @@ local function theories_panel(kwargs)
   -- links (#paper-<corpus id or key>). theories.js uses literature.html when it is not given.
   local papers = pandoc.utils.stringify(kwargs["papers"] or "")
   local papers_attr = papers ~= "" and (' data-asta-papers="' .. attr_escape(papers) .. '"') or ""
-  return pandoc.RawBlock("html", table.concat(errors, "\n") .. (#errors > 0 and "\n" or "") ..
+  return pandoc.RawBlock("html", table.concat(errors, "\n") .. (#errors > 0 and "\n" or "") .. files_bar(bar) ..
     '<div class="asta-panel asta-theories" data-asta-source="' .. attr_escape(table.concat(read, ",")) .. '"' ..
     names_attr .. papers_attr .. '></div>\n' .. table.concat(scripts, "\n"))
 end
@@ -312,6 +592,15 @@ local function local_meta(dir)
   return meta
 end
 
+-- Links to a run folder's own files: the folder, args.json and rich_outputs/ (a local run), run.md.
+local function run_hrefs(dir)
+  local h = { folder = href_to(dir, true) }
+  if file_size(pandoc.path.join({ dir, "args.json" })) then h.args = href_to(pandoc.path.join({ dir, "args.json" })) end
+  if file_size(pandoc.path.join({ dir, "run.md" })) then h.runmd = href_to(pandoc.path.join({ dir, "run.md" })) end
+  if is_dir(pandoc.path.join({ dir, "rich_outputs" })) then h.richOutputs = href_to(pandoc.path.join({ dir, "rich_outputs" }), true) end
+  return h
+end
+
 local function node_run(dir, rel)
   local nodes, skipped = {}, 0
   for _, name in ipairs(list_dir(dir) or {}) do
@@ -325,6 +614,7 @@ local function node_run(dir, rel)
         local ro = suffix and read_file(pandoc.path.join({ dir, "rich_outputs", "ro_" .. suffix .. ".json" }))
         local figures = slim_bundles(decode_json(ro))
         if figures and #figures > 0 then slim.figures = figures end
+        slim.file, slim.href = name, href_to(pandoc.path.join({ dir, name }))
         nodes[#nodes + 1] = slim
       else
         skipped = skipped + 1
@@ -334,21 +624,21 @@ local function node_run(dir, rel)
   if skipped > 0 then
     quarto.log.warning("asta-autods: " .. skipped .. " node file(s) in " .. rel .. " could not be read")
   end
-  return { kind = "nodes", source = rel, nodes = nodes, skipped = skipped, meta = local_meta(dir) }
+  return { kind = "nodes", source = rel, nodes = nodes, skipped = skipped, meta = local_meta(dir), hrefs = run_hrefs(dir) }
 end
 
 local function file_run(path, rel)
   local text = read_file(path)
   if text == nil then return nil end
   if not rel:lower():match("%.json$") then
-    return { kind = "csv", source = rel, text = text }
+    return { kind = "csv", source = rel, text = text, hrefs = { file = href_to(path) } }
   end
   -- Results JSON (`asta autodiscovery results`, the hosted Download → JSON): each experiment's
   -- figures kept in one form. A file that does not parse is passed as text, for the page to
   -- say so.
   local ok, data = pcall(quarto.json.decode, text)
   if not ok or type(data) ~= "table" then
-    return { kind = "json", source = rel, text = text }
+    return { kind = "json", source = rel, text = text, hrefs = { file = href_to(path) } }
   end
   local list = data.experiments or data
   if type(list) == "table" then
@@ -359,7 +649,7 @@ local function file_run(path, rel)
       end
     end
   end
-  return { kind = "json", source = rel, data = data }
+  return { kind = "json", source = rel, data = data, hrefs = { file = href_to(path) } }
 end
 
 -- A run folder: the run's record (run.md: title, label, name, link, ## Prompt) beside its files,
@@ -374,7 +664,7 @@ local function is_run_folder(names)
 end
 
 local function folder_run(dir, rel, names)
-  local run = { kind = "folder", source = rel, runmd = read_file(pandoc.path.join({ dir, "run.md" })) }
+  local run = { kind = "folder", source = rel, runmd = read_file(pandoc.path.join({ dir, "run.md" })), hrefs = run_hrefs(dir) }
   for _, n in ipairs(names) do
     local child, crel = pandoc.path.join({ dir, n }), rel .. "/" .. n
     if n == "results.json" or n:match("%.results%.json$") then
@@ -382,6 +672,7 @@ local function folder_run(dir, rel, names)
     elseif n == "experiments.csv" then
       run.csv = read_file(child)
       run.csvSource = crel
+      run.csvHref = href_to(child)
     end
   end
   if has_nodes(names) then
@@ -442,7 +733,8 @@ local function autods(kwargs)
   if name ~= "" and #runs == 1 then runs[1].name = name end
   local text = quarto.json.encode({ format = "asta-pages/autods@1", runs = runs })
   local safe = text:gsub("</", "<\\/")
-  return pandoc.RawBlock("html",
+  local src = page_abs((rel:gsub("/$", "")))
+  return pandoc.RawBlock("html", files_bar({ { abs = src, folder = is_dir(src) } }) ..
     '<div class="asta-panel asta-autods" data-asta-source="' .. html_escape(rel) .. '"></div>\n' ..
     '<script type="application/json" id="asta-autods-data">' .. safe .. '</script>')
 end
@@ -489,8 +781,195 @@ local function workflow(kwargs)
   }
   if (!fit()) new MutationObserver(function (_, o) { if (fit()) o.disconnect(); }).observe(box, { childList: true, subtree: true });
 })(document.currentScript.previousElementSibling);</script>]]
-  return pandoc.Blocks({ head, pandoc.RawBlock("html",
+  return pandoc.Blocks({ head, pandoc.RawBlock("html", files_bar({ { abs = page_abs(rel) } }) ..
     '<div class="cell asta-workflow"><pre class="mermaid mermaid-js">' .. html_escape(src) .. "</pre></div>" .. sizer) })
+end
+
+-- ---- asta-literature: the paper list, with links to its papers file and search files ----------
+
+local SEARCH_NAME = "^[%w][%w%._%-]*$"
+
+local function literature_panel(kwargs)
+  if not quarto.doc.is_format("html") then return pandoc.Null() end
+  add_deps("literature")
+  local text, err, rel = read_data(kwargs)
+  if err then return error_box("literature", "This page has no data yet: " .. err) end
+  local abs = page_abs(rel)
+  local bar = { { abs = abs } }
+  -- A search's own file (<name>.json), where the run kept it: the folder searches= names (from
+  -- the project root), or a searches/ folder beside the papers file or beside its folder.
+  local dirs, found, nfound = {}, {}, 0
+  local named = kwarg(kwargs, "searches")
+  if named ~= "" then
+    local d, clean = project_path(named)
+    if d then dirs[#dirs + 1] = d else quarto.log.warning("asta-literature: searches " .. clean) end
+  end
+  local here = pandoc.path.directory(abs)
+  dirs[#dirs + 1] = here .. "/searches"
+  dirs[#dirs + 1] = normalize(here .. "/../searches")
+  local data = decode_json(text)
+  if type(data) == "table" and is_list(data.searches) then
+    for _, sch in ipairs(data.searches) do
+      local name = type(sch) == "table" and sch.name
+      if type(name) == "string" and name:match(SEARCH_NAME) then
+        for _, d in ipairs(dirs) do
+          local f = d .. "/" .. name .. ".json"
+          if file_size(f) then
+            found[name] = href_to(f)
+            if nfound == 0 then bar[#bar + 1] = { abs = d, folder = true } end
+            nfound = nfound + 1
+            break
+          end
+        end
+      end
+    end
+  end
+  local safe = text:gsub("</", "<\\/")
+  return pandoc.RawBlock("html", files_bar(bar) ..
+    '<div class="asta-panel asta-literature" data-asta-source="' .. attr_escape(rel) .. '"' ..
+    (nfound > 0 and (' data-asta-search-files="' .. attr_escape(quarto.json.encode(found)) .. '"') or "") .. "></div>\n" ..
+    '<script type="application/json" id="asta-literature-data">' .. safe .. "</script>")
+end
+
+-- ---- asta-files: a folder's files, listed at render time --------------------------------------
+
+local function files_panel(kwargs)
+  if not quarto.doc.is_format("html") then return pandoc.Null() end
+  css_dep()
+  local rel = kwarg(kwargs, "dir")
+  if rel == "" then return error_box("files", "the shortcode names no folder; use dir=\".asta/flows/<run>/<step>\".") end
+  local root, clean = project_path(rel)
+  if not root then return error_box("files", "dir " .. clean) end
+  local names = list_dir(root)
+  if names == nil then
+    return error_box("files", "cannot read the folder " .. clean .. "; its files appear here once it exists.")
+  end
+  local depth = math.max(1, math.min(5, math.floor(tonumber(kwarg(kwargs, "depth")) or 1)))
+  local budget = math.max(1, math.floor(tonumber(kwarg(kwargs, "limit")) or 30))
+  local nfiles, nfolders = 0, 0
+
+  local function visible(list)
+    local out = {}
+    for _, n in ipairs(list or {}) do if not skip_name(n) then out[#out + 1] = n end end
+    return out
+  end
+
+  local function listing(dir, list, level)
+    local folders, files = {}, {}
+    for _, n in ipairs(visible(list)) do
+      local p = dir .. "/" .. n
+      local sub = list_dir(p)
+      if sub then folders[#folders + 1] = { n = n, p = p, sub = sub } else files[#files + 1] = { n = n, p = p } end
+    end
+    if level == 1 then nfiles, nfolders = #files, #folders end
+    natural_sort(folders, function(x) return x.n end)
+    natural_sort(files, function(x) return x.n end)
+    local items, shown = {}, 0
+    for _, group in ipairs({ folders, files }) do
+      for _, e in ipairs(group) do
+        if budget <= 0 then break end
+        budget = budget - 1
+        shown = shown + 1
+        if e.sub then
+          local kids = visible(e.sub)
+          items[#items + 1] = '<li class="ap-fl-dir">' .. file_link(e.p, true, e.n .. "/") ..
+            '<span class="ap-fl-meta">' .. #kids .. (#kids == 1 and " item" or " items") .. "</span>" ..
+            ((level < depth and #kids > 0) and listing(e.p, e.sub, level + 1) or "") .. "</li>"
+        else
+          items[#items + 1] = "<li>" .. file_link(e.p, false, e.n) ..
+            '<span class="ap-fl-meta">' .. human_size(file_size(e.p)) .. "</span></li>"
+        end
+      end
+    end
+    local more = #folders + #files - shown
+    if more > 0 then
+      items[#items + 1] = '<li class="ap-fl-more">' .. more .. " more · " .. file_link(dir, true, "open the folder") .. "</li>"
+    end
+    if #items == 0 then items[1] = '<li class="ap-fl-more">This folder is empty.</li>' end
+    return '<ul class="ap-fl">' .. table.concat(items) .. "</ul>"
+  end
+
+  local body = listing(root, names, 1)
+  local counts = {}
+  if nfolders > 0 then counts[#counts + 1] = nfolders .. (nfolders == 1 and " folder" or " folders") end
+  counts[#counts + 1] = nfiles .. (nfiles == 1 and " file" or " files")
+  return pandoc.RawBlock("html", '<div class="asta-panel asta-files"><div class="ap-files-bar">' .. FOLDER_ICON ..
+    '<span class="ap-files-label">Files</span> ' .. file_link(root, true, pandoc.path.filename(root) .. "/") ..
+    '<span class="ap-muted"> · ' .. table.concat(counts, ", ") .. "</span></div>" .. body .. "</div>")
+end
+
+-- ---- asta-doc: a markdown file from disk, inline ---------------------------------------------
+
+local DOC_ICON = '<svg class="ap-files-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 1.75h6l3 3v9.5h-9z M9.5 1.75v3h3" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>'
+
+local function url_decode(s)
+  return (s:gsub("%%(%x%x)", function(h) return string.char(tonumber(h, 16)) end))
+end
+
+local function doc_panel(kwargs)
+  if not quarto.doc.is_format("html") then return pandoc.Null() end
+  css_dep()
+  local rel = kwarg(kwargs, "file")
+  if rel == "" then return error_box("doc", "the shortcode names no file; use file=\".asta/flows/<run>/<step>/<name>.md\".") end
+  local abs, clean = project_path(rel)
+  if not abs then return error_box("doc", "file " .. clean) end
+  local text = not is_dir(abs) and read_file(abs) or nil
+  if text == nil then return error_box("doc", "cannot read " .. clean .. "; it appears here once the step writes it.") end
+  -- Pandoc's markdown without citations (an "@" in a run's notes is not a reference to look up).
+  local ok, doc = pcall(pandoc.read, text, "markdown-citations")
+  if not ok then return error_box("doc", "cannot read " .. clean .. " as markdown") end
+  local level = math.max(1, math.min(6, math.floor(tonumber(kwarg(kwargs, "level")) or 3)))
+  local top = 7
+  doc.blocks:walk({ Header = function(h) if h.level < top then top = h.level end end })
+  local shift = top == 7 and 0 or level - top
+  local base = pandoc.path.directory(abs)
+  local slug = clean:lower():gsub("[^%w]+", "-")
+  -- Links and images that name files beside the document point at those files from the
+  -- rendered page; they are written as raw HTML so Quarto does not copy them into the site.
+  local function target(t)
+    if t == "" or t:match("^#") or t:match("^%a[%w+.-]*:") or t:match("^//") then return nil end
+    local path, rest = t:match("^([^#?]*)(.*)$")
+    if path == "" or path:match("^/") then return nil end
+    return href_to(normalize(base .. "/" .. url_decode(path)), path:match("/$") ~= nil) .. rest
+  end
+  local blocks = doc.blocks:walk({
+    Header = function(h)
+      h.level = math.max(1, math.min(6, h.level + shift))
+      if h.identifier ~= "" then h.identifier = "doc-" .. slug .. "-" .. h.identifier end
+      h.classes:insert("unlisted")
+      h.classes:insert("unnumbered")
+      return h
+    end,
+    Link = function(l)
+      local href = target(l.target)
+      if not href then return nil end
+      local out = pandoc.Inlines({ pandoc.RawInline("html", '<a href="' .. attr_escape(href) .. '"' ..
+        (l.title ~= "" and (' title="' .. attr_escape(l.title) .. '"') or "") .. ">") })
+      out:extend(l.content)
+      out:insert(pandoc.RawInline("html", "</a>"))
+      return out
+    end,
+    Image = function(img)
+      local href = target(img.src)
+      if not href then return nil end
+      -- Shown from its copy in the site; a figure too large to copy is a link to the file.
+      local path = img.src:match("^([^#?]*)")
+      local file = normalize(base .. "/" .. url_decode(path))
+      local alt = pandoc.utils.stringify(img.caption)
+      local src, size = figure_src(file)
+      if not src then
+        return pandoc.RawInline("html", '<a class="ap-doc-img-link" href="' .. attr_escape(href) .. '">' ..
+          html_escape(pandoc.path.filename(file)) .. "</a>" ..
+          (size and ('<span class="ap-muted"> (' .. human_size(size) .. ", too large to show here)</span>") or ""))
+      end
+      return pandoc.RawInline("html", '<img class="ap-doc-img" src="' .. attr_escape(src) .. '" alt="' ..
+        attr_escape(alt) .. '" loading="lazy">')
+    end,
+  })
+  local head = '<div class="asta-panel ap-files-bar ap-doc-head">' .. DOC_ICON .. file_link(abs, false, pandoc.path.filename(abs)) ..
+    '<span class="ap-muted"> · ' .. human_size(file_size(abs)) .. " · </span>" ..
+    file_link(base, true, "its folder") .. "</div>"
+  return pandoc.Blocks({ pandoc.RawBlock("html", head), pandoc.Div(blocks, pandoc.Attr("", { "asta-doc" })) })
 end
 
 return {
@@ -501,9 +980,15 @@ return {
     return theories_panel(kwargs)
   end,
   ["asta-literature"] = function(args, kwargs, meta)
-    return panel("literature", "literature", kwargs)
+    return literature_panel(kwargs)
   end,
   ["asta-autods"] = function(args, kwargs, meta)
     return autods(kwargs)
+  end,
+  ["asta-files"] = function(args, kwargs, meta)
+    return files_panel(kwargs)
+  end,
+  ["asta-doc"] = function(args, kwargs, meta)
+    return doc_panel(kwargs)
   end,
 }

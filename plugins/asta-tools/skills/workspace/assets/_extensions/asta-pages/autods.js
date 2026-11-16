@@ -9,6 +9,8 @@
    Files: `asta autodiscovery results` JSON ({run, experiments}) or the hosted Download → JSON
    draw everything; a local run's mcts_node records everything but the session settings; the
    hosted Download → CSV has no tree, code or figures. A run folder is run.md beside those.
+   The run's header links its folder (and a local run's args.json); an experiment from a local
+   run links its mcts_node_*.json and the run's rich_outputs/ folder, as asta-pages.lua found them.
    Anchors: #experiment-<id> opens an experiment (#run-<n>/experiment-<id> with several runs);
    a local run's node id does too: #node-3-1 or #node_3_1 (#run-<n>/node-3-1).
    Uses no browser storage and makes no request: every figure is in the page. */
@@ -192,6 +194,7 @@
         e.code = n.code || ""; e.codeOutput = n.code_output || "";
         e.figures = n.figures || [];
         e.createdAt = n.created_at || null;
+        e.file = n.file || ""; e.fileHref = n.href || "";
         return finish(e, null);
       });
   }
@@ -219,10 +222,10 @@
   }
 
   function loadRun(raw) {
-    var run = { source: raw.source || "", kind: raw.kind, skipped: raw.skipped || 0, info: null, meta: {}, details: {} };
+    var run = { source: raw.source || "", kind: raw.kind, skipped: raw.skipped || 0, info: null, meta: {}, details: {}, hrefs: obj(raw.hrefs) || {} };
     if (raw.kind === "folder") {
       run.record = parseRunMd(raw.runmd);
-      run.csvHref = raw.csvSource || null;
+      run.csvHref = raw.csvHref || raw.csvSource || null;
       var res = raw.results;
       if (res) {
         var d = res.data != null ? res.data : JSON.parse(res.text);
@@ -485,6 +488,11 @@
       var links = [];
       if (run.link) links.push('<a href="' + esc(run.link) + '" target="_blank" rel="noopener noreferrer">Open in AutoDiscovery</a>');
       if (run.csvHref) links.push('<a href="' + esc(run.csvHref) + '" download>experiments.csv</a>');
+      var h = run.hrefs;
+      if (h.folder) links.push('<a href="' + esc(h.folder) + '" title="' + esc(run.source) + '">Run folder</a>');
+      else if (h.file) links.push('<a href="' + esc(h.file) + '">' + esc(String(run.source).split("/").pop()) + "</a>");
+      if (h.args) links.push('<a href="' + esc(h.args) + '">args.json</a>');
+      if (h.runmd) links.push('<a href="' + esc(h.runmd) + '">run.md</a>');
       links.push('<button type="button" class="ap-ad-linkbtn" data-params>Session configuration</button>');
       runEl.id = run.anchor;
       runEl.innerHTML =
@@ -578,10 +586,14 @@
       var tabs = [["result", "Result", result || empty("No result", "This experiment recorded no analysis.")],
         ["plan", "Plan", planHtml || empty("No plan", "This run's files keep no plan for this experiment.")],
         ["code", "Code", codeHtml || empty("No code", run.kind === "csv" ? "The CSV download keeps no code." : "This experiment recorded no code.")]];
+      var files = [];
+      if (e.fileHref) files.push('<a href="' + esc(e.fileHref) + '">' + esc(e.file || "node file") + "</a>");
+      if (e.fileHref && run.hrefs.richOutputs) files.push('<a href="' + esc(run.hrefs.richOutputs) + '">rich_outputs/</a>');
       detail.id = anchor;
       detail.innerHTML = '<div class="ap-theory-head"><h2>Experiment ' + esc(e.id) + '<a class="ap-anchor" href="#' + esc(anchor) + '" title="Link to this experiment">#</a></h2>' +
         (e.hypothesis ? "<p>" + inline(e.hypothesis) + "</p>" : "") +
-        (chips.length ? '<div class="ap-chips">' + chips.join("") + "</div>" : "") + "</div>" +
+        (chips.length ? '<div class="ap-chips">' + chips.join("") + "</div>" : "") +
+        (files.length ? '<div class="ap-ad-links ap-ad-files"><span class="ap-files-label">Files</span>' + files.join("") + "</div>" : "") + "</div>" +
         '<div class="ap-tabs" role="tablist">' + tabs.map(function (t, k) {
           return '<button type="button" class="ap-tab" role="tab" data-tab="' + t[0] + '" aria-selected="' + (k === 0) + '">' + t[1] + "</button>";
         }).join("") + "</div>" + tabs.map(function (t, k) {

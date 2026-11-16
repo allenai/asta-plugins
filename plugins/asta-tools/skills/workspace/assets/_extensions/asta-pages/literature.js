@@ -3,7 +3,8 @@
    papers and searches, written by the theory-generation workflow's data script) and draws the paper cards with a text
    filter, and a facets column: sort, fetch status, year, venue, author.
    #paper-<corpus id or key> in the address scrolls to that paper and marks it (filters that hide
-   it are cleared; a copy shown once on another card goes to that card). Uses no browser storage. */
+   it are cleared; a copy shown once on another card goes to that card). Each search links its own
+   file when the shortcode found it on disk (data-asta-search-files). Uses no browser storage. */
 (function () {
   "use strict";
 
@@ -76,14 +77,17 @@
   function render(root, data, opts) {
     opts = opts || {};
     var prefix = opts.prefix || "";
+    var searchFiles = opts.searchFiles || {};
     var all = (data.papers || []).slice();
     var searches = data.searches || [];
     var counts = { used: 0, read: 0, abstract: 0 };
     all.forEach(function (p) { counts[role(p)] += 1; });
     var head = '<div class="ap-lit-searches">' +
       (searches.length ? "<div>" + searches.map(function (s) {
+        var file = s.name && searchFiles[s.name];
         return "Search " + (s.query ? "<q>" + esc(s.query) + "</q>" : "<code>" + esc(s.name) + "</code>") + " returned " +
-          plural(s.candidates || 0, "paper", "papers");
+          plural(s.candidates || 0, "paper", "papers") +
+          (file ? ' (<a href="' + esc(file) + '">' + esc(s.name + ".json") + "</a>)" : "");
       }).join("; ") + ". The papers below are the ones the run tried to read.</div>" : "") +
       "<div><strong>" + plural(all.length, "paper", "papers") + ":</strong> " +
       [counts.used + " used by the theories", counts.read + " read in full but not used",
@@ -212,12 +216,15 @@
   window.AstaPages = window.AstaPages || {};
   window.AstaPages.literature = safeRender;
 
-  // A page that carries the Quarto shortcode's markup draws itself.
+  // A page that carries the Quarto shortcode's markup draws itself, its searches linking the
+  // files the shortcode found.
   function start() {
     var root = document.querySelector(".asta-panel.asta-literature");
     var src = document.getElementById("asta-literature-data");
     if (!root || !src) return;
-    safeRender(root, function () { return JSON.parse(src.textContent); });
+    var files = {};
+    try { files = JSON.parse(root.getAttribute("data-asta-search-files") || "{}") || {}; } catch (e) { files = {}; }
+    safeRender(root, function () { return JSON.parse(src.textContent); }, { searchFiles: files });
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start); else start();
 })();

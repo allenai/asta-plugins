@@ -443,3 +443,39 @@ body.quarto-dark .asta-autods { --ap-surprise: #ffa31c; }   /* --color-warning-o
    until its labels cannot be read (asta-pages.lua sizes it once Mermaid has drawn it). */
 .asta-workflow { overflow-x: auto; margin: 0.5rem 0 1.5rem; }
 .asta-workflow pre.mermaid { background: transparent; border: 0; padding: 0; margin: 0; }
+
+/* ---- files on disk: the "Files" line over each panel, asta-files, asta-doc ------------------- */
+.asta-panel.ap-files-bar, .asta-files .ap-files-bar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; margin: 0 0 10px;
+  font-size: 13px; line-height: 1.5; color: var(--ap-muted);
+}
+.ap-files-icon { width: 15px; height: 15px; flex: none; color: var(--ap-faint); }
+.ap-files-label {
+  font-weight: 700; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ap-faint);
+  margin-right: 2px;
+}
+.asta-panel.ap-files-bar a, .asta-files a, .ap-ts-links a, .ap-ad-files a { word-break: break-word; }
+.asta-files { margin: 0 0 1.5rem; }
+.asta-files .ap-files-bar { margin-bottom: 6px; }
+.ap-fl { list-style: none; margin: 0; padding: 0; font-size: 14px; }
+.asta-files > .ap-fl {
+  border: 1px solid var(--ap-line); border-radius: var(--ap-r); background: var(--ap-raised); padding: 6px 0;
+}
+.ap-fl li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 12px; padding: 3px 14px; margin: 0; }
+.ap-fl li > a { min-width: 0; }
+.ap-fl .ap-fl-meta { margin-left: auto; color: var(--ap-faint); font-size: 12.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ap-fl .ap-fl-dir > a { font-weight: 700; }
+.ap-fl .ap-fl { flex-basis: 100%; border-left: 1px solid var(--ap-hairline); margin: 2px 0 2px 4px; }
+.ap-fl .ap-fl li { padding-right: 0; }
+.ap-fl .ap-fl-more { color: var(--ap-muted); font-size: 13px; }
+
+.ap-doc-head { margin-bottom: 6px; }
+.asta-doc {
+  border-left: 3px solid var(--ap-line, #cbd2cc); padding: 2px 0 2px 18px; margin: 0 0 1.75rem;
+  overflow-x: auto;
+}
+body.quarto-dark .asta-doc { border-left-color: rgba(250, 242, 233, 0.2); }
+.asta-doc > :first-child { margin-top: 0; }
+.asta-doc table { font-size: 0.9em; }
+.asta-doc .ap-doc-img { max-width: 100%; height: auto; border-radius: 4px; background: #fff; }
+.ap-ad-files { margin-top: 8px; font-size: 13px; }
