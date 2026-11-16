@@ -86,7 +86,15 @@ Unless otherwise specified, start every local run with `scripts/run_relaxed.py` 
 "$(uv tool dir)/asta-autodiscovery/bin/python" -I scripts/run_relaxed.py <auto-discovery arguments>
 ```
 
-In our tests it raised GPT-6 Luna's pass rate from about a third to nearly all experiments, and cost less per usable experiment. It prints `experiment_reviewer: relaxed system message active` when it starts. More experiments pass, so read the results rather than trusting the pass count. Tested with `asta-autodiscovery` 1.0.1.
+In our tests it raised GPT-6 Luna's pass rate from about a third to nearly all experiments, and cost less per usable experiment. It prints `experiment_reviewer: relaxed system message active` when it starts. More experiments pass, so read the results rather than trusting the pass count. Tested with `asta-autodiscovery` 1.0.1 and 2.0.0.
+
+### Seeding a run
+
+To start from experiments the person chose, such as one from an earlier run, write them to a JSON file as a list of `{"hypothesis", "experiment_plan"}`, copied verbatim from the source nodes, and add `--warmstart_experiments <file> --n_warmstart <count>` to the arguments. They run first. (On the hosted AutoDiscovery site, Experiment ID N is the node with `creation_idx` N + 1.)
+
+### Long runs
+
+A run of many experiments takes hours. If the shell stops long commands, start the run detached (`setsid nohup <command> > run.log 2>&1 < /dev/null &`) and check its log. To resume a run that stopped, add `--continue_from_dir <its output folder>`.
 
 ### Known behaviours
 
