@@ -14,7 +14,7 @@ title: "<Descriptive title, a noun phrase>"
 
 ## Findings
 
-<!-- The body. For updating the lab notebook, follow the run-workflow skill's Computational review workflow. -->
+<!-- The body. For updating the lab notebook, follow the run-workflow skill's Review workflow. -->
 
 ### <A result worth calling out, as a noun phrase or a plain statement>
 

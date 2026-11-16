@@ -15,7 +15,7 @@ allowed-tools: Bash(theorize *) Bash(auto-discovery *) Bash(asta auth *) Bash(as
 | [Secondary reproduction](workflows/secondary-reproduction/README.md) | Re-tests an AutoDS run's hypotheses on independent data, then theories that explain the verdicts |
 | [Gap-Driven Theory Testing](workflows/gap-driven-theory-testing/README.md) | Maps what the literature knows and leaves open, aims theories at the gaps, and tests them on independent data |
 | [AutoDiscovery exploration](workflows/autodiscovery-exploration/README.md) | Three ways to explore a dataset with AutoDS: on its own in rounds, theories first, or experiments first |
-| [Computational review](workflows/computational-review/README.md) | The project's report, written as a critical review of the evidence |
+| [Review](workflows/review/README.md) | The project's report, written as a critical review of the evidence |
 
 Pick one with the person and read its README.
 

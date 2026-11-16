@@ -39,7 +39,7 @@ Follow its phases, gates and information barriers as written. Where a skill call
 
 Everything else in the pipeline still runs, including figure construction and the figure audit. The figures go in the review page as Quarto figures: copy each image into the site, and keep its script and inputs beside it in the run's folder. Each figure's folder carries a `figure.json` naming its script, inputs and audit (`{"id": "<fig-id>", "script": "make_figure.py", "inputs": ["<workspace path>", …], "audit": "audit.json"}`), so the site links the figure to the files it was made from.
 
-The review is the site's `index.qmd`, and the only page this workflow writes: it gets no `pages/<NNNN>-computational-review.qmd`. In `_quarto.yml` the front page's sidebar entry reads "Computational review". The run's final files are listed at the end of the review under a short "Files" heading (`{{< asta-files dir=".asta/flows/<NNNN>-computational-review/<final step>" >}}`).
+The review is the site's `index.qmd`, and the only page this workflow writes: it gets no `pages/<NNNN>-review.qmd`. In `_quarto.yml` the front page's sidebar entry reads "Computational review". The run's final files are listed at the end of the review under a short "Files" heading (`{{< asta-files dir=".asta/flows/<NNNN>-review/<final step>" >}}`).
 
 **2. A local document without a DOI is fine.** Cite it with a stable local key, and give its entry the same fields as a paper with a corpus id, so the two render alike:
 
