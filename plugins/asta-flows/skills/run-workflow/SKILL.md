@@ -11,6 +11,7 @@ allowed-tools: Bash(theorize *) Bash(auto-discovery *) Bash(s2 *) Bash(asta-pape
 - [Theory generation](workflows/theory-generation/README.md): Theorizer plans a search query and schema, Semantic Scholar (`s2`) finds the papers and `asta-papers` fetches them, then Theorizer passes over the literature, one per extraction schema.
 - [Data Driven Theory Generation](workflows/data-driven-theory-generation.md): Semantic Scholar, Data Search, AutoDS, then Theorizer to explain experimental findings.
 - [Secondary reproduction](workflows/secondary-reproduction.md): re-test an AutoDS run's hypotheses on independent data, then build theories from the verdicts with Theorizer.
+- [Gap-Driven Theory Testing](workflows/gap-driven-theory-testing.md): Semantic Scholar or a local paper index, a map of what the literature knows and leaves open, Theorizer theories aimed at the gaps, tests on independent data the person gives or Data Search finds, and the experiment each untested theory still needs.
 - [AutoDiscovery exploration](workflows/autodiscovery-exploration/README.md): break a researcher's question about their data into AutoDS runs, log them, and write up what came back with every number linked to its experiment.
 - [Computational review](workflows/computational-review.md): write the project's report, the site's front page, as a critical review of the evidence, with ComputationalReviewTemplate's Expert Review Pipeline and the `workspace` skill's citations and site.
 
