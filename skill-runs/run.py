@@ -6,6 +6,7 @@
     python3 skill-runs/run.py e2e                    # whole workflows, after the pieces they use
     python3 skill-runs/run.py all
     python3 skill-runs/run.py autods-cli exploration-e2e
+    python3 skill-runs/run.py all --jobs 4           # side by side
 
 The keys come from the environment of the shell that starts it: ANTHROPIC_API_KEY for Claude, and
 the tool keys a case uses.
@@ -17,11 +18,13 @@ run. Results go to skill-runs/results/<time>/<case>/.
 """
 
 import argparse
+import concurrent.futures
 import datetime
 import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -80,6 +83,11 @@ def run_case(case, args, keys, out_dir, secrets):
         json.dump({"apiKeyHelper": "cat " + os.path.join(secrets, "anthropic")}, f)
 
     env = {k: v for k, v in os.environ.items() if not k.endswith("_API_KEY")}
+    # Tools the agent installs with `uv tool` go in the case's own folder, so cases can run side
+    # by side and none replaces the tools on your PATH.
+    env["UV_TOOL_DIR"] = os.path.join(out_dir, "uv-tools")
+    env["UV_TOOL_BIN_DIR"] = os.path.join(out_dir, "uv-bin")
+    env["PATH"] = env["UV_TOOL_BIN_DIR"] + os.pathsep + env.get("PATH", "")
     env.update({k: keys[k] for k in case.keys if k in keys})
     if "S2_API_KEY" in case.keys:  # either name works for Semantic Scholar
         s2 = keys.get("S2_API_KEY") or keys.get("SEMANTIC_SCHOLAR_API_KEY")
@@ -188,9 +196,8 @@ def choose(names):
             if not match:
                 sys.exit("No such case: " + name)
             chosen += match
-    return sorted(
-        dict.fromkeys(chosen), key=lambda c: c.tier != "pieces"
-    )  # pieces first
+    unique = list({c.name: c for c in chosen}.values())
+    return sorted(unique, key=lambda c: c.tier != "pieces")  # pieces first
 
 
 def main():
@@ -208,6 +215,7 @@ def main():
         help="install spec for Theorizer until 0.1.5 is on PyPI, such as a checkout path",
     )
     parser.add_argument("--claude", default="claude")
+    parser.add_argument("--jobs", type=int, default=1, help="cases to run at once")
     args = parser.parse_args()
 
     if args.list or not args.cases:
@@ -232,38 +240,73 @@ def main():
     root = os.path.join(
         HERE, "results", datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     )
-    reports, passed = [], set()
-    try:
-        for case in chosen:
-            unmet = [n for n in case.needs if n not in passed]
-            if unmet:
+    signal.signal(
+        signal.SIGTERM, lambda *_: sys.exit(1)
+    )  # so the key helper is removed on a stop
+    chosen_names = {c.name for c in chosen}
+    jobs = max(1, args.jobs)
+    reports, passed, finished = [], set(), set()
+
+    def report_line(report):
+        verdict = "PASS" if report["passed"] else "FAIL"
+        print(
+            f"{report['case']}: {verdict} in {report['minutes']} min, claude ${report['claude_cost_usd']}",
+            flush=True,
+        )
+        for c in report["checks"]:
+            if not c["ok"]:
                 print(
-                    f"{case.name}: skipped, needs {', '.join(unmet)} to pass first",
+                    f"    {report['case']} failed: {c['check']} {c['detail']}",
                     flush=True,
                 )
-                reports.append(
-                    {
-                        "case": case.name,
-                        "tier": case.tier,
-                        "mode": case.mode,
-                        "skipped": unmet,
-                    }
+
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as pool:
+            waiting, running = list(chosen), {}
+            while waiting or running:
+                for case in list(waiting):
+                    needs = [
+                        n for n in case.needs if n in chosen_names
+                    ]  # only what this run includes
+                    if any(n in finished and n not in passed for n in needs):
+                        waiting.remove(case)
+                        finished.add(case.name)
+                        unmet = [n for n in needs if n not in passed]
+                        print(
+                            f"{case.name}: skipped, needs {', '.join(unmet)} to pass",
+                            flush=True,
+                        )
+                        reports.append(
+                            {
+                                "case": case.name,
+                                "tier": case.tier,
+                                "mode": case.mode,
+                                "skipped": unmet,
+                            }
+                        )
+                    elif all(n in passed for n in needs) and len(running) < jobs:
+                        waiting.remove(case)
+                        print(
+                            f"{case.name}: running ({case.tier}, {case.mode})",
+                            flush=True,
+                        )
+                        out_dir = os.path.join(root, case.name)
+                        running[
+                            pool.submit(run_case, case, args, keys, out_dir, secrets)
+                        ] = case
+                if not running:
+                    continue
+                done, _ = concurrent.futures.wait(
+                    running, return_when=concurrent.futures.FIRST_COMPLETED
                 )
-                continue
-            print(f"{case.name}: running ({case.tier}, {case.mode})", flush=True)
-            report = run_case(case, args, keys, os.path.join(root, case.name), secrets)
-            reports.append(report)
-            if report["passed"]:
-                passed.add(case.name)
-            cost = report["claude_cost_usd"]
-            verdict = "PASS" if report["passed"] else "FAIL"
-            print(
-                f"{case.name}: {verdict} in {report['minutes']} min, claude ${cost}",
-                flush=True,
-            )
-            for c in report["checks"]:
-                if not c["ok"]:
-                    print(f"    failed: {c['check']} {c['detail']}", flush=True)
+                for future in done:
+                    case = running.pop(future)
+                    report = future.result()
+                    reports.append(report)
+                    finished.add(case.name)
+                    if report["passed"]:
+                        passed.add(case.name)
+                    report_line(report)
     finally:
         shutil.rmtree(secrets, ignore_errors=True)
 
