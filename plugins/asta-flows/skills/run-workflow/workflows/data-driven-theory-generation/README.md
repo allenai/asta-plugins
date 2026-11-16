@@ -10,7 +10,7 @@ The papers and theories are [Theory generation](../theory-generation/README.md)'
 |---|---|---|---|
 | 1 | Semantic Scholar | Finds the papers on the question and fetches their full text | 100 papers |
 | 2 | Data Search | Finds a dataset the question can be tested on | the person's data, or chosen during the run |
-| 3 | AutoDS | Runs experiments on the data | 10 experiments |
+| 3 | AutoDS | Runs experiments on the data | 100 experiments |
 | 4 | Theorizer | Extracts findings and builds theories that must explain the experiments, then a pass for each new schema | usually 2 to 4 more schemas |
 
 Before the next part, say in one sentence which parts of the question AutoDS can test on data and which rest on the literature. Then write this word for word, filling in only the two examples:
