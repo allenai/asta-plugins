@@ -19,7 +19,7 @@ allowed-tools: Bash(theorize *) Bash(auto-discovery *) Bash(asta auth *) Bash(as
 
 Pick one with the person and read its README.
 
-Track every run in a workspace, with the `workspace` skill. The project's report, `index.qmd`, opens with the person's mission in their words and a short abstract, then follows the template of the workflow it reports on: `index.md` in the workflow's folder, or the workspace's cover if there is none. A workflow's `templates/page.qmd`, when it has one, is the run's page.
+Track every run in a workspace, with the `workspace` skill. Before starting a workflow, set up the workspace scaffold, start the local Quarto preview, and give the person its URL. The project's report, `index.qmd`, opens with the person's mission in their words and a short abstract, then follows the template of the workflow it reports on: `index.md` in the workflow's folder, or the workspace's cover if there is none. A workflow's `templates/page.qmd`, when it has one, is the run's page.
 
 ## Running Workflows
 
