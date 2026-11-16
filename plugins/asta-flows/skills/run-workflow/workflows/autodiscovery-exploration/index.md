@@ -7,7 +7,7 @@
 
 ## Findings
 
-### <A result worth calling out, as a plain statement>
+### <Finding>
 
 <!-- Led by the experiments that found it, in their own words, each number linked to its experiment. Why it matters, and how far to trust it. -->
 

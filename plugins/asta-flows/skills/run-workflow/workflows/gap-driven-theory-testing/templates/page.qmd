@@ -6,7 +6,7 @@ title: "Gap-driven theory testing"
 
 {{< asta-files dir=".asta/flows/{{RUN}}/01-plan-and-papers" depth=2 limit=60 >}}
 
-## Extract
+## Extraction
 
 {{< asta-files dir=".asta/flows/{{RUN}}/02-extract" depth=2 limit=60 >}}
 
@@ -34,7 +34,7 @@ title: "Gap-driven theory testing"
 
 {{< asta-tests dir=".asta/flows/{{RUN}}/08-tests/<gap ID>" >}}
 
-## What is missing
+## Missing data
 
 {{< asta-files dir=".asta/flows/{{RUN}}/09-missing" depth=2 >}}
 

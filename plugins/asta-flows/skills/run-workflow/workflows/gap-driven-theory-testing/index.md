@@ -6,31 +6,31 @@
 
 <!-- Why the question matters, and the competing accounts: each one, and what it predicts. -->
 
-## What the literature establishes
+## Literature
 
-### <A theme>
+### <Theme>
 
 <!-- One claim per paragraph, several papers per claim. Conflicts in a > **Conflicting evidence.** block. -->
 
-## What the data adds
+## Tests
 
-### <A test, as a plain statement of its result>
+### <Test>
 
 <!-- The committed prediction, the dataset and why it is independent, the effect size, n and verdict, and how far to trust it. -->
 
-### The nulls that held, and what stayed undecided
+### Null results
 
-## Open questions and gaps
+## Gaps
 
 <!-- Which accounts each gap separates, and the ranking rule. -->
 
-### G1. <The gap, as a question>
+### G1. <Gap>
 
 ### Lower-ranked gaps
 
-## How the theories give leads on each gap
+## Theories
 
-### G1: <the gap, in a few words>
+### G1. <Gap>
 
 <!-- The theories aimed at it, what each predicts, and the experiment that would decide between them. -->
 
@@ -48,8 +48,8 @@
 
 ## Methods
 
-### The request
+### Request
 
-### Evidence sources
+### Sources
 
 <!-- Papers and where they came from, the datasets, the models, and what was dropped at each check. -->
