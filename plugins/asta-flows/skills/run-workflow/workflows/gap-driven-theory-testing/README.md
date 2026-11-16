@@ -21,7 +21,7 @@ The papers and theories are [Theory generation](../theory-generation/README.md)'
 | 8. Tests | AutoDS runs the committed tests on the data; the verdicts are audited | one experiment per prediction |
 | 9. What's missing | The study each undecided prediction needs | |
 | 10. Revision (optional) | Theorizer revises the theories against the verdicts | |
-| 11. Report | A review-article report ([index.md](index.md)), or a computational review | chosen with the plan |
+| 11. Report | A review-article report ([index.md](index.md)), written and then revised on what `check-claims` finds | |
 
 > You can make the run more specific:
 >
@@ -31,7 +31,6 @@ The papers and theories are [Theory generation](../theory-generation/README.md)'
 > - **Papers:** A local paper index to search, and whether it is the whole corpus or adds to Semantic Scholar?
 > - **Writing style:** Papers whose writing the report should follow? By default it follows the style of the papers in the run.
 > - **Report format:** A format for the final report, such as a journal's review style, a grant section or your lab's template? By default it is a review-article report.
-> - **Computational review:** Should the report be written as a computational review, with blinded critics checking every section? It takes much longer and costs more.
 
 ## Papers from a local index
 
@@ -126,4 +125,4 @@ Gaps come from what the authors say is open, from Theorizer's sweep, and from wh
 8. **Tests,** with AutoDS (the `autodiscovery` skill), in one run on the test data. Each committed prediction is one experiment, with the card's design and decision rule as its plan: on the CLI as warmstart seeds, in the library as nodes you write, hosted as the run's intent ("Test each of these as written: <the hypotheses and designs>"). Match each experiment to its card first: a prediction with no matching experiment, or one run with a different design, is undecided. Read each matched experiment against its committed decision rule and give Secondary reproduction's verdict; report AutoDS's belief change beside the verdict, never as it. Experiments AutoDS adds beyond the predictions are exploratory, never tests of the theories.
 9. **What's missing,** in `missing.md`: for each undecided prediction and each data gap, what to measure, the design and the rival it separates, the sample size and where its effect size came from (never invented), whether such data may exist, and what each result would mean. Then ask the person whether they have such data.
 10. **Revision,** optional: the verdicts as the mission, as in Secondary reproduction.
-11. **Report,** in the person's format or [index.md](index.md)'s. If they chose a computational review with the plan, write it with the [Computational review](../review/README.md) steps. The run's page is `templates/page.qmd`, with `{{RUN}}` set to the run's folder name, and its Theories and Tests shortcodes repeated once per chosen gap, with `<gap ID>` set to each.
+11. **Report,** in the person's format or [index.md](index.md)'s. Write it, run the `check-claims` skill on it, and revise it on what that finds. The run's page is `templates/page.qmd`, with `{{RUN}}` set to the run's folder name, and its Theories and Tests shortcodes repeated once per chosen gap, with `<gap ID>` set to each.

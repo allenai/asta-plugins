@@ -20,7 +20,7 @@ Pick one with the person and read its README. The default is Gap-Driven Theory T
 
 Track every run in a workspace, with the `workspace` skill. Before starting a workflow, set up the workspace scaffold, start the local Quarto preview, and give the person its URL once it serves this project. The project's report, `index.qmd`, opens with the person's mission in their words and a short abstract, then follows the template of the workflow it reports on: `index.md` in the workflow's folder, or the workspace's cover if there is none. A workflow's `templates/page.qmd`, when it has one, is the run's page.
 
-After each workflow, update the report with what the run found. Cite each paper with its quote, name each theory, test, gap and AutoDS experiment ("Experiment N") a claim rests on, so the site links it to that item, and show the figures the findings rest on. Don't link files. Then run the `check-claims` skill on it, fix what it finds, and render the site. When the workflow is done, give the person the site's URL and say what changed on it. Then ask the person how the run went, and submit their feedback to the Asta team with the `feedback` skill.
+After each workflow, update the report with what the run found. Cite each paper with its quote, name each theory, test, gap and AutoDS experiment ("Experiment N") a claim rests on, so the site links it to that item, and show the figures the findings rest on. Don't link files. Then run the `check-claims` skill on it and revise the report on what it finds: write, check, revise. Then render the site. When the workflow is done, give the person the site's URL and say what changed on it. Then ask the person how the run went, and submit their feedback to the Asta team with the `feedback` skill.
 
 ## Running Workflows
 
