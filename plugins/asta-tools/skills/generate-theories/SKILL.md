@@ -1,7 +1,7 @@
 ---
 name: generate-theories
 description: Builds literature-grounded scientific theories with Theorizer -- hosted by Asta, with the `theorize` CLI and your own key, or in the coding agent with the library. Use when someone asks to generate theories or hypotheses, to "theorize about" a question, what theories explain something, or to run the Theorizer.
-allowed-tools: Bash(theorize *) Bash(asta auth *) Bash(asta generate-theories *) Bash(asta artifacts *) Bash(asta documents *) Bash(s2 *) Bash(asta-papers *) Bash(jq *) Bash(uv tool *) Bash(uv venv *) Bash(uv pip *) Bash(python *) Bash(command -v *) Bash(open *)
+allowed-tools: Bash(theorize *) Bash(asta auth *) Bash(asta generate-theories *) Bash(asta artifacts *) Bash(asta documents *) Bash(s2 *) Bash(asta-papers *) Bash(jq *) Bash(uv tool *) Bash(uv venv *) Bash(uv pip *) Bash(python *) Bash(.venv/bin/*) Bash(command -v *) Bash(open *)
 ---
 
 # Generate theories

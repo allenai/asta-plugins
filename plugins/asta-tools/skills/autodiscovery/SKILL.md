@@ -1,7 +1,7 @@
 ---
 name: autodiscovery
 description: Runs AutoDiscovery (AutoDS) on a dataset -- hosted by Asta, with the `auto-discovery` CLI and your own key, or in the coding agent with the library -- and reads its experiments back. Use when someone wants to explore data with AutoDS, start, check or fork a run, or asks about their runs, experiments or discoveries.
-allowed-tools: Bash(asta autodiscovery *) Bash(asta auth *) Bash(auto-discovery *) Bash(uv tool *) Bash(command -v *) Bash(grep *) Bash(python3 *) Bash(nohup *) Bash(*/asta-autodiscovery/bin/python *) Read(*) Write(*.json) TaskOutput
+allowed-tools: Bash(asta autodiscovery *) Bash(asta auth *) Bash(auto-discovery *) Bash(uv tool *) Bash(command -v *) Bash(grep *) Bash(python3 *) Bash(git *) Bash(mkdir *) Bash(ls *) Bash(nohup *) Bash(*/asta-autodiscovery/bin/python *) Bash(uv venv *) Bash(uv pip *) Bash(.venv/bin/*) Read(*) Write(*) Edit(*) TaskOutput
 ---
 
 # AutoDiscovery
@@ -36,11 +36,11 @@ AutoDS can only use what it's given, and it believes what you tell it.
 
 ## The loop
 
-AutoDS works as a loop. Start with 50 experiments: about $1 hosted (50 credits). With your own key, cli.md has the cost per model.
+AutoDS works as a loop. Start with 50 experiments: about one dollar hosted (50 credits). With your own key, cli.md has the cost per model.
 
 Then look at the experiments AutoDS flagged as surprising, in this order:
 
-1. **False to true:** belief started below 0.5 and ended above it. These matter most.
+1. **False to true:** belief started at or below 0.5 and ended above it. These matter most.
 2. **True to true:** above 0.5 before and after, and it went up.
 3. **True to false:** above 0.5 before, below after.
 

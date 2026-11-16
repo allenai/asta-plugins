@@ -8,6 +8,10 @@ Source: [allenai/asta-autodiscovery](https://github.com/allenai/asta-autodiscove
 uv venv --python 3.13 && uv pip install asta-autodiscovery    # needs 3.13 or later
 ```
 
+Run the code below with `.venv/bin/python`. Keep the run in git (`git init` if the folder isn't a repo yet), so the prior is committed before the code.
+
+You set the priors, so profile the data without grouping it by anything the prompt asks about: don't look at the answers first.
+
 ## One experiment
 
 ```python
@@ -92,13 +96,20 @@ node.self_value, node.surprising = get_self_value(
     kl_scale=5.0,
     mode="belief",
 )
+from autodiscovery.run import (
+    _theoretical_max_boolean_cat,
+)  # no model call; the report shows this as the surprise
+
+node.normalized_surprisal = (
+    node.posterior.mean - node.prior.mean
+) / _theoretical_max_boolean_cat(5, w, prior_params=node.prior.prior_params)
 node.update_counts(visits=1, reward=node.self_value)
 save_mcts_node(node, OUT, to_root=True)
 ```
 
 ## The rules
 
-- **Your belief, sampled five times.** For the prior, judge from what you know of the field, five times from different angles, and count the answers into the five categories. For the posterior, set the prior aside and judge only the plan, the analysis and the review, five times again. "Can't say" drops out of n. Keep your reasons beside the node.
+- **Your belief, sampled five times.** For the prior, judge from what you know of the field, five times from different angles, and count the answers into the five categories. For the posterior, set the prior aside and judge only the plan, the analysis and the review, five times again. "Can't say" (no judgement at all) drops out of n; "uncertain" is a category and counts. Keep your reasons beside the node.
 - **The prior is on disk, and committed, before any code is written.** Then the posterior. That's what makes the surprise honest.
 - **Pass the arguments above.** The posterior's counts are doubled and sit on the prior (`prior_params`), and `get_self_value` takes the CLI's settings. With the defaults, nothing comes out surprising.
 - **Names:** `node_<level>_<n>`. The first hypothesis is at level 2, a child is its parent's level + 1, and n counts across the whole level, not per parent.
@@ -107,4 +118,4 @@ save_mcts_node(node, OUT, to_root=True)
 
 ## Reading it back
 
-`load_mcts_from_json(OUT)` gives the tree, `nodes_to_csv(OUT, "nodes.csv")` the table, and `autodiscovery.report.generate_report(OUT)` an HTML report (it reads the settings from an `args.json` in the folder, if there is one). Set `MCTSNode._creation_counter = 0` before each load in the same process.
+`load_mcts_from_json(OUT)` gives the tree, `nodes_to_csv(OUT, "nodes.csv")` the table, and `autodiscovery.report.generate_report(OUT)` an HTML report (it reads the settings from an `args.json` in the folder, if there is one). Keep the prompt and the data description in the run folder too, as `description.md`. Set `MCTSNode._creation_counter = 0` before each load in the same process.

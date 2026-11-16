@@ -4,9 +4,10 @@ You pay for it, through your coding agent. You do the model's part: read the pap
 
 ```bash
 uv venv --python 3.13 && uv pip install "asta-theorizer>=0.1.5" "pymupdf4llm<2"
-source .venv/bin/activate
-theorize guide             # Workflow 5 is this one, with an example that runs as written
+.venv/bin/theorize guide   # Workflow 5 is this one, with an example that runs as written
 ```
+
+Each shell command starts fresh, so call the venv's own `.venv/bin/theorize` and `.venv/bin/python` rather than activating it.
 
 - **Open the project offline:** `th.Config.init(project_dir="<p>", offline=True)`. No model key is loaded, so a call that would reach a model fails instead of spending. Use the same folder for `theorize -p <p>`.
 - **The shapes:** `theorize guide --schema record` and `--schema theory` (also `paper` and `schema_slot`).
