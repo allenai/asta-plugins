@@ -38,7 +38,7 @@ Write the answer to `.asta/mode.json` (`{"mode": "library" | "cli" | "hosted"}`)
 
 ## Plan and run
 
-Start from the person's mission, in their words. If their message states one, your first reply is the plan. If not, ask two or three targeted questions first (what they want to know, about what, and what for), then the plan.
+Start from the person's mission, in their words. Once the mode is settled, if their message stated one, your next reply is the plan. If not, ask two or three targeted questions first (what they want to know, about what, and what for), then the plan.
 
 The plan, and nothing more:
 
