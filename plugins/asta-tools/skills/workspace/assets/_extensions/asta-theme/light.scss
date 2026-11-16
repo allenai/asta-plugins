@@ -27,6 +27,7 @@ $font-size-root: 16px;
 $headings-font-weight: 700;
 $headings-color: $asta-fg;
 $code-color: $asta-fg;
+$pre-color: $asta-fg; // a plain text block (no highlighting); Bootstrap's default is black
 $code-bg: $asta-subtle;
 $code-block-bg: $asta-subtle;
 $callout-color-note: $info;
