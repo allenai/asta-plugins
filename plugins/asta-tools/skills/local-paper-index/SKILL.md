@@ -69,7 +69,7 @@ IMAGES=false                                                # true if user wants
 
 ```bash
 PDF_COUNT=$(find "$PDF_DIR" -name "*.pdf" -type f | wc -l)
-TOTAL_SIZE=$(find "$PDF_DIR" -name "*.pdf" -type f -exec du -ch {} + | tail -1 | awk '{print $1}')
+TOTAL_SIZE=$(find "$PDF_DIR" -name "*.pdf" -type f -exec du -ch {} + | tail -1 | cut -f1)
 echo "Found $PDF_COUNT PDFs ($TOTAL_SIZE total)"
 ```
 
