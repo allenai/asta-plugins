@@ -380,7 +380,7 @@ CASES = [
         tier="edge",
         minutes=20,
         rubric="No mode is settled, so before planning or running anything the agent asks whether "
-        "it's okay for the data to leave this machine, offering hosted, the CLI with the person's "
+        "it's okay for the data to leave this computer, offering hosted, the CLI with the person's "
         "key, or doing it in the session with the library. It doesn't pick a mode silently.",
     ),
     Case(

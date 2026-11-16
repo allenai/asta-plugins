@@ -29,7 +29,7 @@ There are three ways to run workflows. Settle which one before anything else, on
 - **CLI.** Use this if you have an API key and want to just use the command line, which bakes in our preferences.
 - **Hosted.** We pay for it. Your data flows through our servers.
 
-The library and the CLI run on this machine, and nothing goes to Asta.
+The library and the CLI run on this computer, and nothing goes to Asta.
 
 To pick one, look first, without printing any key:
 
@@ -40,7 +40,7 @@ asta auth status
 cat .asta/mode.json
 ```
 
-If that doesn't settle it, ask: "Is it okay for your data to leave this machine? If so, hosted is free. If not, I can use your API key with the CLI, or do it all here in this session with the library." In a hosted Asta sandbox, don't ask: use the CLI that's installed there.
+If that doesn't settle it, ask: "Is it okay for your data to leave this computer? If so, hosted is free. If not, I can use your API key with the CLI, or do it all here in this session with the library." In a hosted Asta sandbox, don't ask: use the CLI that's installed there.
 
 Write the answer to `.asta/mode.json` (`{"mode": "library" | "cli" | "hosted"}`), and don't switch without asking. Each tool's skill has a file per mode: `generate-theories` for Theorizer and `autodiscovery` for AutoDS. Set up what the mode needs before you propose a workflow, and say what's missing if something won't install.
 

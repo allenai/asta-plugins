@@ -13,7 +13,7 @@ Source: [allenai/asta-theorizer](https://github.com/allenai/asta-theorizer).
 ## Three ways to run it
 
 - **Hosted.** We pay for it. [hosted.md](hosted.md)
-- **CLI.** You pay for it, with your own API key, on this machine. It bakes in our preferences. [cli.md](cli.md), with [papers.md](papers.md) for finding and fetching papers.
+- **CLI.** You pay for it, with your own API key, on this computer. It bakes in our preferences. [cli.md](cli.md), with [papers.md](papers.md) for finding and fetching papers.
 - **Library.** You pay for it, in a coding agent: you read the papers and write the findings and theories yourself, and the library gives you the types and keeps the citations straight. [library.md](library.md)
 
 If the project has settled this already (`.asta/mode.json`), use that. Otherwise ask, and don't switch partway through a run.

@@ -1,6 +1,6 @@
 # AutoDS with the CLI
 
-You pay for it, through your own API key. It runs on this machine with `auto-discovery`, and the model calls go to whoever your key is with. Nothing goes to Asta.
+You pay for it, through your own API key. It runs on this computer with `auto-discovery`, and the model calls go to whoever your key is with. Nothing goes to Asta.
 
 ## Install
 

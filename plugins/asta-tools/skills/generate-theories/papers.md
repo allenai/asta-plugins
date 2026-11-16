@@ -8,7 +8,7 @@ uv tool install --upgrade --python 3.13 "asta-papers[pymupdf,mistral]>=0.1.0"
 command -v s2 asta-papers theorize jq
 ```
 
-`asta-papers` is its own tool; installing Theorizer doesn't put it on PATH. `s2` reads `S2_API_KEY`. With `MISTRAL_API_KEY` set, `asta-papers` converts PDFs with Mistral; without it, on this machine.
+`asta-papers` is its own tool; installing Theorizer doesn't put it on PATH. `s2` reads `S2_API_KEY`. With `MISTRAL_API_KEY` set, `asta-papers` converts PDFs with Mistral; without it, on this computer.
 
 When the person names the papers by Semantic Scholar corpus id and they're the whole corpus, skip the search: `theorize -p <p> papers fetch <corpus ids>` fetches them, and calls no model. Don't add papers with this chain to the same project afterwards.
 

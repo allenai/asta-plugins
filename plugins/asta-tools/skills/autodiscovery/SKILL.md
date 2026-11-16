@@ -11,7 +11,7 @@ AutoDiscovery (AutoDS) explores a dataset on its own. Each experiment is a hypot
 ## Three ways to run it
 
 - **Hosted.** We pay for it, in Asta credits. [hosted.md](hosted.md)
-- **CLI.** You pay for it, with your own API key, on this machine. [cli.md](cli.md)
+- **CLI.** You pay for it, with your own API key, on this computer. [cli.md](cli.md)
 - **Library.** You pay for it, in a coding agent: the agent runs the experiments itself and saves them the way AutoDS does. [library.md](library.md)
 
 If the project has settled this already (`.asta/mode.json`), use that. Otherwise ask, and don't switch partway through a run.
