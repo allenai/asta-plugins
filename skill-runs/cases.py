@@ -8,6 +8,7 @@ FEEDBACK.md lists the lines it found wrong or unclear either way.
 import glob
 import json
 import os
+import re
 import subprocess
 from dataclasses import dataclass, field
 
@@ -29,6 +30,12 @@ class Case:
     fixtures: list = field(default_factory=list)
     hosted: bool = False  # spends Asta credits; the runner reports them
     tool_spend: str = ""
+    tier: str = "pieces"  # "pieces": one tool in one mode; "e2e": a whole workflow
+    needs: list = field(
+        default_factory=list
+    )  # pieces that must pass first in the same run
+    minutes: int = 60  # the run's time limit
+    theorizer: bool = False  # installs Theorizer, so --theorizer applies
 
 
 def _files(root, pattern):
@@ -245,6 +252,7 @@ CASES = [
         fixtures=["penguins.csv"],
         hosted=True,
         tool_spend="8 Asta credits",
+        minutes=75,
     ),
     Case(
         "theorizer-library",
@@ -256,6 +264,7 @@ CASES = [
         budget_usd=6,
         keys=["S2_API_KEY"],
         tool_spend="none",
+        theorizer=True,
     ),
     Case(
         "theorizer-cli",
@@ -267,6 +276,7 @@ CASES = [
         budget_usd=4,
         keys=["OPENAI_API_KEY", "S2_API_KEY", "MISTRAL_API_KEY"],
         tool_spend="about $1 of OpenAI",
+        theorizer=True,
     ),
     Case(
         "theorizer-hosted",
@@ -278,8 +288,75 @@ CASES = [
         keys=[],
         hosted=True,
         tool_spend="one small hosted run",
+        theorizer=True,
+    ),
+    Case(
+        "exploration-e2e",
+        "/asta-flows:run-workflow",
+        "cli",
+        'Run the AutoDiscovery exploration workflow on penguins.csv for the question "What '
+        'distinguishes the three penguin species?", autonomously, with no check-ins and a budget '
+        "of 7 experiments: a first round of 4 and a second of 3. Use OpenAI. End with the front "
+        "page as the skill says, in a workspace site in this folder.",
+        budget_usd=15,
+        keys=["OPENAI_API_KEY"],
+        fixtures=["penguins.csv"],
+        tool_spend="about $0.10 of OpenAI",
+        tier="e2e",
+        needs=["autods-cli"],
+        minutes=90,
+    ),
+    Case(
+        "theory-generation-e2e",
+        "/asta-flows:run-workflow",
+        "cli",
+        'Run the theory generation workflow for "Why do neural networks grok?" on '
+        + PAPERS
+        + " "
+        "as the whole corpus, autonomously, through the first pass and its summary (no variable "
+        "discovery), with the run's page in a workspace site in this folder.",
+        budget_usd=10,
+        keys=["OPENAI_API_KEY", "S2_API_KEY", "MISTRAL_API_KEY"],
+        tool_spend="about $1 of OpenAI",
+        tier="e2e",
+        needs=["theorizer-cli"],
+        minutes=75,
+        theorizer=True,
     ),
 ]
+
+
+def check_exploration_e2e(root):
+    flows = _files(root, "workflow.yaml")
+    out = [_check("a workflow run folder with workflow.yaml", flows, ", ".join(flows))]
+    runs = _node_dirs(root) or [
+        os.path.dirname(p) for p in _files(root, "results.json")
+    ]
+    out.append(_check("two AutoDS rounds", len(runs) >= 2, str(len(runs))))
+    front = os.path.join(root, "index.qmd")
+    text = open(front).read() if os.path.exists(front) else ""
+    for heading in ("Findings", "Null results", "Next steps"):
+        out.append(_check("front page has " + heading, ("## " + heading) in text))
+    out.append(
+        _check(
+            "the description passes the grep",
+            not _leading_words(_files(root, "*description*.md")),
+        )
+    )
+    return out
+
+
+def _leading_words(paths):
+    words = r"\b(associated|higher|lower|more likely|less likely|increase|decrease|effect|odds|expected|predicts)\b"
+    return [p for p in paths if re.search(words, open(p).read(), re.I)]
+
+
+def check_theory_generation_e2e(root):
+    out = check_theorizer_cli(root)
+    out.append(_check("the run's page", _files(root, "*theory-generation.qmd")))
+    out.append(_check("the page's data", _files(root, "theorizer.json")))
+    return out
+
 
 CHECKS = {
     "autods-library": check_autods_library,
@@ -288,4 +365,6 @@ CHECKS = {
     "theorizer-library": check_theorizer_library,
     "theorizer-cli": check_theorizer_cli,
     "theorizer-hosted": check_theorizer_hosted,
+    "exploration-e2e": check_exploration_e2e,
+    "theory-generation-e2e": check_theory_generation_e2e,
 }

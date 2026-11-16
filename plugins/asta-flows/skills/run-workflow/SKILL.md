@@ -1,7 +1,7 @@
 ---
 name: run-workflow
 description: Runs an Asta research workflow for the person, from plan to front page, with Theorizer, AutoDS, Semantic Scholar and Data Search. Starts by settling how it runs -- the library in a coding agent, the CLI with your own key, or hosted by Asta. Use when someone brings a research question, papers, data or an AutoDS run and wants theories, hypotheses, experiments or a reproduction.
-allowed-tools: Bash(theorize *) Bash(auto-discovery *) Bash(asta auth *) Bash(asta generate-theories *) Bash(asta autodiscovery *) Bash(s2 *) Bash(asta-papers *) Bash(jq *) Bash(uv tool *) Bash(command -v *)
+allowed-tools: Bash(theorize *) Bash(auto-discovery *) Bash(asta auth *) Bash(asta generate-theories *) Bash(asta autodiscovery *) Bash(s2 *) Bash(asta-papers *) Bash(jq *) Bash(uv tool *) Bash(uv venv *) Bash(uv pip *) Bash(command -v *) Bash(curl *) Bash(python3 *) Bash(git *) Bash(quarto *) Bash(make *) Bash(mkdir *) Bash(ls *) Bash(cp *) Write(*) Edit(*)
 ---
 
 # Research workflows

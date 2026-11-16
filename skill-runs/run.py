@@ -2,12 +2,18 @@
 """Run the skills for real, with headless Claude Code, and check what they leave behind.
 
     python3 skill-runs/run.py --list
-    python3 skill-runs/run.py autods-cli theorizer-library
-    python3 skill-runs/run.py all --env-file ~/keys.env
+    python3 skill-runs/run.py pieces                 # each tool in each mode
+    python3 skill-runs/run.py e2e                    # whole workflows, after the pieces they use
+    python3 skill-runs/run.py all
+    python3 skill-runs/run.py autods-cli exploration-e2e
+
+The keys come from the environment of the shell that starts it: ANTHROPIC_API_KEY for Claude, and
+the tool keys a case uses.
 
 Each case starts `claude -p` in a fresh folder with only this repo's plugins loaded (--bare: no
-CLAUDE.md, memory or hooks), gives it one small task to do by following a skill as written, and
-then checks the files it left. Results go to skill-runs/results/<time>/<case>/.
+CLAUDE.md, memory or hooks), gives it one task to do by following the skills as written, and then
+checks the files it left. An end-to-end case runs only if the pieces it needs passed in the same
+run. Results go to skill-runs/results/<time>/<case>/.
 """
 
 import argparse
@@ -18,6 +24,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
@@ -30,59 +37,35 @@ PLUGINS = [
     os.path.join(REPO, "plugins", "asta-tools"),
 ]
 BASIC_TOOLS = [
-    "Read",
-    "Write",
-    "Edit",
-    "Glob",
-    "Grep",
-    "Skill",
-    "TodoWrite",
-    "Bash(ls *)",
-    "Bash(cat *)",
-    "Bash(head *)",
-    "Bash(tail *)",
-    "Bash(wc *)",
-    "Bash(mkdir *)",
-    "Bash(cp *)",
-    "Bash(mv *)",
-    "Bash(jq *)",
-    "Bash(sleep *)",
-    "Bash(date *)",
-    "Bash(stat *)",
-    "Bash(shasum *)",
-    "Bash(git *)",
-]
+    "Read", "Write", "Edit", "Glob", "Grep", "Skill", "TodoWrite",
+    "Bash(ls *)", "Bash(cat *)", "Bash(head *)", "Bash(tail *)", "Bash(wc *)", "Bash(mkdir *)",
+    "Bash(cp *)", "Bash(mv *)", "Bash(jq *)", "Bash(sleep *)", "Bash(date *)", "Bash(stat *)",
+    "Bash(shasum *)", "Bash(git *)",
+]  # fmt: skip
 
-PROMPT = """{skill} This is a test of the skill. Do the task below by following the skill's files exactly as written. The mode is {mode}; it is already set in .asta/mode.json.
+PROMPT = """{skill} This is a test of the skills. Do the task below by following their files exactly as written. The mode is {mode}; it is already set in .asta/mode.json.
 
 Task: {task}
 
-- Work only in this folder. Read the skill's own files as it directs. Don't read other notes, other projects or the tools' source code unless the skill sends you there.
+- Work only in this folder. Read the skills' own files as they direct. Don't read other notes, other projects or the tools' source code unless a skill sends you there.
 - Never print, echo or copy any key value.
-- If something the skill says doesn't work, find the smallest fix that does, carry on, and note it.{extra}
+- If something a skill says doesn't work, find the smallest fix that does, carry on, and note it.{extra}
 
 When you're done, write FEEDBACK.md in this folder: a table with one row per instruction you followed, giving file:line, worked / wrong / missing / unclear, what happened, and the exact fix. Then reply with one line: PASS if the task is done, or FAIL and why."""
-
-
-def read_env(path):
-    keys = {}
-    if path and os.path.exists(path):
-        for line in open(path):
-            m = re.match(r"\s*(?:export\s+)?([A-Z0-9_]+)\s*=\s*(.*)\s*$", line)
-            if m:
-                keys[m.group(1)] = m.group(2).strip().strip("'\"")
-    return keys
 
 
 def credits():
     out = subprocess.run(
         ["asta", "autodiscovery", "credits"], capture_output=True, text=True
     ).stdout
-    used = sum(int(v) for v in re.findall(r"(?:Consumed|Pending):\s*(\d+)", out))
-    return used if out else None
+    return (
+        sum(int(v) for v in re.findall(r"(?:Consumed|Pending):\s*(\d+)", out))
+        if out
+        else None
+    )
 
 
-def run_case(case, args, keys, out_dir):
+def run_case(case, args, keys, out_dir, secrets):
     work = os.path.join(out_dir, "work")
     os.makedirs(os.path.join(work, ".asta"))
     with open(os.path.join(work, ".asta", "mode.json"), "w") as f:
@@ -90,16 +73,11 @@ def run_case(case, args, keys, out_dir):
     for name in case.fixtures:
         shutil.copy(os.path.join(HERE, "fixtures", name), work)
 
-    # Claude reads its key through a helper, so the agent's own shell never sees it.
-    helper = os.path.join(out_dir, "key.sh")
-    with open(helper, "w") as f:
-        f.write(
-            f'#!/bin/sh\nset -a\n. "{args.env_file}" >/dev/null 2>&1\nprintf %s "$ANTHROPIC_API_KEY"\n'
-        )
-    os.chmod(helper, 0o700)
-    settings = os.path.join(out_dir, "settings.json")
+    # Claude reads its key through a helper kept outside the agent's folders, so the agent's own
+    # shell never sees it.
+    settings = os.path.join(secrets, case.name + ".json")
     with open(settings, "w") as f:
-        json.dump({"apiKeyHelper": helper}, f)
+        json.dump({"apiKeyHelper": "cat " + os.path.join(secrets, "anthropic")}, f)
 
     env = {k: v for k, v in os.environ.items() if not k.endswith("_API_KEY")}
     env.update({k: keys[k] for k in case.keys if k in keys})
@@ -109,9 +87,9 @@ def run_case(case, args, keys, out_dir):
             env["S2_API_KEY"] = env["SEMANTIC_SCHOLAR_API_KEY"] = s2
 
     extra = ""
-    if "theorizer" in case.name and args.theorizer:
+    if case.theorizer and args.theorizer:
         extra = (
-            "\n- Wherever the skill installs `asta-theorizer>=0.1.5`, install `"
+            "\n- Wherever a skill installs `asta-theorizer>=0.1.5`, install `"
             + args.theorizer
             + "` instead (that release isn't on PyPI yet)."
         )
@@ -122,24 +100,11 @@ def run_case(case, args, keys, out_dir):
         f.write(prompt)
 
     command = [
-        args.claude,
-        "-p",
-        prompt,
-        "--bare",
-        "--settings",
-        settings,
-        "--model",
-        args.model,
-        "--max-budget-usd",
-        str(case.budget_usd),
-        "--output-format",
-        "json",
-        "--permission-mode",
-        "dontAsk",
-        "--no-session-persistence",
-        "--allowedTools",
-        *BASIC_TOOLS,
-    ]
+        args.claude, "-p", prompt, "--bare", "--settings", settings,
+        "--model", args.model, "--max-budget-usd", str(case.budget_usd),
+        "--output-format", "json", "--permission-mode", "dontAsk",
+        "--no-session-persistence", "--allowedTools", *BASIC_TOOLS,
+    ]  # fmt: skip
     for plugin in PLUGINS:
         command += ["--plugin-dir", plugin]
 
@@ -152,17 +117,12 @@ def run_case(case, args, keys, out_dir):
             env=env,
             capture_output=True,
             text=True,
-            timeout=args.timeout * 60,
+            timeout=case.minutes * 60,
         )
         stdout, stderr, code = done.stdout, done.stderr, done.returncode
     except subprocess.TimeoutExpired as e:
-        stdout, stderr, code = (
-            (e.stdout or b"").decode()
-            if isinstance(e.stdout, bytes)
-            else (e.stdout or ""),
-            "timed out",
-            -1,
-        )
+        out = e.stdout.decode() if isinstance(e.stdout, bytes) else (e.stdout or "")
+        stdout, stderr, code = out, "timed out", -1
     minutes = (datetime.datetime.now() - started).total_seconds() / 60
     after = credits() if case.hosted else None
 
@@ -193,6 +153,7 @@ def run_case(case, args, keys, out_dir):
     )
     report = {
         "case": case.name,
+        "tier": case.tier,
         "mode": case.mode,
         "passed": code == 0 and all(c["ok"] for c in checks),
         "exit_code": code,
@@ -213,18 +174,32 @@ def run_case(case, args, keys, out_dir):
     return report
 
 
+def choose(names):
+    if names in (["all"], []):
+        return [c for c in CASES if c.tier == "pieces"] + [
+            c for c in CASES if c.tier == "e2e"
+        ]
+    chosen = []
+    for name in names:
+        if name in ("pieces", "e2e"):
+            chosen += [c for c in CASES if c.tier == name]
+        else:
+            match = [c for c in CASES if c.name == name]
+            if not match:
+                sys.exit("No such case: " + name)
+            chosen += match
+    return sorted(
+        dict.fromkeys(chosen), key=lambda c: c.tier != "pieces"
+    )  # pieces first
+
+
 def main():
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    parser.add_argument("cases", nargs="*", help="case names, or 'all'")
+    parser.add_argument("cases", nargs="*", help="case names, 'pieces', 'e2e' or 'all'")
     parser.add_argument(
         "--list", action="store_true", help="list the cases and what each spends"
-    )
-    parser.add_argument(
-        "--env-file",
-        default=os.environ.get("SKILL_RUNS_ENV_FILE"),
-        help="KEY=value file with ANTHROPIC_API_KEY and the tool keys (default $SKILL_RUNS_ENV_FILE)",
     )
     parser.add_argument("--model", default="claude-opus-5-5")
     parser.add_argument(
@@ -232,60 +207,91 @@ def main():
         default=os.environ.get("SKILL_RUNS_THEORIZER"),
         help="install spec for Theorizer until 0.1.5 is on PyPI, such as a checkout path",
     )
-    parser.add_argument("--timeout", type=int, default=60, help="minutes per case")
     parser.add_argument("--claude", default="claude")
     args = parser.parse_args()
 
     if args.list or not args.cases:
         for c in CASES:
+            needs = (" needs " + ", ".join(c.needs)) if c.needs else ""
             print(
-                f"{c.name:18} {c.mode:8} claude up to ${c.budget_usd:<4} tools: {c.tool_spend}"
+                f"{c.tier:6} {c.name:22} {c.mode:8} claude up to ${c.budget_usd:<3} tools: {c.tool_spend}{needs}"
             )
         return 0
-    chosen = (
-        CASES if args.cases == ["all"] else [c for c in CASES if c.name in args.cases]
-    )
-    missing = set(args.cases) - {c.name for c in CASES} - {"all"}
-    if missing:
-        sys.exit("No such case: " + ", ".join(sorted(missing)))
-    keys = read_env(args.env_file)
+    chosen = choose(args.cases)
+    keys = {k: v for k, v in os.environ.items() if k.endswith("_API_KEY")}
     if "ANTHROPIC_API_KEY" not in keys:
         sys.exit(
-            "Give --env-file (or $SKILL_RUNS_ENV_FILE): a KEY=value file with ANTHROPIC_API_KEY."
+            "Set ANTHROPIC_API_KEY (and the tool keys the cases use) in this shell first."
         )
-    args.env_file = os.path.abspath(os.path.expanduser(args.env_file))
 
-    stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    root = os.path.join(HERE, "results", stamp)
-    reports = []
-    for case in chosen:
-        print(f"{case.name}: running ({case.mode})", flush=True)
-        report = run_case(case, args, keys, os.path.join(root, case.name))
-        reports.append(report)
-        cost = report["claude_cost_usd"]
-        print(
-            f"{case.name}: {'PASS' if report['passed'] else 'FAIL'} in {report['minutes']} min, claude ${cost if cost is not None else '?'}",
-            flush=True,
-        )
-        for c in report["checks"]:
-            if not c["ok"]:
-                print(f"    failed: {c['check']} {c['detail']}")
+    secrets = tempfile.mkdtemp(prefix="skill-runs-")
+    os.chmod(secrets, 0o700)
+    with open(os.path.join(secrets, "anthropic"), "w") as f:
+        f.write(keys["ANTHROPIC_API_KEY"])
+
+    root = os.path.join(
+        HERE, "results", datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    )
+    reports, passed = [], set()
+    try:
+        for case in chosen:
+            unmet = [n for n in case.needs if n not in passed]
+            if unmet:
+                print(
+                    f"{case.name}: skipped, needs {', '.join(unmet)} to pass first",
+                    flush=True,
+                )
+                reports.append(
+                    {
+                        "case": case.name,
+                        "tier": case.tier,
+                        "mode": case.mode,
+                        "skipped": unmet,
+                    }
+                )
+                continue
+            print(f"{case.name}: running ({case.tier}, {case.mode})", flush=True)
+            report = run_case(case, args, keys, os.path.join(root, case.name), secrets)
+            reports.append(report)
+            if report["passed"]:
+                passed.add(case.name)
+            cost = report["claude_cost_usd"]
+            verdict = "PASS" if report["passed"] else "FAIL"
+            print(
+                f"{case.name}: {verdict} in {report['minutes']} min, claude ${cost}",
+                flush=True,
+            )
+            for c in report["checks"]:
+                if not c["ok"]:
+                    print(f"    failed: {c['check']} {c['detail']}", flush=True)
+    finally:
+        shutil.rmtree(secrets, ignore_errors=True)
 
     lines = [
-        "| Case | Mode | Result | Minutes | Claude $ | Credits | Denied tools |",
-        "|---|---|---|---|---|---|---|",
+        "| Tier | Case | Mode | Result | Minutes | Claude $ | Credits | Denied tools |",
+        "|---|---|---|---|---|---|---|---|",
     ]
     for r in reports:
-        lines.append(
-            f"| {r['case']} | {r['mode']} | {'PASS' if r['passed'] else 'FAIL'} | {r['minutes']} | {r['claude_cost_usd']} | {r['credits_used'] if r['credits_used'] is not None else ''} | {len(r['denied_tools'])} |"
+        if "skipped" in r:
+            lines.append(
+                f"| {r['tier']} | {r['case']} | {r['mode']} | skipped | | | | |"
+            )
+            continue
+        cost = (
+            round(r["claude_cost_usd"], 2) if r["claude_cost_usd"] is not None else ""
         )
+        lines.append(
+            f"| {r['tier']} | {r['case']} | {r['mode']} | {'PASS' if r['passed'] else 'FAIL'} | {r['minutes']} "
+            f"| {cost} | {r['credits_used'] if r['credits_used'] is not None else ''} | {len(r['denied_tools'])} |"
+        )
+    os.makedirs(root, exist_ok=True)
     with open(os.path.join(root, "summary.md"), "w") as f:
         f.write(
             "\n".join(lines) + "\n\nEach case's FEEDBACK.md is in its work/ folder.\n"
         )
     print("\n".join(lines))
     print("Results:", root)
-    return 0 if all(r["passed"] for r in reports) else 1
+    return 0 if all(r.get("passed") for r in reports) else 1
 
 
 if __name__ == "__main__":
