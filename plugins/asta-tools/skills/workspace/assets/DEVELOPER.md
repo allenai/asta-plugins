@@ -4,7 +4,7 @@ Edit, preview, and save this research project.
 
 ## Preview locally
 
-With [Quarto](https://quarto.org) on the host: `make preview`, open `http://localhost:4848`. `make render` builds once to `_site/`; `make clean` wipes artifacts. Automated callers that report a preview link run `make preview-baseline` before pushing and `make preview-ready` after, which blocks until this push's Pages deployment is live. If a transient API or workflow failure interrupts the wait, the baseline remains so the same command can be retried.
+With [Quarto](https://quarto.org) on the host: `make preview`, and open the URL it prints: port 4848, or the next free one if another project holds it (`ASTA_PREVIEW_PORT=N` picks one; Codespaces always uses 4848). `make render` builds once to `_site/`; `make clean` wipes artifacts. Automated callers that report a preview link run `make preview-baseline` before pushing and `make preview-ready` after, which blocks until this push's Pages deployment is live. If a transient API or workflow failure interrupts the wait, the baseline remains so the same command can be retried.
 
 With Asta CLI 0.107.0 or newer, `asta workspace preview` runs your project's `make preview`, including customized or empty targets. It falls back to Quarto if Make is unavailable or its final diagnostic says the preview rule is missing; other failures remain errors. Output stays in the foreground terminal, and the printed URL is available once the server is serving. The Make invocation uses the C locale for recognizable diagnostics and ignores inherited Make control variables; project settings still apply. Ctrl-C, SIGTERM and SIGHUP stop the owned process group on POSIX and exit 130, 143 and 129. The child runs in a separate session, so shell job control is not supported. Make stderr is streamed through a pipe, which can suppress terminal colors; custom commands must not leave background processes holding that stream open.
 
@@ -15,6 +15,8 @@ The ignored `.asta/cache/preview.json` records the launcher's PID and project pa
 Managed rules, helpers and the evidence extension use the ref in `.github/workflows/docs.yml`: `@latest` follows final releases, `@main` follows merges, and a release tag or commit pins a version. Change that ref and run `make update-workspace` to refresh the local cache. A standalone, ejected Makefile can instead set `ASTA_PLUGINS_REF`, defaulting to the newest final release tag. Offline renders keep cached rules and evidence with a warning when a fetch fails; a first fetch needs network access.
 
 A release pin works like a lockfile. Run locally, `asta workspace sync` moves a release tag behind the installed CLI's final release forward to that release in the working tree after its rules load and validate, without committing, and prints one line saying so; it never moves a pin backward and leaves `main`, `latest` and commit pins alone. The managed Makefile reruns sync when the installed CLI changes, so the first `make preview` or `make check` after an update moves the pin; commit the move on its own.
+
+To test an unreleased asta-plugins branch, don't link its extensions in: Quarto skips a symlinked extension folder, and sync replaces it. Copy the branch's `workspace.mk` into the project (a project's own copy wins over the cached one), archive the branch from the project's folder with `mkdir -p .asta && git -C <branch> archive --format=tar.gz --prefix=asta-plugins/ -o "$PWD/.asta/branch.tar.gz" HEAD` (`-C` changes folder, so the output path must be absolute), and put `ASTA_WORKSPACE_ARCHIVE := .asta/branch.tar.gz` at the top of that `workspace.mk`. Rerun the archive after each branch commit; delete both files to go back to the release.
 
 If the new release cannot be fetched, sync warns and tries the old pin, reusing its cached rules when available; the pin stays unchanged. Compatibility and cache-write failures remain errors and also leave the pin unchanged. CI and other unattended runs (`CI` or `GITHUB_ACTIONS` enabled, or `ASTA_WORKSPACE_RESOLVED_SHA` set) build the pin as committed.
 
@@ -124,7 +126,7 @@ Edit `.qmd` files on GitHub directly or in any editor.
 
 | target | does |
 |---|---|
-| `make preview` | live preview on port 4848 |
+| `make preview` | live preview on port 4848, or the next free one |
 | `make render` | build to `_site/` |
 | `make check` | run the same quality gates CI runs (render + warning validation) |
 | `make clean` | wipe Quarto build artifacts |
@@ -283,9 +285,9 @@ The workspace devcontainer uses `exec asta workspace preview` for attach startup
 
 Keep each talk in its own `<deck-dir>/slides.qmd`, declaring
 `format: asta-slides-revealjs`. Deck folders can be nested; `make render` and
-`make check` build them alongside the website. When `project.render` or the
-sidebar has an explicit page list, add the deck to that list; the standard
-`contents: auto` sidebar includes it by title. Each publishes as
+`make check` build them alongside the website. The scaffold's `project.render`
+and sidebar are explicit lists (the front page and `pages/*.qmd`): add the deck
+to both. Each publishes as
 `<deck-dir>/slides.html` in the site and the PR preview. What changed compares
 the rendered slides and links changes to their slide anchors.
 
