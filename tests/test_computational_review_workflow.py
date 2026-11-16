@@ -10,7 +10,7 @@ from pathlib import Path
 RUN_WORKFLOW = (
     Path(__file__).resolve().parent.parent / "plugins/asta-flows/skills/run-workflow"
 )
-WORKFLOW = RUN_WORKFLOW / "workflows/computational-review.md"
+WORKFLOW = RUN_WORKFLOW / "write-up.md"
 REPO = "https://github.com/AllenNeuralDynamics/ComputationalReviewTemplate"
 
 
@@ -27,4 +27,4 @@ def test_the_template_is_linked_not_vendored():
 
 def test_index_links_the_workflow():
     skill = (RUN_WORKFLOW / "SKILL.md").read_text()
-    assert "](workflows/computational-review.md)" in skill
+    assert "](write-up.md)" in skill
