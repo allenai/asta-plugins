@@ -4,10 +4,6 @@ title: "Theory generation"
 
 {{< asta-workflow file="../.asta/flows/{{RUN}}/workflow.mmd" >}}
 
-## Literature
-
-{{< asta-literature data="../.asta/flows/{{RUN}}/data/papers.json" >}}
-
 ## Theories
 
 {{< asta-theories data="../.asta/flows/{{RUN}}/data/theorizer.json" >}}

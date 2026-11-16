@@ -49,7 +49,7 @@ If they ask you to choose, pick a focus and a shape that suit the question, and 
   workflow.yaml, README.md, workflow.mmd
   theory/                                 the Theorizer project
   data/                                   theorizer.json and papers.json
-pages/<NNNN>-theory-generation.qmd       the diagram, the papers, the theories
+pages/<NNNN>-theory-generation.qmd       the diagram and the theories
 ```
 
 Copy `templates/page.qmd` to the page and replace `{{RUN}}` with the run's folder name. After papers are fetched, after every extraction and after every generation, write the data and render:
