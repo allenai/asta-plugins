@@ -397,3 +397,39 @@ def _site_with_deck(root, render, body):
 
 
 DECK = "## Opening\n\nOwn title.\n\n# First\n\n## One\n\nText.\n\n# Second\n\n## Two\n\n{}\n"
+
+
+@pytest.mark.parametrize("rules", ["workspace.mk", "Makefile"])
+@pytest.mark.parametrize(
+    ("page", "needs_pages"),
+    [
+        ('{{< asta-theories data="data/theorizer.json" >}}\n', True),
+        ('{{< asta-literature data="data/papers.json" >}}\n', True),
+        ("A page without a run's panels.\n", False),
+    ],
+)
+def test_workspace_fetches_run_pages_only_when_a_page_uses_them(
+    tmp_path, rules, page, needs_pages
+):
+    source = tmp_path / "release/plugins/asta-tools/skills/workspace/assets/_extensions"
+    for name in ["evidence", "asta-pages"]:
+        shutil.copytree(ASSETS / "_extensions" / name, source / name)
+    archive = tmp_path / "release.tar.gz"
+    with tarfile.open(archive, "w:gz") as bundle:
+        bundle.add(source.parents[5], arcname="release")
+    project = tmp_path / "project"
+    (project / "runs/01-a").mkdir(parents=True)
+    (project / "runs/01-a/theories.qmd").write_text(page)
+    git(project, "init", "-q")
+
+    subprocess.run(
+        ["make", "-f", str(ASSETS / rules), "workspace-assets"],
+        cwd=project,
+        env={**os.environ, "ASTA_PLUGINS_ARCHIVE_URL": archive.as_uri()},
+        check=True,
+        capture_output=True,
+    )
+
+    assert (project / "_extensions/evidence").is_dir()
+    pages = project / "_extensions/asta-pages/_extension.yml"
+    assert pages.is_file() == needs_pages
