@@ -53,4 +53,4 @@ A focus goes into AutoDS's prompt and Theorizer's question.
    ```
 
    Keep each hypothesis and analysis in AutoDS's own words, trimmed only for length. Mark a suspected artifact rather than dropping it. Never leave out the limits: one run's theory explained a correlation of r = 0.147 without saying it fell to 0.059 once proliferation was adjusted for.
-5. **Front page:** the workspace's cover. Under Findings, read the theories against the experiments and name any surprising result no theory explains; that gap is the most useful sentence on the page. If AutoDS found nothing, say the theories rest on the literature alone, which is a weaker claim.
+5. **Report:** the workspace's cover (`index.qmd`). Under Findings, read the theories against the experiments and name any surprising result no theory explains; that gap is the most useful sentence on the page. If AutoDS found nothing, say the theories rest on the literature alone, which is a weaker claim.

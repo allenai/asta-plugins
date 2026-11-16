@@ -21,7 +21,7 @@ The papers and theories are [Theory generation](../theory-generation/README.md)'
 | 8. Tests | The committed tests, audited | one per prediction; AutoDS optional |
 | 9. What's missing | The study each undecided prediction needs | |
 | 10. Revision (optional) | Theorizer revises the theories against the verdicts | |
-| 11. Front page | A review-article report ([index.md](index.md)) | |
+| 11. Report | A review-article report ([index.md](index.md)) | |
 
 > You can make the run more specific:
 >
@@ -125,4 +125,4 @@ Gaps come from what the authors say is open, from Theorizer's sweep, and from wh
 8. **Tests.** Exactly the committed tests, audited, with Secondary reproduction's verdicts. AutoDS may explore alongside; its findings are exploratory, never tests of the theories.
 9. **What's missing,** in `missing.md`: for each undecided prediction and each data gap, what to measure, the design and the rival it separates, the sample size and where its effect size came from (never invented), whether such data may exist, and what each result would mean. Then ask the person whether they have such data.
 10. **Revision,** optional: the verdicts as the mission, as in Secondary reproduction.
-11. **Front page,** in the person's format or [index.md](index.md)'s.
+11. **Report,** in the person's format or [index.md](index.md)'s.
