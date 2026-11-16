@@ -183,6 +183,16 @@ div.csl-indent {
         if (e.key === " ") { e.preventDefault(); t.click(); }
       });
     });
+    // The switch is one link drawn as two halves, Light then Dark. A pointer click on the half
+    // already in use does nothing, rather than switching away from it. Capture runs before
+    // Quarto's own handler on the link.
+    document.addEventListener("click", function (e) {
+      var t = e.target && e.target.closest && e.target.closest(".quarto-color-scheme-toggle");
+      if (!t || !e.detail) return;   // detail 0: a keyboard click, which always switches
+      var box = t.getBoundingClientRect();
+      var wanted = e.clientX < box.left + box.width / 2 ? "light" : "dark";
+      if (wanted === theme()) { e.preventDefault(); e.stopPropagation(); }
+    }, true);
     var toggle = window.quartoToggleColorScheme;
     if (typeof toggle !== "function") return;
     window.quartoToggleColorScheme = function () {
