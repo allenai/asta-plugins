@@ -89,7 +89,7 @@ local function read_data(kwargs)
 end
 
 -- The stylesheet and asta-templates.js, which every widget script shares (a panel's start, the
--- address it owns) and which draws a flow's feed. Added before any widget script.
+-- cards, each page's sections in the sidebar). Added before any widget script.
 local function css_dep()
   quarto.doc.add_html_dependency({ name = "asta-templates", version = "0.1.0", stylesheets = { "asta-templates.css" } })
   quarto.doc.add_html_dependency({ name = "asta-templates-core", version = "0.1.0", scripts = { "asta-templates.js" } })
@@ -1322,19 +1322,13 @@ local function doc_panel(kwargs)
   return pandoc.Blocks({ pandoc.RawBlock("html", head), pandoc.Div(blocks, pandoc.Attr("", { "asta-doc" })) })
 end
 
--- ---- the feed, and each page's sections in the sidebar -----------------------------------
+-- ---- each page's sections in the sidebar --------------------------------------------------
 --
--- Every page the asta-templates filter or one of its shortcodes runs on carries two small JSON blocks
--- for asta-templates.js:
---   script#asta-flow      where the site's root is. The feed's pages are the sidebar's links into
---                         the site, in the sidebar's order: in a workspace the front page, then
---                         the workflow pages (pages/<NNNN>-<workflow>.qmd, listed flat with
---                         `auto: "pages/*.qmd"`, so by file name: run order). The page the reader
---                         is on loads the pages after it, below it, as the reader reaches its end.
---   script#asta-sections  each page's sections: its level-2 headings and the ids Quarto gives
---                         them, keyed by the page's place in the site, for the pages the project
---                         renders. Listed under each page's sidebar link. Off with
---                         `asta-templates: {sidebar-sections: false}` in _quarto.yml.
+-- Every page the asta-templates filter or one of its shortcodes runs on carries script#asta-sections
+-- for asta-templates.js: each page's sections, its level-2 headings and the ids Quarto gives them,
+-- keyed by the page's place in the site (`site`, the way to the site's root from this page), for
+-- the pages the project renders. Listed under each page's sidebar link. Off with
+-- `asta-templates: {sidebar-sections: false}` in _quarto.yml.
 
 local function meta_text(v)
   if v == nil then return "" end
@@ -1454,8 +1448,8 @@ local function option(meta, name)
   return s ~= "false" and s ~= "no"
 end
 
--- The feed's and the sidebar's data, once per page (the shortcodes and the filter each load
--- this file; the page renders in one Lua state, so the mark is kept in package.loaded).
+-- The sidebar's data, once per page (the shortcodes and the filter each load this file; the
+-- page renders in one Lua state, so the mark is kept in package.loaded).
 local function page_extras(meta)
   local state = package.loaded["asta-templates/page"] or {}
   package.loaded["asta-templates/page"] = state
@@ -1466,7 +1460,6 @@ local function page_extras(meta)
   local rel = relative(site, rendered_dir())
   local to_root = rel == "" and "./" or (url_path(rel) .. "/")
   css_dep()
-  quarto.doc.include_text("after-body", json_script('id="asta-flow"', { format = "asta-templates/flow@3", site = to_root }))
   if option(meta, "sidebar-sections") == false then return end
   local pages, any = {}, false
   for _, src in ipairs(render_list()) do

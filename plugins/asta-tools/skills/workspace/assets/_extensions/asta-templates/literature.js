@@ -21,9 +21,6 @@
   }
   function plural(n, one, many) { return n + " " + (n === 1 ? one : many); }
   function baseAnchor(p) { return "paper-" + (p.corpusId || p.key); }
-  // The address as this panel's page sees it: asta-templates.js knows which page of a flow's feed
-  // the panel came from (null when the address is another page's); without it, the page's own.
-  function hashOf(el) { var A = window.AstaTemplates; return A && A.hashOf ? A.hashOf(el) : location.hash; }
   function byId(root, id) {
     var found = null;
     root.querySelectorAll(".ap-paper[id]").forEach(function (el) { if (!found && el.id === id) found = el; });
@@ -197,8 +194,7 @@
     update();
 
     function fromHash() {
-      var id = hashOf(root);
-      if (id == null) return;
+      var id = location.hash;
       try { id = decodeURIComponent(id.slice(1)); } catch (e) { id = ""; }
       if (prefix) { if (id.indexOf(prefix) !== 0) return; id = id.slice(prefix.length); }
       if (!/^paper-/.test(id)) return;
@@ -234,8 +230,6 @@
   window.AstaTemplates.literature = safeRender;
 
   // Each paper list in scope draws itself, once, from the data script that follows it.
-  // asta-templates.js calls start on a page appended to a flow's feed, so a document can hold
-  // several pages' panels.
   function start(scope) {
     scope = scope || document;
     scope.querySelectorAll(".asta-panel.asta-literature").forEach(function (root) {

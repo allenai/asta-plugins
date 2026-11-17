@@ -33,8 +33,7 @@ website:
         href: "{{REPO_URL}}"
         text: "GitHub repo"
         target: _blank
-    # The front page, then the workflow pages, flat, by file name: run order. The workflow
-    # pages' feed follows this order.
+    # The front page, then the workflow pages, flat, by file name: run order.
     contents:
       - text: "Home"
         href: index.qmd

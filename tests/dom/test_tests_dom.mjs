@@ -113,6 +113,25 @@ test("#test-<id> opens that row", () => {
   assert.match(document.querySelector("tr.ap-ts-detail").textContent, /no data/);
 });
 
+test("a figure shows its copy in the site and links the workspace's file; a large one is a link", () => {
+  const row = {
+    id: "T1", href: F + "T1/", summary: { meets_threshold: true },
+    figures: [
+      { name: "fig.png", href: F + "T1/fig.png", src: "../_asta/files/_asta/flows/0001-demo/04-tests/T1/fig.png" },
+      { name: "all.png", href: F + "T1/all.png", size: "5.1 MB" },
+    ],
+  };
+  const { document, go } = page(panel([row]));
+  go("#test-T1");
+  const figs = [...document.querySelectorAll(".ap-ts-fig")];
+  assert.equal(figs.length, 2);
+  assert.equal(figs[0].getAttribute("href"), F + "T1/fig.png");
+  assert.equal(figs[0].querySelector("img").getAttribute("src"), "../_asta/files/_asta/flows/0001-demo/04-tests/T1/fig.png");
+  assert.equal(figs[1].getAttribute("href"), F + "T1/all.png");
+  assert.equal(figs[1].querySelector("img"), null);
+  assert.match(figs[1].textContent, /5\.1 MB, too large to show here/);
+});
+
 test("a theory page with tests: a verdict column and a Tests tab, matched by name", () => {
   const data = { theories: [
     { id: "theory-1", name: "Theory one", query: "Q", statements: [] },

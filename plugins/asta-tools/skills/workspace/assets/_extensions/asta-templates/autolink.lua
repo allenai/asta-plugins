@@ -1291,7 +1291,7 @@ return {
     Pandoc = function(doc)
       if not quarto.doc.is_format("html") then return nil end
       L = L or load_lib()
-      -- Every page the filter runs on joins the feed and lists its sections in the sidebar.
+      -- Every page the filter runs on lists its sections in the sidebar.
       L.page_extras(doc.meta)
       if not on(doc.meta) then return nil end
       here_dir = pandoc.path.directory(L.absolute(quarto.doc.input_file))
@@ -1307,8 +1307,8 @@ return {
       if ncards == 0 then return doc end
       local store = {}
       for k, v in pairs(cards) do if v then store[k] = v end end
-      -- The cards, once, inside the page's content (so a page appended to a flow's feed brings
-      -- its own), and the scripts that draw them (asta-templates.js; tests.js for verdicts).
+      -- The cards, once, inside the page's content, and the scripts that draw them
+      -- (asta-templates.js; tests.js for verdicts).
       doc.blocks:insert(pandoc.RawBlock("html", '<script type="application/json" class="asta-cards-data">' ..
         quarto.json.encode(store):gsub("</", "<\\/") .. "</script>"))
       quarto.doc.add_html_dependency({ name = "asta-templates", version = "0.1.0", stylesheets = { "asta-templates.css" } })

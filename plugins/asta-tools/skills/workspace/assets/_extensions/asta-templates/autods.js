@@ -17,11 +17,6 @@
 (function () {
   "use strict";
 
-  // The address as this panel's page sees it: asta-templates.js knows which page of a flow's feed
-  // the panel came from (null when the address is another page's); without it, the page's own.
-  function hashOf(el) { var A = window.AstaTemplates; return A && A.hashOf ? A.hashOf(el) : location.hash; }
-  function urlOf(el, hash) { var A = window.AstaTemplates; return A && A.urlOf ? A.urlOf(el, hash) : hash; }
-
   function esc(s) {
     return String(s == null ? "" : s)
       .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
@@ -426,17 +421,16 @@
     // fragment drawn last, so the panel's own steps, and a Back that fires both popstate and
     // hashchange, are drawn once. Scroll positions are kept per fragment in memory, which also
     // works when the app's site frame replays Back with location.replace (no history.state).
-    var shown = hashOf(root), ypos = {};
-    window.addEventListener("scroll", function () { if (shown != null) ypos[shown] = window.scrollY; }, { passive: true });
+    var shown = location.hash, ypos = {};
+    window.addEventListener("scroll", function () { ypos[shown] = window.scrollY; }, { passive: true });
     function setHash(h) {
       var target = "#" + h;
-      if (hashOf(root) === target) return;
-      if (shown != null) ypos[shown] = window.scrollY;
-      var url = urlOf(root, target);
-      try { history.pushState(null, "", url); } catch (err) {
-        try { history.replaceState(null, "", url); } catch (x) { /* a sandboxed frame may refuse */ }
+      if (location.hash === target) return;
+      ypos[shown] = window.scrollY;
+      try { history.pushState(null, "", target); } catch (err) {
+        try { history.replaceState(null, "", target); } catch (x) { /* a sandboxed frame may refuse */ }
       }
-      shown = hashOf(root);
+      shown = location.hash;
     }
 
     var listHtml = "";
@@ -778,7 +772,7 @@
     }
 
     function fromHash(back) {
-      var h = hashOf(root) || "";
+      var h = location.hash;
       try { h = decodeURIComponent(h.slice(1)); } catch (err) { h = ""; }
       var run = runs[0], rest = h;
       // A local run's node id names an experiment too: #node-3-1 or #node_3_1 (any run's,
@@ -798,7 +792,7 @@
       var em = /^experiment-(.+)$/.exec(rest || ""), e = null;
       if (em) e = run.experiments.filter(function (x) { return String(x.id) === em[1]; })[0] || null;
       else e = byNode(run, rest);
-      var saved = back ? ypos[hashOf(root)] : null;
+      var saved = back ? ypos[location.hash] : null;
       if (state.run !== run) selectRun(run, e ? e.key : null, !back && !!h && !e);
       if (e) showExperiment(e, saved == null);
       // Back to a fragment with no experiment (the run, or the page itself): the tree again,
@@ -809,8 +803,8 @@
     // Back and Forward fire popstate, and hashchange too when the fragment differs; a link or
     // the app's site frame fires hashchange alone.
     function onAddress() {
-      var h = hashOf(root);
-      if (h == null || h === shown) return; // another page's address, or this panel's own step
+      var h = location.hash;
+      if (h === shown) return; // this panel's own step
       shown = h;
       fromHash(true);
     }
@@ -840,8 +834,6 @@
   window.AstaTemplates.autods = safeRender;
 
   // Each AutoDiscovery panel in scope draws itself, once, from the data script that follows it.
-  // asta-templates.js calls start on a page appended to a flow's feed, so a document can hold
-  // several pages' panels.
   function start(scope) {
     scope = scope || document;
     scope.querySelectorAll(".asta-panel.asta-autods").forEach(function (root) {

@@ -26,9 +26,6 @@
   }
   function plural(n, one, many) { return n + " " + (n === 1 ? one : many); }
   function arr(x) { return Array.isArray(x) ? x : []; }
-  // The address as this panel's page sees it: asta-templates.js knows which page of a flow's feed
-  // the panel came from (null when the address is another page's); without it, the page's own.
-  function hashOf(el) { var A = window.AstaTemplates; return A && A.hashOf ? A.hashOf(el) : location.hash; }
   function isNum(v) { return typeof v === "number" && isFinite(v); }
   function minus(s) { return String(s).replace(/^-/, "−"); }
   var CHEVRON = '<svg class="ap-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
@@ -395,8 +392,7 @@
 
     // #test-<id>: open that row and bring it into view (clearing a filter that hides it).
     function fromHash() {
-      var h = hashOf(root);
-      if (h == null) return;
+      var h = location.hash;
       try { h = decodeURIComponent(h.slice(1)); } catch (e) { h = ""; }
       var r = rows.filter(function (x) { return x.anchor === h; })[0];
       if (!r) return;
@@ -420,8 +416,7 @@
   window.AstaTemplates.tests = safeRender;
 
   // Each asta-tests panel in scope draws itself, once, from its own data (data-asta-data names
-  // it; the script follows the panel). asta-templates.js calls start on a page appended to a flow's
-  // feed, so a document can hold several pages' panels.
+  // it; the script follows the panel).
   function start(scope) {
     scope = scope || document;
     scope.querySelectorAll(".asta-panel.asta-tests").forEach(function (root) {

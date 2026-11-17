@@ -1,9 +1,8 @@
 """Workflow pages, flat: pages/<NNNN>-<workflow>.qmd with only a title. The scaffold's sidebar
 lists the front page, then the pages by file name (run order). Every page the asta-templates filter
-runs on, the front page too, carries where the site's root is (script#asta-flow), so its feed
-follows the sidebar, and each page's sections (script#asta-sections: its level-2 headings with
-the ids Quarto gives them), which asta-templates.js lists under the page's sidebar link. All names
-here are invented for the test."""
+runs on, the front page too, carries each page's sections (script#asta-sections: its level-2
+headings with the ids Quarto gives them), which asta-templates.js lists under the page's sidebar
+link. All names here are invented for the test."""
 
 import json
 import re
@@ -86,7 +85,7 @@ def _render(project: Path) -> tuple[dict[str, str], str]:
 @pytest.fixture(scope="module")
 def site(tmp_path_factory):
     assert shutil.which("quarto")
-    project = _project(tmp_path_factory.mktemp("flow"))
+    project = _project(tmp_path_factory.mktemp("sidebar"))
     _write(project / "notes/a.md", "# A\n")
     _write(project / ".asta/flows/0001-alpha-study/workflow.mmd", "graph LR\n  a-->b\n")
     # Two runs of one workflow and one each of two others, written out of order.
@@ -142,19 +141,6 @@ def test_the_sidebar_lists_the_front_page_then_the_pages_flat_in_run_order(site)
     assert "sidebar-item-section" not in page, "no sections"
 
 
-def test_every_page_the_filter_runs_on_says_where_the_site_root_is(site):
-    html, _ = site
-    assert _data(html["index.html"], "flow") == {
-        "format": "asta-templates/flow@3",
-        "site": "./",
-    }, "the front page starts the feed"
-    for name in ("pages/0001-alpha-study.html", "pages/0004-gamma-review.html"):
-        assert _data(html[name], "flow") == {
-            "format": "asta-templates/flow@3",
-            "site": "../",
-        }
-
-
 def test_each_page_lists_every_page_s_sections_with_the_ids_quarto_gives_them(site):
     html, _ = site
     data = _data(html["pages/0002-beta-check.html"], "sections")
@@ -189,4 +175,3 @@ def test_sidebar_sections_can_be_turned_off_for_the_site(tmp_path):
     project = _project(tmp_path, "\nasta-templates:\n  sidebar-sections: false\n")
     html, _ = _render(project)
     assert _data(html["index.html"], "sections") is None
-    assert _data(html["index.html"], "flow") is not None, "the feed stays"

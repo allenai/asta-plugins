@@ -165,12 +165,3 @@ test("a tap opens the card instead of following the link; a second tap follows i
   assert.equal(p.fire(a, "click").defaultPrevented, false);
 });
 
-test("a page appended to a flow's feed: its own store, its links from that page", () => {
-  const other = { "m:G1": { text: "G1", sections: [{ role: "Gap G1", title: "other", href: "pages/x.html#query-2" }] } };
-  const p = page(`<p>${link("m:G1", "G1")}</p>${storeTag(STORE)}` +
-    `<section class="asta-flow-page" data-asta-url="http://site.test/other/review.html"><p>${link("m:G1", "G1")}</p>${storeTag(other)}</section>`);
-  p.fire(p.document.querySelectorAll("a[data-asta-card]")[1], "focusin");
-  const go = p.cards.current().querySelector("a.ap-al-go");
-  assert.equal(go.textContent, "other →");
-  assert.equal(go.getAttribute("href"), "http://site.test/other/pages/x.html#query-2");
-});

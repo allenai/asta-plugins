@@ -15,13 +15,6 @@
 (function () {
   "use strict";
 
-  // The address as this panel's page sees it: asta-templates.js knows which page of a flow's feed
-  // the panel came from (null when the address is another page's); without it, the page's own.
-  function api() { return typeof window !== "undefined" ? window.AstaTemplates : null; }
-  function hashOf(el) { var A = api(); return A && A.hashOf ? A.hashOf(el) : location.hash; }
-  function urlOf(el, hash) { var A = api(); return A && A.urlOf ? A.urlOf(el, hash) : hash; }
-  function scopeOf(el) { var A = api(); return A && A.scope ? A.scope(el) : (typeof document !== "undefined" ? document : null); }
-
   function esc(s) {
     return String(s == null ? "" : s)
       .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
@@ -190,13 +183,13 @@
 
   // The tests run on a theory, each as a card: its verdict, effect, p and animals, and links to
   // its files (tests.js draws the card, as for an opened row of a tests table).
-  function testsTab(tests, scope) {
+  function testsTab(tests) {
     var lib = window.AstaTemplates.testsLib;
     if (!tests.length) return empty("No tests", "No test in the test index names this theory.");
     var t = lib.tally(tests);
     return '<p class="ap-legend">' + esc(t.text) + ". Each test's verdict is read from its result_summary.json; open its files for the design, code and result.</p>" +
       '<div class="ap-ts-cards">' + tests.map(function (x) {
-        var here = scope && scope.querySelector && scope.querySelector('[id="test-' + String(x.id).replace(/[^A-Za-z0-9_.-]+/g, "-") + '"]');
+        var here = document.querySelector('[id="test-' + String(x.id).replace(/[^A-Za-z0-9_.-]+/g, "-") + '"]');
         return lib.card(x, { head: true }).replace('<strong class="ap-ts-id">' + esc(x.id) + "</strong>",
           here ? '<a class="ap-ts-id" href="#' + esc(here.id) + '">' + esc(x.id) + "</a>" : '<strong class="ap-ts-id">' + esc(x.id) + "</strong>");
       }).join("") + "</div>";
@@ -303,7 +296,7 @@
         ["evidence", "Evidence", evidenceTab(t, src.papers, src.findings, prefix, link)],
         ["papers", "Referenced papers", papersTab(t, src.papers, link, prefix)]
       ];
-      if (withTests) tabs.push(["tests", "Tests" + (e.tests.length ? " (" + e.tests.length + ")" : ""), testsTab(e.tests, scopeOf(box))]);
+      if (withTests) tabs.push(["tests", "Tests" + (e.tests.length ? " (" + e.tests.length + ")" : ""), testsTab(e.tests)]);
       var chips = [t.kind ? sentenceCase(t.kind) + " theory" : "",
         t.novelty && t.novelty.label ? "Novelty: " + sentenceCase(t.novelty.label) : "",
         t.model ? "Written by " + modelName(t.model) : ""].filter(Boolean);
@@ -450,14 +443,13 @@
     // Choosing a theory or a query tab is a step in the browser's history (pushState), so Back
     // returns to the list or the tab before. `shown` is the address the panel last drew, so the
     // panel's own steps, and a Back that fires both popstate and hashchange, are drawn once.
-    var shown = hashOf(root);
+    var shown = location.hash;
     function visit(hash) {
-      if (hashOf(root) === hash) return;
-      var url = urlOf(root, hash);
-      try { history.pushState(null, "", url); } catch (e) {
-        try { history.replaceState(null, "", url); } catch (x) { /* a sandboxed frame may refuse */ }
+      if (location.hash === hash) return;
+      try { history.pushState(null, "", hash); } catch (e) {
+        try { history.replaceState(null, "", hash); } catch (x) { /* a sandboxed frame may refuse */ }
       }
-      shown = hashOf(root);
+      shown = location.hash;
     }
     var bodies = root.querySelectorAll(".ap-qbody");
     var views = groups.map(function (g, k) { return drawGroup(bodies[k], g, prefix, link, visit, !!tests); });
@@ -508,7 +500,7 @@
       return at;
     }
     function fromHash() {
-      var h = hashOf(root) || "";
+      var h = location.hash;
       try { h = decodeURIComponent(h.slice(1)); } catch (e) { h = ""; }
       if (!h) {
         // No fragment: the page as it first opened (Back to it from a theory or a tab).
@@ -541,8 +533,7 @@
       }
       // A paper: the first theory that references it, on its Referenced papers tab (a page with
       // a paper list leaves the paper to the list).
-      var scope = scopeOf(root);
-      if (/^paper-/.test(h) && !(scope && scope.querySelector && scope.querySelector(".asta-panel.asta-literature"))) {
+      if (/^paper-/.test(h) && !document.querySelector(".asta-panel.asta-literature")) {
         var want = h.slice("paper-".length), paper = null;
         var at = locate(function (e) {
           return (e.t.papers || []).some(function (k) { var p = e.src.papers[k]; if (isPaper(p, want)) { paper = p; return true; } return false; });
@@ -566,8 +557,8 @@
     // Back and Forward fire popstate, and hashchange too when the fragment differs; a link or
     // the app's site frame fires hashchange alone.
     function onAddress() {
-      var h = hashOf(root);
-      if (h == null || h === shown) return; // another page's address, or this panel's own step
+      var h = location.hash;
+      if (h === shown) return; // this panel's own step
       shown = h;
       fromHash();
     }
@@ -589,8 +580,7 @@
 
   // Each theories panel in scope draws itself, once: one embedded data file per Theorizer
   // project the shortcode names (script.asta-theories-data, in the shortcode's order) and its
-  // tests (script.asta-theories-tests), the scripts that follow the panel. asta-templates.js calls
-  // start on a page appended to a flow's feed, so a document can hold several pages' panels.
+  // tests (script.asta-theories-tests), the scripts that follow the panel.
   var drawn = 0;
   function start(scope) {
     scope = scope || document;
