@@ -192,8 +192,8 @@ page makes no request at view time (a 50-experiment run with its figures is abou
 missing or unreadable file renders a visible error box and a render warning. Anchors: `#theory-2` selects a theory, `#finding-<uuid>` opens the Evidence tab
 at that row, `#query-2` selects a query's tab, `#paper-<corpus id>` scrolls to a paper.
 
-The data files are written by the run-workflow skill's theory-generation workflow
-(`workflows/theory-generation/scripts/theorizer-site-data`), from a Theorizer project; each
+The data files are written by the generate-theories skill's site-data script
+(`scripts/theorizer-site-data`), from a Theorizer project; each
 theory carries its `query`. A second project's file (`data/theorizer-v2.json`) gets its own
 papers file beside it (`data/papers-v2.json`), leaving the first one's `papers.json` as it is. Plain
 HTML, CSS and JavaScript; the panels follow the asta-theme light (cream) and dark modes. A

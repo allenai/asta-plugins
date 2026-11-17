@@ -2,7 +2,7 @@
 
 Build theories that explain the question, grounded in the literature and in experiments this run computes on real data. The experiments are the only evidence in the run that was computed rather than read, so the theories must answer to them.
 
-The papers and theories are [Theory generation](../theory-generation/README.md)'s steps. This adds the data, the experiments, and the mission that carries the experiments to Theorizer.
+The papers and theories are the steps of the `generate-theories` skill's theory generation run (its `workflows/theory-generation.md`). This adds the data, the experiments, and the mission that carries the experiments to Theorizer.
 
 ## Plan
 
@@ -27,7 +27,7 @@ A focus goes into AutoDS's prompt and Theorizer's question.
 
 1. **Data.** If the person named data, use it. Otherwise search the portals and repositories for one dataset that loads and tests in minutes. Describe it.
 2. **Experiments.** AutoDS on the data. When it ends, read every experiment, mark the artifacts, and say why it stopped.
-3. **Theories.** Write the findings into Theorizer's mission statement, then run Theory generation's steps 1 to 6 with it, so the paper search and the schema are planned from the experiments. Remote, it goes in at `find-and-extract`, the only step that takes one:
+3. **Theories.** Write the findings into Theorizer's mission statement, then run that run's steps 1 to 6 with it, so the paper search and the schema are planned from the experiments. Remote, it goes in at `find-and-extract`, the only step that takes one:
 
    ```
    <the question>

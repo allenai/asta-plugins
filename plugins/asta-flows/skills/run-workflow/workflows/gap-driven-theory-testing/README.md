@@ -4,7 +4,7 @@ Map what the literature knows and doesn't know about a question. Build theories 
 
 It's the reverse of [Data Driven Theory Generation](../data-driven-theory-generation/README.md). There, the experiments come first and the theories explain them. Here, the theories and their predictions are fixed first and the data tests them. A prediction written before the data is seen is a real test; a theory fitted to the data afterwards isn't.
 
-The papers and theories are [Theory generation](../theory-generation/README.md)'s steps, and the verdicts are [Secondary reproduction](../secondary-reproduction/README.md)'s.
+The papers and theories are the steps of the `generate-theories` skill's theory generation run (its `workflows/theory-generation.md`), and the verdicts are [Secondary reproduction](../secondary-reproduction/README.md)'s.
 
 ## Plan
 
@@ -80,7 +80,7 @@ Gaps come from what the authors say is open, from Theorizer's sweep, and from wh
 
 ## Steps
 
-1. **Plan and papers.** The Theorizer project is `<run>/01-plan-and-papers/theory`, with its searches beside it in `01-plan-and-papers/searches`; write its site data to `01-plan-and-papers/data/theorizer.json` (the page's Papers section reads `papers.json` beside it). Every step opens that one project; each step's scripts and logs go in its own folder. The papers target is for this first search; papers that answer a gap's search join the corpus beyond it. Plan once, with this mission, and check the plan has a query and a schema with the methods fields:
+1. **Plan and papers.** The Theorizer project is `<run>/01-plan-and-papers/theory`, with its searches beside it in `01-plan-and-papers/searches`; write its site data to `01-plan-and-papers/data/theorizer.json` with the `generate-theories` skill's `scripts/theorizer-site-data` (the page's Papers section reads `papers.json` beside it). Every step opens that one project; each step's scripts and logs go in its own folder. The papers target is for this first search; papers that answer a gap's search join the corpus beyond it. Plan once, with this mission, and check the plan has a query and a schema with the methods fields:
 
    ```
    This run maps what the literature knows and leaves open about the question, then builds

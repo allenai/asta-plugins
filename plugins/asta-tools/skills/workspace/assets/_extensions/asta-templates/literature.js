@@ -1,6 +1,6 @@
 /* asta-templates literature page: the product's Paper Finder panel, read-only.
    Reads the JSON the asta-literature shortcode embedded (#asta-literature-data: the run's
-   papers and searches, written by the theory-generation workflow's data script) and draws the paper cards with a text
+   papers and searches, written by the generate-theories skill's theorizer-site-data) and draws the paper cards with a text
    filter, and a facets column: sort, fetch status, year, venue, author.
    #paper-<corpus id or key> in the address scrolls to that paper and marks it (filters that hide
    it are cleared; a copy shown once on another card goes to that card). Each search links its own

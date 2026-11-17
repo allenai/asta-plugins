@@ -2,7 +2,7 @@
 
 Reproduce an AutoDS run's hypotheses on independent data, then build literature-grounded theories from the verdicts with Theorizer. Only independent data counts. The run's own dataset is never reused.
 
-The papers and theories are [Theory generation](../theory-generation/README.md)'s steps. This adds a search per theme, the reproductions, and the verdicts as Theorizer's mission.
+The papers and theories are the steps of the `generate-theories` skill's theory generation run (its `workflows/theory-generation.md`). This adds a search per theme, the reproductions, and the verdicts as Theorizer's mission.
 
 ## Plan
 
@@ -42,7 +42,7 @@ A favorable estimate that misses the threshold is undecided, not support. Read t
    - **Design.** Adapt the AutoDS experiment; don't design a new one. Keep the statistic, the direction and the decision rule, and change only what the new data requires. Vary one independence axis per test, so a failure can be traced to it. Commit the test and its threshold (significance and minimum effect) before running anything.
    - **Run** exactly the committed test, without looking at the source result. A separate subagent given only the design and the data is the cleanest way; where there are no subagents, a headless agent process (such as `claude -p`) in a folder holding only those. Record the effect size, p, n, the code and a figure.
    - **Audit.** Try to refute it: a negative control for an effect, a positive control for a null, a block permutation for clustered or time data, and a check for influential points. Rule out a setup artifact before calling a failure to reproduce. Flag the source finding as an error only when confident it's wrong.
-5. **Theories.** Reconstruct what the run's user set out to learn, from its intent and dataset descriptions, and use it as the question. The verdicts go in as the mission statement, then Theory generation's steps 3 to 6:
+5. **Theories.** Reconstruct what the run's user set out to learn, from its intent and dataset descriptions, and use it as the question. The verdicts go in as the mission statement, then steps 3 to 6 of the theory generation run:
 
    ```
    <the question>

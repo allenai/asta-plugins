@@ -1,7 +1,7 @@
 ---
 name: generate-theories
 description: Builds literature-grounded scientific theories with Theorizer -- remote on Asta, or local with the library. Use when someone asks to generate theories or hypotheses, to "theorize about" a question, what theories explain something, or to run the Theorizer.
-allowed-tools: Bash(asta auth *) Bash(asta generate-theories *) Bash(asta artifacts *) Bash(asta documents *) Bash(s2 *) Bash(asta-papers *) Bash(jq *) Bash(uv tool *) Bash(uv venv *) Bash(uv pip *) Bash(python *) Bash(.venv/bin/*) Bash(command -v *) Bash(mkdir *) Bash(open *)
+allowed-tools: Bash(asta auth *) Bash(asta generate-theories *) Bash(asta artifacts *) Bash(asta documents *) Bash(s2 *) Bash(asta-papers *) Bash(jq *) Bash(uv tool *) Bash(uv venv *) Bash(uv pip *) Bash(python *) Bash(python3 *) Bash(.venv/bin/*) Bash(quarto *) Bash(make *) Bash(command -v *) Bash(mkdir *) Bash(open *)
 ---
 
 # Generate theories
@@ -16,6 +16,10 @@ Source: [allenai/asta-theorizer](https://github.com/allenai/asta-theorizer). Its
 - **Local.** On this computer, with the library and its guide: with the person's model key, or with none, where you write the findings and theories yourself. [workflows/local.md](workflows/local.md), with [scripts/theorizer_local.py](scripts/theorizer_local.py).
 
 If the plan already says which, use that. Otherwise ask, and don't switch partway through a run.
+
+## A full run
+
+[workflows/theory-generation.md](workflows/theory-generation.md) is the whole loop: plan, papers, a first pass, a check-in, then refining (4a) or discovering variables (4b) with a pass per new schema, and a summary. It also has the run's folders, the run's page ([templates/page.qmd](templates/page.qmd)) and [scripts/theorizer-site-data](scripts/theorizer-site-data), which writes the data the workspace site shows. Other workflows reuse its steps.
 
 ## The question
 

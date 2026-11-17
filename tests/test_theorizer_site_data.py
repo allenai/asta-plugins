@@ -12,7 +12,7 @@ from pathlib import Path
 
 SCRIPT = (
     Path(__file__).resolve().parent.parent
-    / "plugins/asta-flows/skills/run-workflow/workflows/theory-generation/scripts/theorizer-site-data"
+    / "plugins/asta-tools/skills/generate-theories/scripts/theorizer-site-data"
 )
 
 

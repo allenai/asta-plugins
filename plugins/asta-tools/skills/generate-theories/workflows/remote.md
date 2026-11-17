@@ -40,11 +40,12 @@ The run id is the `gen-YYYYMMDD-xxxxxxxx` in the first task's `.metadata.run_id`
 
 - **The mission statement goes in at `find-and-extract`** (or `literature-theory-generation`). `form-theory` has no field for it, so anything the theories must answer to has to be ready before the papers are found.
 - **You can't set the number of theories.** No skill takes a count. Say so if the person asks for one.
+- **No hosted skill discovers variables.** For a run's 4b, write the new schemas yourself and run `find-and-extract` on the same papers with each ([theory-generation.md](theory-generation.md), "Discovering variables").
 - **Novelty is scored only by `evaluate-novelty`** (or `literature-theory-generation` with the evaluation on). The novelty label `form-theory` puts on each theory is its own guess, not a score; don't report it as one.
 
 ## When it's done
 
-Keep each task's final JSON, as `<skill>.result.json` in the run's `theory/` folder (`find-and-extract.result.json`, `form-theory.result.json`), stdout only. Keep every stage's: papers found through citations appear only in a later stage's result. The workspace's theory pages read them from there with `theorizer-site-data`, so the theories and papers work offline. Outside a workflow, hand it to the `artifacts` skill to export and index (slug `YYYY-MM-DD-<short-query-slug>`). Then reply with where it lives, how many papers had full text, a few sentences on what the theories argue together, and a table of the theories: name and core idea, the paper findings each cites, plus novelty if it was scored. Flag a theory that cites no paper findings: it rests on the mission alone.
+Keep each task's final JSON, as `<skill>.result.json` in the run's `theory/` folder (`find-and-extract.result.json`, `form-theory.result.json`), stdout only. Keep every stage's: papers found through citations appear only in a later stage's result. The workspace's theory pages read them from there with [theorizer-site-data](../scripts/theorizer-site-data), so the theories and papers work offline. Outside a workflow, hand it to the `artifacts` skill to export and index (slug `YYYY-MM-DD-<short-query-slug>`). Then reply with where it lives, how many papers had full text, a few sentences on what the theories argue together, and a table of the theories: name and core idea, the paper findings each cites, plus novelty if it was scored. Flag a theory that cites no paper findings: it rests on the mission alone.
 
 - `state=input-required`: the command prints how to continue. Ask the person, then `asta generate-theories send-message --task-id <id> --context-id <ctx> '<reply>'`.
 - `state=failed`: report `status.message` and stop.

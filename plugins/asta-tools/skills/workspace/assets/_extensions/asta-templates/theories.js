@@ -1,6 +1,6 @@
 /* asta-templates theory page: the product's Theorizer panel.
    Reads the JSON the asta-theories shortcode embedded (script.asta-theories-data, one per data
-   file, written by the theory-generation workflow's data script) and draws the list of theories
+   file, written by the generate-theories skill's theorizer-site-data) and draws the list of theories
    with supporting and conflicting counts, then the selected theory's statements, predictions,
    evidence and referenced papers. Theories are grouped by the query they were generated for:
    one query is shown above the table; several get a tab each.
