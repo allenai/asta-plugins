@@ -1,0 +1,235 @@
+"""tests for the patent cli commands."""
+
+import json
+from unittest.mock import MagicMock, patch
+
+import pytest
+from click.testing import CliRunner
+
+from asta.cli import cli
+
+
+@pytest.fixture
+def runner():
+    """click cli test runner."""
+    return CliRunner()
+
+
+class TestPatentBasics:
+    """patent cli wiring."""
+
+    def test_patent_help(self, runner):
+        result = runner.invoke(cli, ["patents", "--help"])
+        assert result.exit_code == 0
+        assert "patent" in result.output
+        assert "search" in result.output
+        assert "get" in result.output
+        assert "outbound-citations" in result.output
+
+
+class TestPatentSearch:
+    """asta patents search."""
+
+    def test_search_help(self, runner):
+        result = runner.invoke(cli, ["patents", "search", "--help"])
+        assert result.exit_code == 0
+        assert "bm25" in result.output
+
+    def test_search_missing_query(self, runner):
+        result = runner.invoke(cli, ["patents", "search"])
+        assert result.exit_code != 0
+        assert "Missing argument" in result.output
+
+    def test_search_json(self, runner):
+        envelope = {
+            "total": 1,
+            "offset": 0,
+            "data": [{"ucid": "US10123456B2", "title": "A Widget"}],
+        }
+        with patch("asta.patents.search.PatentClient") as MockClient:
+            instance = MagicMock()
+            instance.search.return_value = envelope
+            MockClient.return_value = instance
+            result = runner.invoke(cli, ["patents", "search", "widget"])
+
+        assert result.exit_code == 0
+        assert json.loads(result.output) == envelope
+        instance.search.assert_called_once()
+        _, kwargs = instance.search.call_args
+        assert kwargs["limit"] == 10
+        assert kwargs["offset"] == 0
+
+    def test_search_text(self, runner):
+        envelope = {
+            "total": 1,
+            "offset": 0,
+            "data": [
+                {
+                    "ucid": "US10123456B2",
+                    "title": "A Widget",
+                    "assignees": ["Acme Corp"],
+                    "publicationDate": "2020-01-01",
+                }
+            ],
+        }
+        with patch("asta.patents.search.PatentClient") as MockClient:
+            instance = MagicMock()
+            instance.search.return_value = envelope
+            MockClient.return_value = instance
+            result = runner.invoke(
+                cli, ["patents", "search", "widget", "--format", "text"]
+            )
+
+        assert result.exit_code == 0
+        assert "A Widget" in result.output
+        assert "US10123456B2" in result.output
+        assert "Acme Corp" in result.output
+
+    def test_search_passes_options(self, runner):
+        with patch("asta.patents.search.PatentClient") as MockClient:
+            instance = MagicMock()
+            instance.search.return_value = {"data": []}
+            MockClient.return_value = instance
+            result = runner.invoke(
+                cli,
+                ["patents", "search", "widget", "--limit", "25", "--offset", "5"],
+            )
+
+        assert result.exit_code == 0
+        _, kwargs = instance.search.call_args
+        assert kwargs["limit"] == 25
+        assert kwargs["offset"] == 5
+
+
+class TestPatentGet:
+    """asta patents get."""
+
+    def test_get_help(self, runner):
+        result = runner.invoke(cli, ["patents", "get", "--help"])
+        assert result.exit_code == 0
+        assert "UCID" in result.output
+
+    def test_get_missing_ucid(self, runner):
+        result = runner.invoke(cli, ["patents", "get"])
+        assert result.exit_code != 0
+        assert "Missing argument" in result.output
+
+    def test_get_json(self, runner):
+        patent = {"ucid": "US10123456B2", "title": "A Widget"}
+        with patch("asta.patents.get.PatentClient") as MockClient:
+            instance = MagicMock()
+            instance.get_patent.return_value = patent
+            MockClient.return_value = instance
+            result = runner.invoke(cli, ["patents", "get", "US10123456B2"])
+
+        assert result.exit_code == 0
+        assert json.loads(result.output) == patent
+        instance.get_patent.assert_called_once()
+
+    def test_get_text(self, runner):
+        patent = {
+            "ucid": "US10123456B2",
+            "title": "A Widget",
+            "assignees": ["Acme Corp"],
+            "inventors": ["Jane Doe"],
+            "citedPaperCorpusIds": [111, 222],
+            "abstract": "A better widget.",
+        }
+        with patch("asta.patents.get.PatentClient") as MockClient:
+            instance = MagicMock()
+            instance.get_patent.return_value = patent
+            MockClient.return_value = instance
+            result = runner.invoke(
+                cli, ["patents", "get", "US10123456B2", "--format", "text"]
+            )
+
+        assert result.exit_code == 0
+        assert "Title: A Widget" in result.output
+        assert "UCID: US10123456B2" in result.output
+        assert "Jane Doe" in result.output
+        assert "111, 222" in result.output
+        assert "A better widget." in result.output
+
+
+class TestPatentOutboundCitations:
+    """asta patents outbound-citations."""
+
+    def test_help(self, runner):
+        result = runner.invoke(cli, ["patents", "outbound-citations", "--help"])
+        assert result.exit_code == 0
+        assert "cite a paper" in result.output
+
+    def test_passes_any_paper_id(self, runner):
+        envelope = {
+            "total": 1,
+            "offset": 0,
+            "data": [{"ucid": "US10123456B2", "title": "A Widget"}],
+        }
+        with patch("asta.patents.outbound_citations.PatentClient") as MockClient:
+            instance = MagicMock()
+            instance.outbound_citations.return_value = envelope
+            MockClient.return_value = instance
+            result = runner.invoke(
+                cli, ["patents", "outbound-citations", "ARXIV:2106.15928"]
+            )
+
+        assert result.exit_code == 0
+        assert json.loads(result.output) == envelope
+        args, kwargs = instance.outbound_citations.call_args
+        assert args[0] == "ARXIV:2106.15928"
+
+
+class TestPatentClient:
+    """PatentClient request building."""
+
+    def _client(self):
+        from asta.patents.client import PatentClient
+
+        return PatentClient(base_url="https://api.example.com", access_token="tok")
+
+    def test_search_path_and_params(self):
+        client = self._client()
+        with patch.object(client, "_request", return_value={"data": []}) as req:
+            client.search("widget", fields="ucid,title", limit=200, offset=3)
+        path, params = req.call_args[0]
+        assert path == "/graph/v1/patent/search"
+        assert params["query"] == "widget"
+        assert params["limit"] == 100  # clamped to max
+        assert params["offset"] == 3
+
+    def test_get_quotes_ucid(self):
+        client = self._client()
+        with patch.object(client, "_request", return_value={}) as req:
+            client.get_patent("US10123456B2", fields="ucid,title")
+        path = req.call_args[0][0]
+        assert path == "/graph/v1/patent/US10123456B2"
+
+    def test_outbound_citations_quotes_paper_id(self):
+        client = self._client()
+        with patch.object(client, "_request", return_value={}) as req:
+            client.outbound_citations("DOI:10.1/a?b#c")
+        path = req.call_args[0][0]
+        assert path == "/graph/v1/patent/outbound-citations/DOI:10.1%2Fa%3Fb%23c"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [["search", "widget"], ["outbound-citations", "CorpusId:1"]],
+)
+@pytest.mark.parametrize(
+    "option", [["--limit", "0"], ["--limit", "101"], ["--offset", "-1"]]
+)
+def test_rejects_out_of_range_paging(runner, command, option):
+    result = runner.invoke(cli, ["patents", *command, *option])
+    assert result.exit_code == 2
+    assert "Invalid value" in result.output
+
+
+def test_request_sets_timeout():
+    from asta.patents.client import PatentClient
+
+    client = PatentClient(base_url="https://api.example.com", access_token="tok")
+    with patch("asta.patents.client.urllib.request.urlopen") as urlopen:
+        urlopen.return_value.read.return_value = b"{}"
+        client.get_patent("US1A")
+    assert urlopen.call_args.kwargs["timeout"] == 30

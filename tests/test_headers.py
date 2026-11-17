@@ -27,10 +27,12 @@ def test_clients_send_identity_headers():
     """Gateway clients merge identity headers without dropping their own."""
     from asta.literature import AstaPaperFinder
     from asta.papers.client import SemanticScholarClient
+    from asta.patents.client import PatentClient
 
     for client in (
         AstaPaperFinder(base_url="https://example.test", access_token="t"),
         SemanticScholarClient(base_url="https://example.test", access_token="t"),
+        PatentClient(base_url="https://example.test", access_token="t"),
     ):
         assert client.headers["X-Asta-Client"] == "cli"
         assert client.headers["User-Agent"] == f"asta-cli/{__version__}"
