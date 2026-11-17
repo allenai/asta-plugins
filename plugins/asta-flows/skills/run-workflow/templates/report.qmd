@@ -2,6 +2,8 @@
 title: "<What the person wants to be able to do, as a plain title>"
 ---
 
+<!-- Leave out any section the run has nothing for, such as Theories when no theories were built or Experiments when none ran. No placeholder; keep the rest in this order. -->
+
 ## Mission
 
 > <The person's mission, in their words: their message, lightly edited for typos and anonymised.>
