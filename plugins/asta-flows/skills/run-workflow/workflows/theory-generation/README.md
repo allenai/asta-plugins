@@ -27,7 +27,7 @@ After the table, write this word for word, filling in only the two examples of a
 > - **Theory shape:** A threshold equation, an "if–then" rule, or another form?
 > - **Papers:** Any required papers, or papers that should form the entire corpus?
 
-If they ask you to choose, pick a focus and a shape that suit the question, and say what you picked.
+If they ask you to choose, pick a focus and a shape that suit the question, and say what you picked. If they agree to the plan without answering, pass the question as they wrote it, with no focus or shape.
 
 ## Steps
 
@@ -49,8 +49,9 @@ If they ask you to choose, pick a focus and a shape that suit the question, and 
   workflow.yaml, README.md, workflow.mmd
   searches/                               each paper search, with its query
   theory/                                 the Theorizer project
+  store.json, scripts/, records/          locally, as generate-theories' local.md says
   data/                                   theorizer.json and papers.json
-pages/<NNNN>-theory-generation.qmd       the diagram and the theories
+pages/<NNNN>-theory-generation.qmd       the diagram, the theories and the papers
 ```
 
 Copy `templates/page.qmd` to the page and replace `{{RUN}}` with the run's folder name. After papers are fetched, after every extraction and after every generation, write the data and render:
