@@ -36,7 +36,7 @@ Theorizer reads the papers and nothing else. Anything else the theories must ans
 
 - **Full text only.** Theorizer extracts from whatever text a paper has, abstracts included, so keep abstract-only papers out (`--require-full-text`, workflows/local.md).
 - **Say what the theories rest on:** how many papers out of the target, how many were tried, and why the rest have no full text, where the fetch says.
-- **The person's own papers,** a folder, files or a glob, can be the whole corpus or add to a search.
+- **The person's own papers,** a folder, files or a glob, can be the whole corpus or add to a search. Locally, convert their PDFs to markdown first, or read them with Mistral if they have a key (workflows/local.md, "Their PDFs").
 
 ## Checks
 

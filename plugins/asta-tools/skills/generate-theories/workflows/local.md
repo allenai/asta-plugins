@@ -10,7 +10,7 @@ In the project folder (the workspace's root):
 
 ```bash
 uv venv --python 3.13
-uv pip install "asta-theorizer>=0.2.0" "pymupdf4llm<2" "asta-papers[pymupdf,mistral]>=0.1.0"
+uv pip install "asta-theorizer>=0.2.0" "asta-papers[pymupdf,mistral]>=0.1.0"
 ```
 
 Write each step as a short script in `<run>/scripts/` and run it from the project folder with `.venv/bin/python <run>/scripts/<step>.py > <run>/theory/<step>.log 2>&1`, then read the log: the stages print a lot, and each prints its cost (`th.Project.show()` lists every save with its cost). To use [the glue](../scripts/theorizer_local.py), start the script with `import sys; sys.path.insert(0, "<this skill's folder>/scripts"); import theorizer_local as t`.
@@ -49,6 +49,24 @@ Q='<the search query>'
 - **Count only on-topic full-text papers** toward the target. Across several searches, search order is `s1`'s, then `s2`'s.
 - **Take the target** with `papers = t.papers_from_store("<run>/store.json", limit=<target>)`: the first full-text papers in search order, added to the project's paperstore so the site shows their titles. Read the titles first; to drop an off-topic one, pass `ids=[<corpus ids>]` instead.
 - **The person's own files:** `papers = t.add_papers(th.PaperImport.import_papers("<folder or glob>", read_metadata=<False with no key>)["papers"])` (the guide's Workflow 5). With no search, skip `searches/`.
+- **Their PDFs.** Theorizer reads PDFs only with `ocr="mistral"`, which needs `MISTRAL_API_KEY`: use that only if the person has a Mistral key and says to. Otherwise convert the PDFs to markdown first, with asta-papers, then import the markdown folder as above. The recipe is in asta-papers' README, ["Your own PDFs to markdown"](https://github.com/allenai/asta-sdk/blob/main/src/python/asta/papers/README.md#your-own-pdfs-to-markdown). In short, in a step script:
+
+  ```python
+  from pathlib import Path
+  from asta_papers import Client
+  from asta_papers.converters.pymupdf import PyMuPDFConverter
+
+  client = Client(email="you@example.org", converters=[PyMuPDFConverter()], cache=None, include_attribution=False)
+  out = Path("<run>/_own-papers"); out.mkdir(exist_ok=True)
+  for pdf in sorted(Path("<their folder>").glob("*.pdf")):
+      r = client.fetch(pdf=pdf)
+      if r.markdown:
+          (out / f"{pdf.stem}.md").write_text(r.markdown)
+      else:
+          print(pdf.name, "no text:", r.converter_outcome.value, "; ".join(r.notes))
+  ```
+
+  The email is required but not used for local files. `converters=` is required too: a `Client` has none by default. `PyMuPDFConverter` runs here with no key, but a scanned PDF comes out empty; say which ones did. PDFs rarely carry a title, so to set one, add a `# <title>` line at the top of its markdown.
 
 ## Each step, and where the guide covers it
 
