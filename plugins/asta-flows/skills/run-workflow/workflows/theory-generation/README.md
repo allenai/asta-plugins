@@ -47,6 +47,7 @@ If they ask you to choose, pick a focus and a shape that suit the question, and 
 ```
 .asta/flows/<NNNN>-theory-generation/    <run>
   workflow.yaml, README.md, workflow.mmd
+  searches/                               each paper search, with its query
   theory/                                 the Theorizer project
   data/                                   theorizer.json and papers.json
 pages/<NNNN>-theory-generation.qmd       the diagram and the theories
