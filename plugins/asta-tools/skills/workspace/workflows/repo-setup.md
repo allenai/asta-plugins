@@ -32,6 +32,11 @@ again about a declined default; Overleaf pairing reads this record too.
 Apply only what the owner accepted. When a step fails or GitHub reports
 something unexpected, stop and tell the owner what GitHub said.
 
+Before step 1, check that `gh api user -q .login` is the requester (the person
+who asked for the workspace). If it isn't, or you can't tell, follow
+[repo setup for someone else](repo-setup-delegated.md) before creating the repo
+or pushing anything.
+
 1. Create the repo private with a README, so the default branch exists
    (`gh repo create <owner>/<name> --private --add-readme`), or make an
    existing empty repo private. If it has no branches, push an empty-tree root
