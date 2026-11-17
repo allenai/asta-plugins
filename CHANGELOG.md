@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Require `asta-documents` 0.4.2 or newer for `asta documents`.
+- The shared site workflow's What changed step waits for its stderr log to finish writing before it reads or deletes it, so the step no longer fails at random with "Directory not empty".
 - What changed opens a collapsed section (`<details>`: a folded code cell, a Markdown fold) that holds a change, so the change is seen and not only counted; sections without one stay as the author left them.
 - What changed's diff engine (`diff-engine.py`) draws the diff's header and view switch, so a page outside the workspace that loads the engine shows the same ones (`diff_header`, `views_control`; see the engine's header).
 - What changed shows each slide of a deck from its own small page (about 120 KB for a talk whose whole deck is 6 MB) with the deck's fonts, styles and scripts shared by all slides, so a deck that is new or changes many slides no longer leaves most slide frames blank while each loads the whole deck. Slides still show live, marked in place, with selectable text.
