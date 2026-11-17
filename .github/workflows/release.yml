@@ -1,0 +1,114 @@
+name: Release
+# A merged version bump is the release: once main's release checks and Docker
+# images pass, tag main's version. GITHUB_TOKEN tag pushes start no workflows,
+# so the tag's Docker jobs are dispatched explicitly (workflow_dispatch is the
+# documented exception).
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: release
+  cancel-in-progress: false
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      release: ${{ steps.version.outputs.release }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Find an untagged version on main
+        id: version
+        run: |
+          set -euo pipefail
+          python3 scripts/manage-version.py check
+          version=$(python3 scripts/manage-version.py show)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          rc=0
+          git ls-remote --exit-code --tags origin "refs/tags/v$version" >/dev/null || rc=$?
+          case "$rc" in
+            0) echo "v$version is already tagged"; echo release=false >> "$GITHUB_OUTPUT" ;;
+            2) echo "v$version is untagged; releasing $GITHUB_SHA"; echo release=true >> "$GITHUB_OUTPUT" ;;
+            *) echo "Could not list tags (git exit $rc)" >&2; exit 1 ;;
+          esac
+
+  checks:
+    needs: version
+    if: needs.version.outputs.release == 'true'
+    permissions:
+      contents: write
+      pull-requests: write
+      pages: read
+      packages: read
+    uses: ./.github/workflows/workspace-release-checks.yml
+
+  image:
+    needs: version
+    if: needs.version.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Wait for main's published and verified images
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/wait-for-main-image.sh "$GITHUB_SHA"
+
+  tag:
+    needs: [version, checks, image]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: write
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Push the version tag
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          git fetch -q origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+          if git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null; then
+            echo "v$VERSION was tagged meanwhile; leaving it"
+            exit 0
+          fi
+          git tag "v$VERSION" "$GITHUB_SHA"
+          git push origin "refs/tags/v$VERSION"
+          echo "Pushed tag v$VERSION at $GITHUB_SHA"
+      - name: Run the tag's Docker release jobs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: gh workflow run docker.yml --repo "$GITHUB_REPOSITORY" --ref "v$VERSION"
+
+  report-failure:
+    needs: [version, checks, image, tag]
+    if: failure() && needs.version.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Comment on the merged PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          pr=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls" --jq '[.[] | select(.merged_at != null)][0].number // empty')
+          msg="Release v$VERSION was not tagged: its release checks or main's Docker images failed at $GITHUB_SHA. See $RUN_URL. Fix main (or re-run the failed jobs); the next push to main retries the release."
+          echo "::error::$msg"
+          if [ -n "$pr" ]; then gh pr comment "$pr" --repo "$GITHUB_REPOSITORY" --body "$msg"; fi

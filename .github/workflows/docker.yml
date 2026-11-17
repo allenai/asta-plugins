@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
     tags: ['v*']
+  # release.yml dispatches this on a tag it pushed with GITHUB_TOKEN, which
+  # starts no push run; at a tag ref only the release jobs run.
+  workflow_dispatch:
 
 jobs:
   publish:

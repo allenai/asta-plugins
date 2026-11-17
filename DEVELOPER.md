@@ -128,7 +128,7 @@ The version lives in three places:
 - `pyproject.toml` — `version`
 - `.claude-plugin/marketplace.json` — `plugins[].version`
 
-`make set-version` keeps them in sync; `make push-version-tag` enforces it.
+`make set-version` keeps them in sync; CI on every PR enforces it.
 
 **Every release:**
 
@@ -145,20 +145,25 @@ The version lives in three places:
    ```bash
    git add -A && git commit -m "chore: bump version to x.y.z" && git push
    ```
-5. After the release commit merges, dispatch
-   `gh workflow run workspace-release-checks.yml --ref main` and wait for it to
-   pass on both architectures. Confirm the run uses the release commit; if main
-   has advanced, select a branch or tag pointing to that commit instead. `make push-version-tag` requires that successful run, verifies all three version files match and that
-   `HEAD` is on `origin/main`, then waits for the `Docker` workflow run on that
-   commit to succeed (`scripts/wait-for-main-image.sh`, needs `gh`) before it
-   creates and pushes the git tag. It exits without tagging if that run failed
-   or none exists. Every `main` push publishes run-specific candidates
+5. Merge it. Merging the version bump is the release: `release.yml` sees that
+   `main`'s version has no `v<version>` tag, runs `workspace-release-checks.yml`
+   on both architectures, and waits for the `Docker` workflow run on that commit
+   to succeed (`scripts/wait-for-main-image.sh`). When both pass it pushes the
+   tag with its own `GITHUB_TOKEN` and dispatches `docker.yml` at the tag, since
+   a `GITHUB_TOKEN` tag push starts no workflows. If either fails, nothing is
+   tagged and the run comments the failure on the merged PR; the next push to
+   `main` (or re-running the failed jobs) retries. Until the tag exists, the
+   plugin's `SessionStart` hook keeps the installed CLI (or installs the
+   `latest` release) instead of failing. Every PR runs
+   `manage-version.py check`, so a partial bump fails before it merges.
+   Every `main` push publishes run-specific candidates
    (`ghcr.io/allenai/asta:sha-<commit>-run-<id>-attempt-<n>` and `…-tex`) and
    smoke-tests them by digest; candidates never move `:latest`. The tag does not
    rebuild: `docker.yml` promotes the validated candidate digests to `:<tag>` /
    `:<tag>-tex`, and a final `vX.Y.Z` tag (not `-rc.N`) then moves `:latest` /
-   `:latest-tex` to the highest final release. Promotion reads the candidate
-   run's artifacts, so tag within the repository's artifact-retention window.
+   `:latest-tex` to the highest final release. `make push-version-tag` remains
+   the manual fallback (it needs a successful `workspace-release-checks.yml`
+   dispatch on the commit); a tag pushed by a person starts `docker.yml` itself.
 6. *(Future)* Publish to PyPI: `make publish` (or `make publish-test` for
    TestPyPI).
 7. *(Future)* Create a GitHub release from the tag for human-readable notes.
@@ -171,7 +176,7 @@ Main only publishes the site and patch-derived demo. Pre-release checks use the
 current released `latest-tex` toolchain; the new tag does not exist yet. Browser
 slide fixtures use the shared site's Quarto setup (`release`).
 
-If `push-version-tag` reports a version mismatch, rerun `make set-version` to
+If CI or `push-version-tag` reports a version mismatch, rerun `make set-version` to
 resync — don't hand-edit one file.
 
 Paper previews use the release's `:<tag>-tex` image when the reusable workflow
