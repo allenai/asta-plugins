@@ -1,6 +1,6 @@
 # AutoDiscovery exploration
 
-Three ways to explore a dataset with AutoDS. Pick one with the person.
+Three ways to explore a dataset with AutoDS. Pick one with the person; the default is AutoDS on its own.
 
 | Option | What you do | How |
 |---|---|---|

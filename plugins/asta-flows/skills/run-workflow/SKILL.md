@@ -16,7 +16,7 @@ allowed-tools: Bash(auto-discovery *) Bash(asta auth *) Bash(asta generate-theor
 | [Gap-Driven Theory Testing](workflows/gap-driven-theory-testing/README.md) | Maps what the literature knows and leaves open, aims theories at the gaps, and tests them with AutoDS on independent data |
 | [AutoDiscovery exploration](workflows/autodiscovery-exploration/README.md) | Three ways to explore a dataset with AutoDS: on its own in rounds, theories first, or experiments first |
 
-Pick one with the person and read its README. The default is Gap-Driven Theory Testing, with AutoDS running the tests; without data, its data step finds some. For a dataset to explore with no question, it's AutoDiscovery exploration.
+Pick one with the person and read its README. When they bring data and don't ask for theories, the default is AutoDiscovery exploration, with AutoDS on its own: run it, then extend the run round by round from what surprised it. Otherwise the default is Gap-Driven Theory Testing, with AutoDS running the tests; without data, its data step finds some.
 
 Track every run in a workspace, with the `workspace` skill. Before starting a workflow, set up the workspace scaffold, start the local Quarto preview, and give the person its URL once it serves this project. The project's report, `index.qmd`, starts from [templates/report.qmd](templates/report.qmd), whatever the workflow, unless the person gives their own format: the mission in their words, the lead result they can act on, their questions and the answers, then the experiments, theories, findings, null results and next steps. A workflow's `templates/page.qmd`, when it has one, is the run's page.
 
