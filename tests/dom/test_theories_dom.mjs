@@ -162,6 +162,18 @@ test("paper titles link to their entry on the papers page; a copy shown once lin
   assert.ok(!/semanticscholar/.test(runPage([["a.json", data]]).panel.innerHTML), "never links outwards");
 });
 
+test("evidence that cites two papers links both", () => {
+  const data = {
+    papers: [{ key: "s2-1", corpusId: "123", title: "First" }, { key: "s2-2", corpusId: "456", title: "Second" }],
+    theories: [{
+      ...theory("theory-1", "One", QUERY_A),
+      statements: [{ name: "S", statement: "x", evidence: [{ text: "both", paper: "s2-1", papers: ["s2-1", "s2-2"] }] }],
+    }],
+  };
+  const { panel } = runPage([["a.json", data]]);
+  assert.deepEqual([...panel.querySelectorAll(".ap-ev-item .ap-ev-paper")].map(el => el.textContent), ["First", "Second"]);
+});
+
 test("a hash naming a query opens its tab on load", () => {
   const { panel } = runPage([["a.json", { theories: [theory("t1", "One", QUERY_A), theory("t2", "Two", QUERY_B)] }]],
     { hash: "#query-2" });

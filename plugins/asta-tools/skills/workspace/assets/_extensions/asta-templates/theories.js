@@ -125,9 +125,11 @@
       function refs(label, list, kind) {
         if (!list || !list.length) return;
         body.push('<div class="ap-section"><div class="ap-label">' + label + '</div><div class="ap-ev-list">' + list.map(function (ev) {
-          var p = ev.paper ? papers[ev.paper] : null;
+          // Every paper the evidence cites (older data files name only the first, as ev.paper).
+          var cited = (Array.isArray(ev.papers) ? ev.papers : ev.paper ? [ev.paper] : [])
+            .map(function (k) { return papers[k]; }).filter(Boolean);
           return '<div class="ap-ev-item ap-' + kind + '">' + ICON[kind] + "<div><div>" + esc(ev.text) + "</div>" +
-            (p ? link(p, "ap-ev-paper") : "") + "</div></div>";
+            cited.map(function (p) { return link(p, "ap-ev-paper"); }).join("") + "</div></div>";
         }).join("") + "</div></div>");
       }
       refs("Evidence", st.evidence, "support");

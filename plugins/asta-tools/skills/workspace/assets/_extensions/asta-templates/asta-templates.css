@@ -180,6 +180,7 @@ body.quarto-dark .ap-query { border-left-color: var(--ap-link); }   /* no pink i
 .ap-ev-item.ap-conflict .ap-ev-icon { color: var(--ap-accent); }
 .ap-ev-item.ap-open .ap-ev-icon { color: var(--ap-faint); }
 .ap-ev-paper { display: inline-block; margin-top: 2px; font-size: 13px; font-weight: 600; }
+.ap-ev-item .ap-ev-paper { display: block; }
 .ap-list { margin: 0; padding-left: 20px; }
 .ap-list li { margin-bottom: 6px; max-width: 90ch; }
 .ap-list li::marker { color: var(--ap-faint); }

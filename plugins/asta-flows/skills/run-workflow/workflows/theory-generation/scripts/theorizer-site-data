@@ -22,9 +22,10 @@ the store key as `id`: `title`, `authors` as `literal` or `family`/`given`, `yea
 value. Documents collected by hand were imported into the store before their metadata was
 checked; this puts the checked title, authors, year, venue and DOI on the pages.
 
-With `--gap ID`, the theories are tagged as generated for that gap of the run's gap map: each
-theory, and the file, carries `"gap": "ID"`. The site's link cards group a gap's theories by
-it (a mention of G7 in the text links G7's theories and its gap map entry).
+With `--gap ID`, the file keeps only that gap's theories: those whose name or query names the
+gap (`G7`, as a word; the gap-driven mission asks each theory to name its gap). Each, and the
+file, carries `"gap": "ID"`. The site's link cards group a gap's theories by it (a mention of G7
+in the text links G7's theories and its gap map entry). Exit status 4 when no theory names it.
 
 Standard library only. Exit status 0 on success, 2 for bad usage, 3 when the project cannot be
 read (no paperstore.json and no theorystore.json).
@@ -88,6 +89,7 @@ def paper_view(key: str, entry: dict) -> dict:
         "rank": None,
         "relevance": None,
         "search": None,
+        "searches": [],
     }
 
 
@@ -195,19 +197,24 @@ def build(project: Path, metadata=None) -> dict:
             searches.append({"name": name, "query": data.get("paper_search_query"), "candidates": len(cands)})
             for i, c in enumerate(cands):
                 p = by_corpus.get(str(c.get("corpus_id")))
+                if p and name not in p["searches"]:
+                    p["searches"].append(name)
                 if p and p["rank"] is None:
                     p["rank"], p["relevance"], p["search"] = i + 1, c.get("relevance"), name
                     tldr = c.get("tldr")
                     tldr = tldr.get("text") if isinstance(tldr, dict) else tldr
                     p["tldr"] = p["tldr"] or (tldr if isinstance(tldr, str) else None)
                     p["abstract"] = p["abstract"] or c.get("abstract")
-    # Searches saved by the s2 CLI beside the project (<run>/searches/*.json), as the
-    # S2-to-asta-papers chain keeps them: rank each paper by its first search, and fill
-    # metadata the store does not carry (venue, TL;DR, citations).
+    # Searches saved beside the project (<run>/searches/*.json, `asta-papers search` or `s2`
+    # output, with the query added as "query"): rank each paper by its first search, list every
+    # search that found it, and fill metadata the store does not carry (venue, TL;DR, citations).
+    # A search that found nothing (`{"total": 0}`) is listed with 0 candidates.
     for path in sorted((project.parent / "searches").glob("*.json"), key=lambda q: (q.stat().st_mtime, q.name)):
         raw = load(path)
         body = raw.get("data") if isinstance(raw, dict) else None
         items = body.get("data") if isinstance(body, dict) else body
+        if items is None and isinstance(raw, dict) and raw.get("total") == 0:
+            items = []
         if not isinstance(items, list):
             continue
         query = raw.get("query") if isinstance(raw.get("query"), str) else None
@@ -223,6 +230,8 @@ def build(project: Path, metadata=None) -> dict:
             p = by_corpus.get(str(corpus)) if corpus is not None else None
             if p is None:
                 continue
+            if path.stem not in p["searches"]:
+                p["searches"].append(path.stem)
             if p["rank"] is None:
                 p["rank"], p["search"] = i + 1, path.stem
             tldr = item.get("tldr")
@@ -272,8 +281,10 @@ def build(project: Path, metadata=None) -> dict:
                                   "data": {k: v for k, v in row.items() if k != "uuid"}})
 
     def with_paper(refs: list[dict]) -> list[dict]:
+        # Every paper a piece of evidence cites, in the order its uuids name them; "paper" is the first.
         for ev in refs:
-            ev["paper"] = next((uuid_paper[u] for u in ev["uuids"] if uuid_paper.get(u)), None)
+            ev["papers"] = list(dict.fromkeys(uuid_paper[u] for u in ev["uuids"] if uuid_paper.get(u)))
+            ev["paper"] = ev["papers"][0] if ev["papers"] else None
         return refs
 
     evaluations = store.get("theory_evaluations") or {}
@@ -312,8 +323,9 @@ def build(project: Path, metadata=None) -> dict:
         cited = []
         for st in statements:
             for ev in st["evidence"] + st["conflicting"]:
-                if ev["paper"] and ev["paper"] not in cited:
-                    cited.append(ev["paper"])
+                for pid in ev["papers"]:
+                    if pid not in cited:
+                        cited.append(pid)
         for rid in result_ids:
             pid = ((store.get("extraction_results") or {}).get(rid) or {}).get("paper_id")
             if pid and pid not in cited:
@@ -339,15 +351,15 @@ def build(project: Path, metadata=None) -> dict:
             "supporting": sum(len(s["evidence"]) for s in statements),
             "conflicting": sum(len(s["conflicting"]) for s in statements),
             # How many distinct papers those pieces of evidence come from.
-            "supporting_papers": len({e["paper"] for s in statements for e in s["evidence"] if e["paper"]}),
-            "conflicting_papers": len({e["paper"] for s in statements for e in s["conflicting"] if e["paper"]}),
+            "supporting_papers": len({pid for s in statements for e in s["evidence"] for pid in e["papers"]}),
+            "conflicting_papers": len({pid for s in statements for e in s["conflicting"] for pid in e["papers"]}),
             "evidence_results": result_ids,
             "papers": [p for p in cited if p in papers],
         })
 
     # Each paper's role in the run, for a reader who was not there: used by a theory (its findings
     # are cited as evidence), read in full but not used, or found with an abstract only (not read).
-    used = {e["paper"] for t in theories for s in t["statements"] for e in s["evidence"] + s["conflicting"] if e["paper"]}
+    used = {pid for t in theories for s in t["statements"] for e in s["evidence"] + s["conflicting"] for pid in e["papers"]}
     findings_per_paper: dict[str, int] = {}
     for table in findings.values():
         for row in table["rows"]:
@@ -475,6 +487,12 @@ def main(argv: list[str]) -> int:
     request, searches, ordered = data["request"], data["searches"], data["papers"]
     findings, theories = data["findings"], data["theories"]
     if gap:
+        named = re.compile(r"(?<![A-Za-z0-9])" + re.escape(gap) + r"(?![A-Za-z0-9])")
+        theories = [t for t in theories if named.search(t["name"] or "") or named.search(t["query"] or "")]
+        if not theories:
+            print(f"theorizer-site-data: no theory names {gap} in its name or query", file=sys.stderr)
+            return 4
+        data["theories"] = theories
         data["gap"] = gap
         for t in theories:
             t["gap"] = gap
