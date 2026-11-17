@@ -36,7 +36,7 @@ If they ask you to choose, pick a focus and a shape that suit the question, and 
 3. **First pass:** extract, check the extraction, generate.
 4. **Check in and wait.** The next steps cost several times the first. List the first theories, one line each, and offer:
    - **4a, refine:** generate again from the same findings, with their direction in the mission statement. Then check in again.
-   - **4b, discover:** ask the papers which variables the first schema missed, then extract and generate once per new schema. To run only some, take those whose slots the papers rated highest and the first schema lacks, and say why.
+   - **4b, discover:** ask the papers which variables the first schema missed, then extract and generate once per new schema. To run only some, take those that add most of what the first schema lacks, and say why.
 
    Go straight to 4b only if they asked for no check-in when agreeing the plan.
 5. **Updates.** After every generation, tell them what the pass produced, and update the run's page.
