@@ -6,6 +6,9 @@ project:
   render:
     - "*.qmd"
     - "pages/*.qmd"
+  # Quarto's sidebar fails with a TypeError on an empty pages/ folder, so an empty one is
+  # removed before each render. It comes back with the first page.
+  pre-render: "find . -maxdepth 1 -type d -name pages -empty -delete"
   preview:
     port: 4848
 

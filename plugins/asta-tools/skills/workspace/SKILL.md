@@ -14,7 +14,7 @@ Manage the writing/docs side of a research project: scaffold infrastructure as n
 
 Give the user a web URL for the rendered work, or render where their app reads it. Pick based on your context:
 
-- **Local agent** (host, local dev container, or Codespace — the user can reach your port): run `make preview` in the background. Pass the URL Quarto prints (localhost on host/dev container; Codespaces-forwarded URL in a Codespace).
+- **Local agent** (host, local dev container, or Codespace — the user can reach your port): run `make preview` in the background. Pass the URL Quarto prints (localhost on host/dev container; Codespaces-forwarded URL in a Codespace). A `quarto render` stops a running `make preview`, so start the preview again after each render.
 - **Headless agent** (no user-reachable port): push the branch (see **Save**), then `make deployed-url` to fetch the deployed URL from GitHub Pages CI.
 - **Agent in a hosted sandbox** (the person's app shows the workspace's `_site/` in the workspace's first tab): after every meaningful update, run `quarto render` from the project root. The rendered `_site/` is the project notebook the person reads; nothing else publishes it, and there is no URL to pass. Git commits are optional housekeeping there. See [In a hosted sandbox](#in-a-hosted-sandbox) for setting up without `asta` or `make`.
 
@@ -74,6 +74,8 @@ Add components only when needed; don't proactively offer them, except when you c
 Before writing any file in the steps below, check whether the target path already exists. If it does, ask the user before overwriting, or merge the asset's contents into the existing file.
 
 ### Quarto build tool
+
+If the project folder isn't a Git repository yet (`git rev-parse --git-dir` fails), run `git init -b main` there first. `make check` and saving need one.
 
 1. Copy `assets/_quarto.yml` to project root; fill `{{TITLE}}` and `{{REPO_URL}}`
    (use the canonical GitHub URL, e.g. `https://github.com/{owner}/{repo}`).
