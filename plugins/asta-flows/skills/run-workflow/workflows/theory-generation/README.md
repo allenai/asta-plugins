@@ -13,7 +13,7 @@ Quote their question in step 1 exactly as Theorizer will get it. With their own 
 | Step | Agent | What it does |
 |---|---|---|
 | 1 | Theorizer | Plans the paper search and extraction schema for "<their question>" |
-| 2 | Semantic Scholar | Finds 100 papers and fetches their full text |
+| 2 | Semantic Scholar | Finds papers and fetches full text until 100 have it |
 | 3 | Theorizer | Extracts findings and generates the first theories |
 | | Check-in | Shows you the first theories; you choose 4a or 4b |
 | 4a | Theorizer | Refines the theories with your direction, from the same findings |
@@ -36,7 +36,7 @@ If they ask you to choose, pick a focus and a shape that suit the question, and 
 3. **First pass:** extract, check the extraction, generate.
 4. **Check in and wait.** The next steps cost several times the first. List the first theories, one line each, and offer:
    - **4a, refine:** generate again from the same findings, with their direction in the mission statement. Then check in again.
-   - **4b, discover:** ask the papers which variables the first schema missed, then extract and generate once per new schema.
+   - **4b, discover:** ask the papers which variables the first schema missed, then extract and generate once per new schema. To run only some, take those whose slots the papers rated highest and the first schema lacks, and say why.
 
    Go straight to 4b only if they asked for no check-in when agreeing the plan.
 5. **Updates.** After every generation, tell them what the pass produced, and update the run's page.
@@ -59,6 +59,8 @@ Copy `templates/page.qmd` to the page and replace `{{RUN}}` with the run's folde
 python3 <this folder>/scripts/theorizer-site-data <run>/theory <run>/data/theorizer.json --bib references.bib
 quarto render      # or `make render`
 ```
+
+If that stops a running `make preview`, start the preview again.
 
 - **References.** `--bib` adds an entry per paper to the site's `references.bib`, keyed `s2-<corpus id>`. For papers collected by hand with checked metadata (a `metadata.json` of CSL records keyed by the store's `id`), add `--metadata <that file>`.
 - **Diagram.** Keep the run's plan as Mermaid in `<run>/workflow.mmd` (`flowchart LR`), current as steps finish.
