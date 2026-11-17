@@ -198,7 +198,7 @@ save_mcts_node(node, OUT, to_root=True)
 
 ### Priors and posteriors with subagents
 
-You wrote the hypothesis and the code, so your own judgement of it isn't blind. Hand the beliefs to subagents that see only what AutoDS's own belief calls see, two at a time unless the person says otherwise.
+You wrote the hypothesis and the code, so your own judgement of it isn't blind. By default, without asking: blind judging and a code review by subagents, as below, two at a time unless the person says otherwise. You still write the hypotheses and the code. Each subagent sees only what AutoDS's own calls would see.
 
 - **Prior: five subagents, one judgement each.** Each gets the hypothesis, the plan and the data description: no data, no code, no results, and not the other judgements. It answers with one category (definitely true, maybe true, uncertain, maybe false, definitely false, or can't say) and a sentence why. Count the five answers into `DistributionFormat`, save the node and commit, before anyone writes code.
 - **Review: one subagent.** It gets the plan, the code and its output, and checks for bugs, leaks and results true by construction. It doesn't see any beliefs. Its answer is `node.review`.
