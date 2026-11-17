@@ -46,7 +46,7 @@ Then look at the experiments AutoDS flagged as surprising, in this order:
 
 Read each one before you use it, because a bug or a leak also flips a belief. Seed the next 50 with the top three to five (fewer if fewer are surprising), and go again. Stop when a round brings no new surprising shift, or when the person's budget runs out if they set one. Check in with the person after each round, unless they've said to keep going.
 
-To seed a round, its prompt drills into the picks: "Explore further: <what each pick was about>". Name what they looked at, not what they found, and run the same grep on the new prompt. With the local CLI you can also hand it the picks themselves (workflows/local.md). In the library, keep adding nodes to the same folder.
+To seed a round, its prompt drills into the picks: "Explore further: <what each pick was about>". Name what they looked at, not what they found, and run the same grep on the new prompt. With the local CLI you can also hand it the picks themselves (workflows/local.md). In the library, keep adding nodes to the same folder, each under the parent AutoDS's selection policy picks (workflows/local.md).
 
 ## Reading the results
 

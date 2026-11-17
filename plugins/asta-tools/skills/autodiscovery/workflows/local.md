@@ -193,7 +193,18 @@ save_mcts_node(node, OUT, to_root=True)
 - **The prior is on disk, and committed, before any code is written.** Then the posterior. That's what makes the surprise honest.
 - **Pass the arguments above.** The posterior's counts are doubled and sit on the prior (`prior_params`), and `get_self_value` takes the CLI's settings. With the defaults, nothing comes out surprising.
 - **Names:** `node_<level>_<n>`. The first hypothesis is at level 2, a child is its parent's level + 1, and n counts across the whole level, not per parent.
-- **Choosing what's next is yours.** A real run picks the parent with its selection policy; following the surprise by hand is a choice, so say so in the run's README.
+- **Pick each next parent with AutoDS's own policy,** not by hand. It's UCB1 over the nodes' visits and values, and calls no model:
+
+  ```python
+  from autodiscovery.mcts import MCTSNode, default_mcts_selection
+  from autodiscovery.mcts_utils import load_mcts_from_json, select_nodes
+
+  MCTSNode._creation_counter = 0
+  root, by_level = load_mcts_from_json(OUT)
+  parents = select_nodes(default_mcts_selection(1.0), root, by_level, return_n=1)  # 1.0: the CLI's exploration weight
+  ```
+
+  The next experiment hangs off what it returns, even when you'd have picked another. Choose by hand only if the person asks, and say so in the run's README.
 - **Never call** anything that takes a model: `beliefs.get_belief`, `calculate_prior_and_posterior_beliefs`, `MCTSNode.get_next_experiment`, `deduplication.dedupe`, `agents.get_agents`, `run.main`. `save_nodes(..., model=None, embedding_model=None, run_dedupe=False)` is safe.
 
 ### Priors and posteriors with subagents
