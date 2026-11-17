@@ -1,6 +1,6 @@
 ---
 name: workspace
-description: Show the user the agent's work on a research project and save iterations on the user's behalf. Scaffold rendering and deploy infrastructure (Quarto, GitHub Pages, dev container), create Markdown slide decks alongside papers, show rendered output, and save iterations. Doesn't handle research execution (use `asta-flows`).
+description: Start (initialize) an Asta workspace for a research project, show the user the agent's work on it and save iterations on the user's behalf. Scaffold rendering and deploy infrastructure (Quarto, GitHub Pages, dev container), create Markdown slide decks alongside papers, show rendered output, and save iterations. Doesn't handle research execution (use `asta-flows`).
 allowed-tools: Bash(which quarto) Bash(make *) Bash(quarto render *) Bash(quarto preview *) Bash(asta workspace sync) Bash(asta workspace sync *) Bash(asta workspace preview) Bash(asta workspace preview *) Bash(asta workspace what-changed *) Bash(git *) Bash(gh *) Read(assets/**) Write Edit Skill(asta-tools:check-claims)
 ---
 
@@ -9,6 +9,8 @@ allowed-tools: Bash(which quarto) Bash(make *) Bash(quarto render *) Bash(quarto
 Manage the writing/docs side of a research project: scaffold infrastructure as needed, show the rendered work, save iterations. For managing the research task graph itself (planning, executing typed tasks), use `asta-flows`.
 
 `assets/DEVELOPER.md` is the shared developer guide. Link to it from the project README at the selected asta-plugins ref; do not copy generic instructions into every project. This SKILL.md is the agent-specific procedure.
+
+**Your first reply when a workspace starts in a GitHub repo, or gets one, is a short message.** Asked to start a workspace in a new or empty repo, to create its repo or to share a workspace that has none, read [repo setup](workflows/repo-setup.md) and send its message, and nothing else: no plan or questions first. A repo that already holds a project keeps its own setup; check its defaults as Overleaf sync setup does. Asked to pair a paper with Overleaf, likewise send [Overleaf sync setup](workflows/overleaf-sync.md)'s.
 
 ## Show the user the rendered work
 
@@ -48,7 +50,7 @@ Before opening any workspace PR, both local and headless agents run `make check`
 
 For a headless agent (the user only sees results via deployed URL):
 
-- **Bootstrap `main` if the repo is empty.** Follow [repo setup](workflows/repo-setup.md), including its one proposal, private Pages check and initial-history reconciliation. On a repo with no commits, the first branch pushed becomes the default — establish `main` before pushing a feature or Pages branch. A README created on GitHub has its own history; fetch and merge it into an existing local workspace before pushing, preserving the workspace's files and commits. Never force-push past it.
+- **Bootstrap `main` if the repo is empty.** Follow [repo setup](workflows/repo-setup.md), including its managed settings, private Pages check and initial-history reconciliation. On a repo with no commits, the first branch pushed becomes the default — establish `main` before pushing a feature or Pages branch. A README created on GitHub has its own history; fetch and merge it into an existing local workspace before pushing, preserving the workspace's files and commits. Never force-push past it.
 - First save: keep the pin current (above), then `git push -u origin HEAD:<feature-branch>`, `gh pr create --fill`, then `make deployed-url` and report the URL.
 - Subsequent saves: `git push`, `make deployed-url`.
 - After explicit merge approval: `gh pr merge`, `make deployed-url`.
@@ -61,7 +63,7 @@ When `asta workspace overleaf pull` or `publish` refuses, or a sync PR conflicts
 
 ## Scaffold components as needed
 
-Add components only when needed; don't proactively offer them, except when you create a workspace's GitHub repo or set up one that exists but is empty (asked to share it, a Codespace, or a remote start in an empty repo). Then propose the repo defaults in one message and apply them on one yes: follow [`workflows/repo-setup.md`](workflows/repo-setup.md).
+Add components only when needed; don't proactively offer them, except when you create a workspace's GitHub repo or set up one that exists but is empty (asked to share it, a Codespace, or a remote start in an empty repo). Then apply Asta's managed settings without asking about them: follow [`workflows/repo-setup.md`](workflows/repo-setup.md).
 
 | Component | When to add |
 |---|---|
@@ -84,7 +86,8 @@ Before writing any file in the steps below, check whether the target path alread
 7. Add the thin `assets/docs.yml` workflow stub even for local-only projects: it selects the managed version. For local-only use, or until Pages setup verifies the agreed site visibility, remove its `on.push` and `on.pull_request` events and use `on.workflow_dispatch` so publishing requires manual activation. Keep the `jobs.docs.uses` line; sync reads it. Preserve an existing version policy (`@main` canary, `@latest` release channel, or a fixed release/commit). Do not upgrade or repin it as part of unrelated setup.
 8. Copy `assets/README.md`; fill `{{TITLE}}`, `{{DESCRIPTION}}` and `{{ASTA_PLUGINS_REF}}`. Use the ref in `.github/workflows/docs.yml` for the guide link. The upstream `latest` branch tracks the released guide; verify the link for a custom ref.
 9. Run `asta workspace sync --require-scripts`, then `make check`. Keep customized copies. Before removing old unmodified helpers, require a successful refresh and validate the project from an empty cache.
-10. To keep the paper in step with an Overleaf project, follow [`workflows/overleaf-sync.md`](workflows/overleaf-sync.md).
+10. Show the user the new site as **Show the user the rendered work** says (a local agent runs `make preview` in the background and gives its URL), so that they see their workspace as it starts rather than being told how to open it.
+11. To keep the paper in step with an Overleaf project, follow [`workflows/overleaf-sync.md`](workflows/overleaf-sync.md).
 
 ### Separate LaTeX paper (optional)
 

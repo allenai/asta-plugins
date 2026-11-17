@@ -70,7 +70,7 @@ target and `private: true`; stop on a mismatch or failed read.
 ## 5. Return to repo setup
 
 Don't push or report the requester as admin until the permission check returns
-`admin`. Then resume [Apply on one yes](repo-setup.md#2-apply-on-one-yes) inside
+`admin`. Then resume [Apply](repo-setup.md#2-apply) inside
 step 1, after its repo creation: if the repo has no branches (an existing empty
 repo), push the empty-tree root commit to `main`; then merge the established
 default branch into the local workspace, and continue at step 2. In step 7,

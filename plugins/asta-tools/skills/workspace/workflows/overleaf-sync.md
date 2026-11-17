@@ -2,57 +2,88 @@
 
 Setup-only steps for pairing a paper repository with an Overleaf project kept
 in step by [`asta workspace overleaf sync`](overleaf-sync-command.md). Setup
-checks the repo defaults the workspace already applied and asks the project
-owner one yes only for what the sync alone needs; each can be turned off later,
-with the consequence stated below.
+checks the managed settings the workspace already applied and asks the
+project owner only for what they must do in Overleaf; each setting can be
+turned off later, with the consequence stated below.
 
-## 1. Check repo defaults, then propose sync setup once
+## 1. Check the repo's settings, then send one message
 
-**Check the repo's defaults; don't ask for them.** A workspace repo set up as
+**Check the repo's settings; don't ask for them.** A workspace repo set up as
 [repo setup](repo-setup.md) describes already has them: a private repo, a
 private Pages site with PR previews, both rulesets (`default-branch.json`,
-`docs-checks.json`), and branches deleted after merge. Check them with
+`docs-checks.json`), branches deleted after merge, and squash merges allowed.
+Check them with
 `gh repo view --json visibility`, `gh api repos/{owner}/{repo}/pages --jq .public`,
 `gh api repos/{owner}/{repo}/rulesets` and
-`gh api repos/{owner}/{repo} --jq .delete_branch_on_merge`, and read
-`.asta/repo-setup.json` if present. Don't propose a declined default again.
-For a repo that never had that proposal, include any missing defaults, with
-their costs, once in the message below, apply them as repo setup does, and
-record the choices. If a check fails or GitHub reports something unexpected,
-stop and tell the owner what GitHub said.
+`gh api repos/{owner}/{repo} --jq '.delete_branch_on_merge, .allow_squash_merge'`,
+and read `.asta/repo-setup.json` if present. Don't turn a setting the owner
+turned off back on. For a repo set up without repo setup's managed settings,
+add one line before the message below ("I'll also turn on Asta's managed
+settings this repo lacks: …"), turn them on on the owner's reply, as repo setup
+does, and record the choices. If a check fails or GitHub reports something
+unexpected, say what GitHub said in one line before the message.
 
-**Ask only for what only the sync needs.** Tell the owner, in one plain message
-before applying anything or checking the sync account's access. Explain
-step 2's prerequisites and the sync merge settings in step 3 in this same
-message, including that declining unattended merging leaves PRs for the owner:
+**Send this message, and only this, as your reply.** Before applying anything
+or checking the sync account's access, send the message below, filled in, and
+stop. Don't say how the repo's settings checked out; the only lines before the
+message are the missing-settings line and a failed check's line above. It is
+the whole reply, also when the owner asked you
+to change nothing yet: no list of steps, plan, blockers, prerequisites, merge
+settings or other questions, since each comes later, only if it applies. If the
+request also asks to leave a setting out, add after the message what the
+paragraph below the message says for it.
 
-- With the rulesets on, a direct push to `main` is refused, theirs included.
-  Changes reach `main` through PRs whose paper builds. Otherwise say which is
-  missing; without the PR-only rule, pair with `--no-schedule` so that no
-  runner syncs it unattended.
-- Co-authors keep writing in Overleaf. With unattended merging accepted,
-  their edits arrive as a sync PR that merges itself once it builds.
-- Each Share setting below can be changed later (remove the invite/access or
-  re-enable link sharing), with the consequence listed.
+With a sync account:
 
-On the same yes, the agent applies step 3's sync merge settings and the owner
-does both in Overleaf's Share menu. These are owner actions; wait for their
-completion before step 2's access check:
+> In your Overleaf project's Share menu, invite `<sync account>` as Editor,
+> turn link sharing off and invite co-authors as Editors instead. Reply when
+> that's done.
 
-| Default | Without it |
+With none:
+
+> In your Overleaf project's Share menu, turn link sharing off and invite
+> co-authors as Editors instead. Reply when that's done.
+
+Where step 5's first import needs the owner's own Overleaf Git token, add one
+line: "The first import asks for your Overleaf Git token at Git's prompt; I
+never see it."
+
+The sync account is a hosted runner's Overleaf account, named by the owner's
+organization. For a repo in the `allenai` organization, Ai2's is named in the
+asta-dev plugin's README, section "Overleaf sync"; read it from the
+asta-plugins repo,
+`https://raw.githubusercontent.com/allenai/asta-plugins/main/plugins/asta-dev/README.md`,
+whether or not asta-dev is installed. With none named, or when that read
+fails, there is none: the paper syncs with the owner's own Overleaf Git token
+when they ask (step 5).
+
+Say more only when it applies or the owner asks: step 2's prerequisites (a
+premium plan for Git integration, a collaborator slot) when the access check
+fails; that a direct push to `main` is refused, theirs included, when they ask
+or one is refused (`GH013`); and, if the PR-only rule is missing, that you'll
+pair with `--no-schedule` so that no runner syncs it unattended.
+
+When the owner asks about a setting, or to leave one out, send only its
+"Without it" text, followed by "Turn it off anyway?" when they asked to leave
+it out: a managed setting's from [repo setup](repo-setup.md#1-managed-settings)
+(merging sync PRs themselves is turning squash merges off), and a Share
+setting's from this table:
+
+| Share setting | Without it |
 |---|---|
 | The sync account invited as Editor (Share → invite by email) | The sync can't push co-authors' edits back to Overleaf. |
 | Link sharing off, each co-author invited as Editor instead | Anyone holding an edit link can put text on `main` through the sync PR, which merges itself. |
 
-After the checks and accepted changes, confirm what is on, with a link to
-Settings → Rules, and what a refused push looks like
-(`GH013: Repository rule violations found`).
+On the owner's reply, first rerun any check that failed; if it fails again,
+stop and tell the owner what GitHub said, turning nothing on and pairing
+nothing. Then turn on any managed setting step 1 found missing, run step 2's
+access check, and pair (step 5).
 
 ## 2. Confirm access after the owner acts
 
-Explain these prerequisites with step 1's proposal, before the owner invites
-the sync account. Without them the sync fails loudly. After the owner accepts
-and completes the Share actions, verify access once before scheduling.
+Without these prerequisites the access check below fails, so explain them
+when it does, or when the owner asks, never in step 1's message. After the
+owner completes the Share actions, verify access once before scheduling.
 
 - **Git integration for the syncing Overleaf account.** Overleaf's
   [Git integration](https://docs.overleaf.com/integrations-and-add-ons/git-integration-and-github-synchronization/git-integration)
@@ -73,7 +104,7 @@ and completes the Share actions, verify access once before scheduling.
   `refs/asta/` refs that hold its sync record and lock, open PRs, and write
   issues for its notices.
 
-The project owner invites the sync account as Editor under step 1's one yes.
+The project owner invites the sync account as Editor, as step 1's message asks.
 Never share a personal Overleaf token.
 
 Check access once the sync account has accepted the invitation and made its
@@ -83,6 +114,12 @@ Overleaf URL. Run `git ls-remote "https://git.overleaf.com/<project-id>"`
 using the sync account's credential helper, or enter username `git` and the
 token at Git's password prompt in a terminal. Never put the token in the URL
 or shell command. The check must succeed before scheduling the sync.
+
+Run the check only where the sync account's credential is: on the runner, or
+on the owner's machine when the owner syncs with their own token. An agent
+without that credential, such as a researcher's own agent pairing with a
+hosted runner, skips it: the runner's first scheduled sync is the check, and
+it reports a failure as a notice in the repo.
 
 If the check fails, first check that the invitation was accepted and that the
 project ID and token are right. If a helper has cached an old credential, clear
@@ -94,19 +131,11 @@ if neither does, one of them needs such a plan. A success shows read access
 only: the sync also pushes, so confirm in the Share menu that the sync account
 is an Editor, not a Viewer or Reviewer.
 
-## 3. Apply the accepted sync merge settings
+## 3. How the sync merges its PRs
 
-Under step 1's same yes, enable squash merges (branch deletion after merge is
-a repo setup default, checked in step 1):
-
-```sh
-gh repo edit <owner>/<repo> --enable-squash-merge
-gh api repos/{owner}/{repo} --jq .allow_squash_merge
-```
-
-If GitHub refuses, stop and tell the owner what GitHub said. An owner who chooses to merge
-sync PRs themselves can decline this setting; the sync then posts its notice
-and waits for them.
+The sync squash-merges its own PRs, so it needs squash merges allowed, one of
+repo setup's managed settings, which step 1 checks. If the owner turned them
+off, the sync posts its notice and waits for them to merge each sync PR.
 
 Give the workspace its checks: the sync merges its PR only after at least one
 check passes. In a repository with no checks, each sync PR waits for a person
@@ -137,3 +166,7 @@ on its next run, with no request to the runner's operator. Where none does, run
 the sync yourself as [Overleaf sync](overleaf-sync-command.md#schedule-sync)
 describes. A scheduled GitHub workflow is an option only when its sync account
 is invited to that one project and `main` accepts changes only through PRs.
+
+Once the pairing PR merges, send only: "Your paper is paired with Overleaf:
+<PR link>." With no sync account, add "Ask me to sync it after co-authors edit
+it."

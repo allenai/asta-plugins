@@ -1,6 +1,6 @@
 # Workflow: recommended repo protections
 
-For a new workspace repo, [repo setup](repo-setup.md) proposes these with its other defaults instead. None of these is required for the workspace to work. The defaults ship as GitHub ruleset files in the skill's `assets/rulesets/` directory, released with each version. Apply them exactly as shipped.
+For a new workspace repo, [repo setup](repo-setup.md) applies these with its other managed settings instead. None of these is required for the workspace to work. The defaults ship as GitHub ruleset files in the skill's `assets/rulesets/` directory, released with each version. Apply them exactly as shipped.
 
 | Ruleset | Recommend when |
 |---|---|

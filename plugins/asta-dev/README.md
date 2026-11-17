@@ -12,10 +12,19 @@ This plugin contains information for developers of this repo, and for internal A
 Use the `@gas2own` alias in Slack to message a remote agent with the asta plugins that can make changes
 to your project in GitHub.
 
+### Start a workspace from Slack
+
+Ask gas2own in one thread, in a channel it's in: `@gas2own start an Asta workspace for my question: …`.
+It creates a private repo in `allenai`, makes you its admin, sets the workspace up and sends you its
+preview, so that no repo or channel has to be made first.
+
+### Give gas2own an existing repo
+
  1. In your Slack channel `/invite @gas2own`
  1. Bind the Slack channel to a GitHub repo: `/topic repo:<your-research-repo-url>`
  1. In your GitHub repo add the `@gas2own` user as a collaborator with maintain permissions
-    (Goto GitHub repo Web page -> Settings -> Collaborators and teams -> Add people -> gas2own -> check "Maintain")
+    (Goto GitHub repo Web page -> Settings -> Collaborators and teams -> Add people -> gas2own -> check "Maintain",
+    or "Admin" when it sets up an empty repo, since a workspace's private site and branch rules need Admin)
  1. Tag the agent in Slack: `@gas2own show me related literature as an asta workspace`
 
 ### Workspaces
