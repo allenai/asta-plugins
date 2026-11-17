@@ -449,9 +449,10 @@ jobs:
               source_args=(--before-source "$before_source" --after-source "$after_source")
             fi
           fi
-          if ! asta workspace what-changed --before-site "$baseline" --after-site _site \
+          # A pipeline, not 2> >(tee ...): bash waits for tee before the grep and EXIT trap.
+          if ! { asta workspace what-changed --before-site "$baseline" --after-site _site \
               "${source_args[@]}" \
-              --title "PR $PR_NUMBER · $baseline_label" 2> >(tee "$tmpdir/stderr" >&2); then
+              --title "PR $PR_NUMBER · $baseline_label" 2>&1 >&3 3>&- | tee "$tmpdir/stderr" >&2; } 3>&1; then
             echo "::warning::What changed page generation failed; preview still published"
           fi
           if grep -qi 'slides shown as text' "$tmpdir/stderr" 2>/dev/null; then
