@@ -1,0 +1,73 @@
+---
+title: "<What the person wants to be able to do, as a plain title>"
+---
+
+## Mission
+
+> <The person's mission, in their words: their message, lightly edited for typos and anonymised.>
+
+<The question we started from, in a sentence or two.>
+
+## <The lead result, named for what it is: "Risk map", "Ranked candidates">
+
+<!-- The one result the person can act on, first. Its figure as the tool made it, and a table if it ranks things. -->
+
+![<What it shows, and from what data.>](figures/<figure>.png){#fig-<id>}
+
+<The result in a sentence or two, with what to act on in bold.>
+
+**How to read it.**
+
+- **<Term>** is <what it measures, and how>.
+
+<Where it comes from, and how well it held up when tested.>
+
+**What it cannot tell you.** <Its limits, plainly.>
+
+## Questions
+
+1. **<Short label>:** <The question.>
+
+## Answers
+
+1. **<Short label>:** <The answer, in one sentence.>
+   - <A piece of evidence, naming what it rests on: Experiment N, a theory by its name, or a paper with its quote.>
+   - Our reading: <the interpretation, marked as ours.>
+
+## Experiments
+
+<What was run, on what data, and where every experiment is.>
+
+| Run | Experiments | What it covered |
+|---|---|---|
+| <Run> | <N> | <What it covered> |
+
+What moved beliefs:
+
+- **<Run>:** <how many moved from likely false to likely true, which held up, and which were artifacts.>
+
+## Theories
+
+<What Theorizer built, from how many papers, to explain what.>
+
+**On <theme>.** <Which of these rest on papers, and which on the experiments alone, as hypotheses to test.>
+
+- **<Theory name>.** <What it says, plainly, in a sentence or two.>
+
+## Findings
+
+### <A finding, as a plain statement>
+
+![<What it shows, and from what data.>](figures/<figure>.png){#fig-<id>}
+
+<What it shows, why it matters and which question it bears on. End with how far to trust it and why.>
+
+## Null results
+
+**<Topic>.** <What was tested and came back with nothing.>
+
+**Not testable here.** <What the data cannot answer, and what it would need.>
+
+## Next steps
+
+1. **<Step>.** <Why, in a sentence or two.>
