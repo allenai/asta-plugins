@@ -8,12 +8,12 @@ allowed-tools: Bash(asta auth *) Bash(asta generate-theories *) Bash(asta artifa
 
 Theorizer builds theories from papers. From the question it plans a search and an extraction schema. It extracts findings from each paper's full text, then generates theories whose laws cite those findings. It can then ask the papers which variables the schema missed, and run a pass for each new schema. It can also score how new each law is.
 
-Source: [allenai/asta-theorizer](https://github.com/allenai/asta-theorizer).
+Source: [allenai/asta-theorizer](https://github.com/allenai/asta-theorizer). Its guide, [AGENTS.md](https://github.com/allenai/asta-theorizer/blob/main/AGENTS.md), is how to use the library locally.
 
 ## Local or remote
 
 - **Remote.** On Asta's servers. [workflows/remote.md](workflows/remote.md)
-- **Local.** On this computer, with the library: with the person's model key, or with none, where you write the findings and theories yourself. [workflows/local.md](workflows/local.md), with [scripts/theorizer_local.py](scripts/theorizer_local.py).
+- **Local.** On this computer, with the library and its guide: with the person's model key, or with none, where you write the findings and theories yourself. [workflows/local.md](workflows/local.md), with [scripts/theorizer_local.py](scripts/theorizer_local.py).
 
 If the plan already says which, use that. Otherwise ask, and don't switch partway through a run.
 
@@ -31,13 +31,13 @@ Theorizer reads the papers and nothing else. Anything else the theories must ans
 ## Papers
 
 - **Full text only.** Theorizer extracts from whatever text a paper has, abstracts included, so keep abstract-only papers out (`--require-full-text`, workflows/local.md).
-- **Say what the theories rest on:** how many papers out of the target, how many were tried, and why the rest have no full text.
+- **Say what the theories rest on:** how many papers out of the target, how many were tried, and why the rest have no full text, where the fetch says.
 - **The person's own papers,** a folder, files or a glob, can be the whole corpus or add to a search.
 
 ## Checks
 
-- **The plan:** check that it has a search query and a schema before going on. A failed model call can leave an empty plan behind.
-- **The extraction, before you generate:** which papers failed and why, and which had nothing to extract. A paper with nothing in it is a result, not a failure. Don't generate from a fraction of the papers without saying so.
+- **The plan,** when Theorizer made it: check that it has a search query and a schema before going on. A failed model call can leave an empty plan behind.
+- **The extraction, before you generate:** which papers failed and why, and which had nothing to extract. A paper with nothing in it is a result, not a failure. Fewer than about 3 findings a paper is thin; say so. Don't generate from a fraction of the papers without saying so.
 - **Check in after the first theories.** Discovering variables and running the schema passes cost several times the first pass.
 
 ## Reading the theories
