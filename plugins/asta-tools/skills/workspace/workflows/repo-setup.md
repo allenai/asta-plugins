@@ -53,18 +53,23 @@ something unexpected, stop and tell the requester what GitHub said.
    recreate it or adopt an unrelated nonempty repo. Before continuing, read
    `gh api repos/<owner>/<name> -q '{full_name, private}'` and verify the exact
    target and `private: true`; stop on a mismatch or failed read.
-2. Before anything is pushed, if the repo is organization-owned and the acting
-   account differs from the verified requester, add the requester as admin:
+2. Before anything is pushed, check the verified requester's effective permission:
+   `gh api repos/<owner>/<name>/collaborators/<login>/permission -q '{permission, role_name}'`,
+   where `<login>` is the requester's verified GitHub login. If
+   `.permission == "admin"`, continue without changing access, including when
+   admin access comes through a team or organization role. A failed read stops
+   setup for diagnosis; don't treat it as evidence that an admin grant is needed.
+   Only if the check succeeds with a non-admin permission, the repo is
+   organization-owned and the acting account differs from the requester, add
+   the requester as admin:
    `gh api --include -X PUT repos/<owner>/<name>/collaborators/<login> -f permission=admin`,
-   where `<login>` is the requester's verified GitHub login. Inspect the HTTP
-   status: `201` creates an invitation; tell the requester to accept it and
-   stop. After acceptance, resume at the permission check below, without
-   recreating the repo or sending another invitation. A `204` proceeds to the
-   same check; any other status stops setup for diagnosis.
+   and inspect the HTTP status: `201` creates an invitation; tell the requester
+   to accept it and stop. After acceptance, resume at this step's permission
+   check without recreating the repo or sending another invitation. A `204`
+   proceeds to rechecking permission; any other status stops setup for diagnosis.
    For a personal repo, the requester must be its owner; don't attempt this
    collaborator grant, which supports `admin` only on organization-owned repos.
-   In every case, check the requester's effective permission:
-   `gh api repos/<owner>/<name>/collaborators/<login>/permission -q '{permission, role_name}'`.
+   After any grant, rerun the same permission check.
    Require `.permission == "admin"`; the [permission API](https://docs.github.com/en/rest/collaborators/collaborators#get-repository-permissions-for-a-user)
    defines this as base access, while `role_name` also describes custom roles.
    A failed read or any other permission stops setup; a pending invitation
