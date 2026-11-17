@@ -31,7 +31,7 @@ Settle which before anything else, once per project.
 
 Ask which one they want, as part of the first conversation: "Would you like to run this locally or remotely? Remote is free, but your data leaves this computer. Locally, I use your API key, or with none I do the work here in this session." Don't look for keys or logins to decide for them. The person tells you how to reach their credentials: locally, ask where their key is (a key file, a variable in their shell, a password manager) and use only that; remotely, they log in with `asta auth login`. In an Asta sandbox, don't ask: run locally with what's installed there.
 
-Write the answer to `.asta/mode.json` (`{"mode": "local" | "remote"}`), and don't switch without asking. Each tool's skill has `workflows/local.md` and `workflows/remote.md`: `generate-theories` for Theorizer and `autodiscovery` for AutoDS. Set up what the mode needs before you propose a workflow, and say what's missing if something won't install.
+Say which in the plan, including whether locally you use their key or none, and don't switch without asking. Each tool's skill has `workflows/local.md` and `workflows/remote.md`: `generate-theories` for Theorizer and `autodiscovery` for AutoDS. Set up what the mode needs before you propose a workflow, and say what's missing if something won't install.
 
 ## Plan and run
 

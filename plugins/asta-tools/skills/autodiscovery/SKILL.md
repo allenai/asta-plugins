@@ -13,7 +13,7 @@ AutoDiscovery (AutoDS) explores a dataset on its own. Each experiment is a hypot
 - **Remote.** On Asta's servers, in Asta credits. [workflows/remote.md](workflows/remote.md)
 - **Local.** On this computer: the `auto-discovery` CLI with your own API key, or the library in a coding agent, where the agent runs the experiments itself. [workflows/local.md](workflows/local.md)
 
-If the project has settled this already (`.asta/mode.json`), use that. Otherwise ask, and don't switch partway through a run.
+If the plan already says which, use that. Otherwise ask, and don't switch partway through a run.
 
 ## Describing the data
 

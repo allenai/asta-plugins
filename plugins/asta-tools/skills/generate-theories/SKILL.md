@@ -15,7 +15,7 @@ Source: [allenai/asta-theorizer](https://github.com/allenai/asta-theorizer).
 - **Remote.** On Asta's servers. [workflows/remote.md](workflows/remote.md)
 - **Local.** On this computer, with the library: with the person's model key, or with none, where you write the findings and theories yourself. [workflows/local.md](workflows/local.md), with [scripts/theorizer_local.py](scripts/theorizer_local.py).
 
-If the project has settled this already (`.asta/mode.json`), use that. Otherwise ask, and don't switch partway through a run.
+If the plan already says which, use that. Otherwise ask, and don't switch partway through a run.
 
 ## The question
 
