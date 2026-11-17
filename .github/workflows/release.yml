@@ -1,8 +1,4 @@
 name: Release
-# A merged version bump is the release: once main's release checks and Docker
-# images pass, tag main's version. GITHUB_TOKEN tag pushes start no workflows,
-# so the tag's Docker jobs are dispatched explicitly (workflow_dispatch is the
-# documented exception).
 on:
   push:
     branches: [main]
@@ -11,34 +7,30 @@ permissions:
   contents: read
 concurrency:
   group: release
-  cancel-in-progress: false
+  queue: max
 jobs:
   version:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
-      version: ${{ steps.version.outputs.version }}
-      release: ${{ steps.version.outputs.release }}
+      tag: ${{ steps.version.outputs.tag }}
+      create_tag: ${{ steps.version.outputs.create_tag }}
+      tag_sha: ${{ steps.version.outputs.tag_sha }}
     steps:
       - uses: actions/checkout@v4
-      - name: Find an untagged version on main
+      - name: Check the version and find release work
         id: version
         run: |
           set -euo pipefail
           python3 scripts/manage-version.py check
-          version=$(python3 scripts/manage-version.py show)
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          rc=0
-          git ls-remote --exit-code --tags origin "refs/tags/v$version" >/dev/null || rc=$?
-          case "$rc" in
-            0) echo "v$version is already tagged"; echo release=false >> "$GITHUB_OUTPUT" ;;
-            2) echo "v$version is untagged; releasing $GITHUB_SHA"; echo release=true >> "$GITHUB_OUTPUT" ;;
-            *) echo "Could not list tags (git exit $rc)" >&2; exit 1 ;;
-          esac
+          tag="v$(python3 scripts/manage-version.py show)"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          scripts/release-tag.sh plan "$tag"
 
   checks:
     needs: version
-    if: needs.version.outputs.release == 'true'
+    if: needs.version.outputs.create_tag == 'true'
     permissions:
       contents: write
       pull-requests: write
@@ -48,11 +40,12 @@ jobs:
 
   image:
     needs: version
-    if: needs.version.outputs.release == 'true'
+    if: needs.version.outputs.create_tag == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 100
     permissions:
       actions: read
+      checks: read
       contents: read
     steps:
       - uses: actions/checkout@v4
@@ -66,35 +59,44 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
-      actions: write
       contents: write
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Push the version tag
+      - name: Push the checked commit's version tag
         env:
-          VERSION: ${{ needs.version.outputs.version }}
-        run: |
-          set -euo pipefail
-          git fetch -q origin main
-          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
-          if git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null; then
-            echo "v$VERSION was tagged meanwhile; leaving it"
-            exit 0
-          fi
-          git tag "v$VERSION" "$GITHUB_SHA"
-          git push origin "refs/tags/v$VERSION"
-          echo "Pushed tag v$VERSION at $GITHUB_SHA"
-      - name: Run the tag's Docker release jobs
+          TAG: ${{ needs.version.outputs.tag }}
+        run: scripts/release-tag.sh push "$TAG" "$GITHUB_SHA"
+
+  promote:
+    needs: [version, tag]
+    if: >-
+      !cancelled() && needs.version.result == 'success' &&
+      (needs.tag.result == 'success' || needs.version.outputs.tag_sha != '')
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    permissions:
+      actions: write
+      checks: read
+      contents: read
+    outputs:
+      tag_verified: ${{ steps.docker.outputs.tag_verified }}
+      run_url: ${{ steps.docker.outputs.run_url }}
+    steps:
+      - uses: actions/checkout@v4
+      # A GITHUB_TOKEN tag push starts no workflow. Dispatch is exempt.
+      - name: Complete the tag's Docker release
+        id: docker
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ needs.version.outputs.version }}
-        run: gh workflow run docker.yml --repo "$GITHUB_REPOSITORY" --ref "v$VERSION"
+          TAG: ${{ needs.version.outputs.tag }}
+          TAG_SHA: ${{ needs.version.outputs.tag_sha || github.sha }}
+        run: scripts/release-tag.sh promote "$TAG" "$TAG_SHA"
 
   report-failure:
-    needs: [version, checks, image, tag]
-    if: failure() && needs.version.outputs.release == 'true'
+    needs: [version, checks, image, tag, promote]
+    if: failure()
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -104,11 +106,33 @@ jobs:
       - name: Comment on the merged PR
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ needs.version.outputs.version }}
+          TAG: ${{ needs.version.outputs.tag }}
+          RELEASE_SHA: ${{ needs.version.outputs.tag_sha || github.sha }}
+          CHECKS: ${{ needs.checks.result }}
+          IMAGE: ${{ needs.image.result }}
+          PROMOTION: ${{ needs.promote.result }}
+          TAG_VERIFIED: ${{ needs.promote.outputs.tag_verified }}
+          DOCKER_RUN: ${{ needs.promote.outputs.run_url }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
-          pr=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls" --jq '[.[] | select(.merged_at != null)][0].number // empty')
-          msg="Release v$VERSION was not tagged: its release checks or main's Docker images failed at $GITHUB_SHA. See $RUN_URL. Fix main (or re-run the failed jobs); the next push to main retries the release."
+          if [ "$PROMOTION" = failure ]; then
+            if [ -n "$DOCKER_RUN" ]; then
+              msg="Tag $TAG was verified at $RELEASE_SHA. The Docker release did not complete successfully: $DOCKER_RUN."
+            elif [ "$TAG_VERIFIED" = true ]; then
+              msg="Tag $TAG was verified at $RELEASE_SHA, but no Docker release run could be confirmed."
+            else
+              msg="Release could not verify tag $TAG at $RELEASE_SHA for Docker promotion."
+            fi
+            msg="$msg Re-run the failed Release jobs to retry promotion."
+          elif [ "$CHECKS" = failure ] || [ "$IMAGE" = failure ]; then
+            msg="Release $TAG pushed no tag. Workspace release checks: $CHECKS. Main Docker images: $IMAGE. Resolve the failed checks and re-run the failed Release jobs."
+          elif [ -n "$TAG" ]; then
+            msg="Release $TAG could not publish or verify the tag for $RELEASE_SHA. Resolve the tag error and re-run the failed Release jobs."
+          else
+            msg="Release could not determine the version to tag. Fix the version check on main."
+          fi
+          msg="$msg Release run: $RUN_URL."
           echo "::error::$msg"
+          pr=$(gh api "repos/$GITHUB_REPOSITORY/commits/$RELEASE_SHA/pulls" --jq '[.[] | select(.merged_at != null and .base.ref == "main")][0].number // empty')
           if [ -n "$pr" ]; then gh pr comment "$pr" --repo "$GITHUB_REPOSITORY" --body "$msg"; fi

@@ -150,11 +150,13 @@ The version lives in three places:
    on both architectures, and waits for the `Docker` workflow run on that commit
    to succeed (`scripts/wait-for-main-image.sh`). When both pass it pushes the
    tag with its own `GITHUB_TOKEN` and dispatches `docker.yml` at the tag, since
-   a `GITHUB_TOKEN` tag push starts no workflows. If either fails, nothing is
-   tagged and the run comments the failure on the merged PR; the next push to
-   `main` (or re-running the failed jobs) retries. Until the tag exists, the
-   plugin's `SessionStart` hook keeps the installed CLI (or installs the
-   `latest` release) instead of failing. Every PR runs
+   a `GITHUB_TOKEN` tag push starts no workflows. If either pre-tag check fails,
+   Release pushes no tag and comments on the merged PR. After tagging, Release
+   waits for Docker promotion and reports dispatch or Docker failures on the
+   PR. Re-run the failed Release jobs to retry. A later push to `main` also
+   retries the same version, using the recorded tag commit if it was tagged.
+   Until the tag exists, the plugin's `SessionStart` hook keeps the installed
+   CLI or installs the `latest` release. Every PR runs
    `manage-version.py check`, so a partial bump fails before it merges.
    Every `main` push publishes run-specific candidates
    (`ghcr.io/allenai/asta:sha-<commit>-run-<id>-attempt-<n>` and `…-tex`) and
@@ -249,10 +251,9 @@ run them. A maintainer should require `workspace-ok` in the repository's merge
 rules, rather than individual matrix names. Workflow changes do not configure
 those repository settings.
 
-Before a release, dispatch `workspace-release-checks.yml` at the release commit
-and wait for it to succeed. It reuses the existing plugin and dev-container checks, and runs workspace
-tests, comparisons, DOM/browser checks and site builds on x86 and arm without
-publishing. Ordinary plugin-check commands and triggers stay unchanged. `make push-version-tag` requires a successful
-run for the exact commit. Arm validation otherwise runs only on manual dispatch.
-Pushes to main publish the example and its patch-derived demo; workspace check
-jobs are PR/release/manual jobs.
+The Release workflow runs `workspace-release-checks.yml` for an untagged
+version on `main`. It reuses the plugin and dev-container checks and runs
+workspace tests, comparisons, browser checks and site builds on x86 and arm
+without publishing. For a manual release, dispatch it at the exact commit and
+wait for it to pass before running `make push-version-tag`. Regular pushes to
+`main` publish the example and its patch-derived demo.

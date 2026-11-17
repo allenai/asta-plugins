@@ -7,6 +7,11 @@ on:
   # release.yml dispatches this on a tag it pushed with GITHUB_TOKEN, which
   # starts no push run; at a tag ref only the release jobs run.
   workflow_dispatch:
+    inputs:
+      expected-sha:
+        description: Commit validated by the Release workflow
+        type: string
+        default: ''
 
 jobs:
   publish:
@@ -101,8 +106,13 @@ jobs:
         id: candidate
         env:
           GH_TOKEN: ${{ github.token }}
+          EXPECTED_SHA: ${{ inputs.expected-sha }}
         run: |
           set -euo pipefail
+          if [ -n "$EXPECTED_SHA" ] && [ "$GITHUB_SHA" != "$EXPECTED_SHA" ]; then
+            echo "::error::Tag points to $GITHUB_SHA; expected $EXPECTED_SHA"
+            exit 1
+          fi
           if ! [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]]; then
             echo 'Expected a final or rc version tag' >&2
             exit 1
