@@ -5,8 +5,8 @@ import vm from "node:vm";
 
 import { Event, parseHTML } from "linkedom";
 
-const dir = new URL("../../plugins/asta-tools/skills/workspace/assets/_extensions/asta-pages/", import.meta.url);
-const CORE = fs.readFileSync(new URL("asta-pages.js", dir), "utf8");
+const dir = new URL("../../plugins/asta-tools/skills/workspace/assets/_extensions/asta-templates/", import.meta.url);
+const CORE = fs.readFileSync(new URL("asta-templates.js", dir), "utf8");
 const TESTS = fs.readFileSync(new URL("tests.js", dir), "utf8");
 
 // Cards as autolink.lua writes them: the page's store, keyed; a link names its card.
@@ -63,8 +63,8 @@ function page(body, { url = "http://site.test/index.html", framed = false } = {}
   vm.runInNewContext(TESTS, { window, document, location: { hash: "" } });
   vm.runInNewContext(CORE, { window, document, location: { href: url, hash: "" }, history: {}, URL, console, setTimeout, clearTimeout });
   const fire = (el, type, props = {}) => { const ev = new Event(type, { bubbles: true }); Object.assign(ev, props); el.dispatchEvent(ev); return ev; };
-  const open = sel => { fire(document.querySelector(sel), "focusin"); return window.AstaPages.cards.current(); };
-  return { document, window, cards: window.AstaPages.cards, fire, open };
+  const open = sel => { fire(document.querySelector(sel), "focusin"); return window.AstaTemplates.cards.current(); };
+  return { document, window, cards: window.AstaTemplates.cards, fire, open };
 }
 const wait = ms => new Promise(r => setTimeout(r, ms));
 const roles = card => [...card.querySelectorAll(".ap-al-role")].map(x => x.textContent);
@@ -122,7 +122,7 @@ test("a link with a card gives up its native title and Quarto's preview; the evi
   await wait(5);
   assert.equal(a.getAttribute("title"), null);
   assert.equal(destroyed, true);
-  assert.ok(p.document.documentElement.classList.contains("asta-cards"), "asta-pages.css hides .ev-pop under html.asta-cards");
+  assert.ok(p.document.documentElement.classList.contains("asta-cards"), "asta-templates.css hides .ev-pop under html.asta-cards");
 });
 
 test("Esc and a click elsewhere close the card", () => {
@@ -165,12 +165,3 @@ test("a tap opens the card instead of following the link; a second tap follows i
   assert.equal(p.fire(a, "click").defaultPrevented, false);
 });
 
-test("a page appended to a flow's feed: its own store, its links from that page", () => {
-  const other = { "m:G1": { text: "G1", sections: [{ role: "Gap G1", title: "other", href: "pages/x.html#query-2" }] } };
-  const p = page(`<p>${link("m:G1", "G1")}</p>${storeTag(STORE)}` +
-    `<section class="asta-flow-page" data-asta-url="http://site.test/other/review.html"><p>${link("m:G1", "G1")}</p>${storeTag(other)}</section>`);
-  p.fire(p.document.querySelectorAll("a[data-asta-card]")[1], "focusin");
-  const go = p.cards.current().querySelector("a.ap-al-go");
-  assert.equal(go.textContent, "other →");
-  assert.equal(go.getAttribute("href"), "http://site.test/other/pages/x.html#query-2");
-});

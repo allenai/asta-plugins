@@ -1,0 +1,13 @@
+# Enable users to embed Asta's widgets for theories, literature, and discovery in html.
+title: Asta Templates
+author: Asta
+version: 0.1.0
+quarto-required: ">=1.4.0"
+contributes:
+  shortcodes:
+    - asta-templates.lua
+  filters:
+    - path: provenance.lua
+      at: pre-ast
+    - path: autolink.lua
+      at: pre-render

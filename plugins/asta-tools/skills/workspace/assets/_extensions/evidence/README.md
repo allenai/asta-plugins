@@ -238,13 +238,13 @@ generated diff every popover — quote, citation, and “Source details” — s
 descendant of the hidden `.ev-pop`, nothing leaks into the cell, and the folder
 never collapses popover content.
 
-## With asta-pages
+## With asta-templates
 
-When the project also lists the `asta-pages` filter after this one, asta-pages shows each claim's
+When the project also lists the `asta-templates` filter after this one, asta-templates shows each claim's
 quote in its own link card (with the source's title, authors, year, venue and links), and keeps
 this popover shut on the claims it covers (`html.asta-cards .ev[data-asta-card] > .ev-pop`).
-Evidence still owns the claims, the store and the markup: asta-pages only reads the
-`.ev-pop` it writes. Without asta-pages, or where scripts do not run (the what-changed diff),
+Evidence still owns the claims, the store and the markup: asta-templates only reads the
+`.ev-pop` it writes. Without asta-templates, or where scripts do not run (the what-changed diff),
 the popover here is what shows.
 
 ## Wiring

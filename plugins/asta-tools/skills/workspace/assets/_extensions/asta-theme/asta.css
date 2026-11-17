@@ -53,7 +53,7 @@ main section.level3 > h3 { scroll-margin-top: calc(var(--asta-heading-top) + 3.5
    the same colour, 2px below, so they are obvious on cream: body links, citations,
    cross-references, the bibliography and the hover popups (a citation's or cross-reference's,
    with its DOI). Navigation (the sidebar, the table of contents, buttons, heading anchors) and
-   the asta-pages panels, which style their own links, are left as they are. Figure and table
+   the asta-templates panels, which style their own links, are left as they are. Figure and table
    captions are body text, not a lighter teal or blue. Dark is left as it is. */
 body.quarto-light #quarto-document-content a:not(.btn, .nav-link, .anchorjs-link, .asta-panel a),
 body.quarto-light .tippy-box a {
@@ -69,7 +69,7 @@ body.quarto-light #quarto-document-content :is(figcaption, caption, .quarto-floa
    soft fill (--color-pink-20 in light, the pink at low alpha in dark), clear of the sticky
    heading and wide enough for a hanging indent. A page that cannot move its own fragment (one
    bundled into a single file) marks the entry with the class asta-target instead. The paper
-   list marks the paper a theory's evidence lands on the same way (asta-pages). */
+   list marks the paper a theory's evidence lands on the same way (asta-templates). */
 body {
   --asta-accent-soft: #f8d2da;
   --asta-halo-fill: rgba(248, 210, 218, 0.45);

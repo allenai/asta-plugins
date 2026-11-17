@@ -1,10 +1,14 @@
 project:
   type: website
   output-dir: _site
-  # The front page, and the workflow pages: pages/<NNNN>-<workflow>.qmd, one per run.
+  # The pages to render: the front page and any other page beside it, and the workflow
+  # pages, pages/<NNNN>-<workflow>.qmd, one per run. List any page elsewhere here too.
   render:
-    - index.qmd
+    - "*.qmd"
     - "pages/*.qmd"
+  # Quarto's sidebar fails with a TypeError on an empty pages/ folder, so an empty one is
+  # removed before each render. It comes back with the first page.
+  pre-render: "find . -maxdepth 1 -type d -name pages -empty -delete"
   preview:
     port: 4848
 
@@ -22,7 +26,7 @@ metadata-files:
 filters:
   - _extensions/evidence/snippet.lua
   # Links mentions of theories, tests, gaps, experiments and figures, with a card for each.
-  - asta-pages
+  - asta-templates
 
 website:
   title: "{{TITLE}}"
@@ -32,8 +36,7 @@ website:
         href: "{{REPO_URL}}"
         text: "GitHub repo"
         target: _blank
-    # The front page, then the workflow pages, flat, by file name: run order. The workflow
-    # pages' feed follows this order.
+    # The front page, then the workflow pages, flat, by file name: run order.
     contents:
       - text: "Home"
         href: index.qmd
@@ -44,8 +47,8 @@ format:
     theme:
       dark: [cosmo, _extensions/asta-theme/dark.scss]
       light: [cosmo, _extensions/asta-theme/light.scss]
-    # Asta's look: dark by default (Quarto starts with the theme listed first),
-    # with a switch to light that the reader's browser remembers.
+    # Asta's look: dark by default, with a switch to light that the reader's
+    # browser remembers.
     # Set your own theme here to replace it.
     respect-user-color-scheme: false
     css: _extensions/asta-theme/asta.css

@@ -1,7 +1,7 @@
 """theorizer-site-data takes a paper's authors, venue and DOI from the store entry's own record.
 
 asta-papers writes the bibliographic record of the source a paper's text came from onto each
-store entry (`authors`, `venue`, `doi`), and `theorize papers import` keeps the entry whole.
+store entry (`authors`, `venue`, `doi`), and the project keeps the entry whole.
 Semantic Scholar's record (`s2_metadata`) is the fallback for an entry without one.
 """
 
@@ -12,7 +12,7 @@ from pathlib import Path
 
 SCRIPT = (
     Path(__file__).resolve().parent.parent
-    / "plugins/asta-flows/skills/run-workflow/workflows/theory-generation/scripts/theorizer-site-data"
+    / "plugins/asta-tools/skills/generate-theories/scripts/theorizer-site-data"
 )
 
 
@@ -169,7 +169,7 @@ def test_a_collections_metadata_replaces_the_stores_for_its_documents(tmp_path):
 
 
 def _task(name: str, parts: list[dict]) -> dict:
-    """A hosted task's final JSON, its theory store sent as merge patches."""
+    """A remote task's final JSON, its theory store sent as merge patches."""
     return {
         "id": name,
         "artifacts": [
@@ -184,7 +184,7 @@ def _task(name: str, parts: list[dict]) -> dict:
     }
 
 
-def test_a_hosted_runs_task_results_are_read_as_a_store(tmp_path):
+def test_a_remote_runs_task_results_are_read_as_a_store(tmp_path):
     project = tmp_path / "theory"
     project.mkdir()
     schema = [{"name": "effect", "type": "str", "description": "The effect found"}]
@@ -275,3 +275,57 @@ def test_only_versions_of_one_work_are_merged(tmp_path):
     assert len(papers) == 2
     merged = next(p for p in papers if p["duplicates"])
     assert {merged["key"], merged["duplicates"][0]["key"]} == {"pre", "pub"}
+
+
+def test_searches_keep_their_query_count_zero_hits_and_list_every_paper(tmp_path):
+    project = _project(tmp_path)
+    searches = tmp_path / "searches"
+    searches.mkdir()
+    hit = {"externalIds": {"CorpusId": 1}, "title": "With its own record"}
+    (searches / "s1.json").write_text(json.dumps({"total": 1, "data": [hit], "query": "first query"}))
+    (searches / "s2.json").write_text(json.dumps({"total": 0, "offset": 0, "query": "nothing"}))
+    (searches / "s3.json").write_text(json.dumps({"total": 1, "data": [hit], "query": "third query"}))
+    data = _module().build(project)
+    assert [(s["name"], s["query"], s["candidates"]) for s in data["searches"]] == [
+        ("s1", "first query", 1), ("s2", "nothing", 0), ("s3", "third query", 1)]
+    own = next(p for p in data["papers"] if p["key"] == "own")
+    assert (own["search"], own["searches"]) == ("s1", ["s1", "s3"])
+
+
+def test_evidence_citing_two_papers_names_both(tmp_path):
+    project = _project(tmp_path)
+    store = {
+        "extraction_results": {
+            "r1": {"paper_id": "own", "extraction_schema_id": "schema-1", "extracted_data": [{"uuid": "e1.1", "name_short": "a"}]},
+            "r2": {"paper_id": "s2only", "extraction_schema_id": "schema-1", "extracted_data": [{"uuid": "e2.1", "name_short": "b"}]},
+        },
+        "theories": {"theory-1": {"id": "theory-1", "supporting_evidence_ids": ["r1", "r2"], "components": {
+            "theory_name": "T", "theory_statements": [{"law": {"statement_name": "L", "supporting_evidence": [
+                {"text": "both", "uuids": ["e1.1", "e2.1"]}]}}]}}},
+    }
+    (project / "theorystore.json").write_text(json.dumps(store))
+    (t,) = _module().build(project)["theories"]
+    ev = t["statements"][0]["evidence"][0]
+    assert (ev["paper"], ev["papers"]) == ("own", ["own", "s2only"])
+    assert (t["supporting_papers"], t["papers"]) == (2, ["own", "s2only"])
+
+
+def test_a_gaps_file_keeps_the_theories_that_name_it(tmp_path):
+    project = _project(tmp_path)
+    theories = {f"theory-{i}": {"id": f"theory-{i}", "theory_query": q, "components": {"theory_name": n}}
+                for i, (n, q) in enumerate([("G1: Gating", "q"), ("Drift", "G1: q"), ("G10: Other", "q"), ("None", "q")])}
+    (project / "theorystore.json").write_text(json.dumps({"theories": theories}))
+    out = tmp_path / "data" / "theorizer-G1.json"
+    assert _module().main([str(project), str(out), "--gap", "G1"]) == 0
+    data = json.loads(out.read_text())
+    assert [(t["name"], t["gap"]) for t in data["theories"]] == [("G1: Gating", "G1"), ("Drift", "G1")]
+    assert _module().main([str(project), str(out), "--gap", "G2"]) == 4
+
+
+def test_set_aside_theories_are_left_out(tmp_path):
+    project = _project(tmp_path)
+    theories = {f"theory-{i}": {"id": f"theory-{i}", "components": {"theory_name": f"G1: T{i}"}} for i in (1, 2, 3)}
+    (project / "theorystore.json").write_text(json.dumps({"theories": theories}))
+    out = tmp_path / "data" / "theorizer-G1.json"
+    assert _module().main([str(project), str(out), "--gap", "G1", "--exclude", "theory-2,theory-3"]) == 0
+    assert [t["id"] for t in json.loads(out.read_text())["theories"]] == ["theory-1"]

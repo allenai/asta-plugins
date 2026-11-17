@@ -6,7 +6,7 @@ import vm from "node:vm";
 import { parseHTML } from "linkedom";
 
 const code = fs.readFileSync(
-  new URL("../../plugins/asta-tools/skills/workspace/assets/_extensions/asta-pages/theories.js", import.meta.url),
+  new URL("../../plugins/asta-tools/skills/workspace/assets/_extensions/asta-templates/theories.js", import.meta.url),
   "utf8",
 );
 
@@ -160,6 +160,18 @@ test("paper titles link to their entry on the papers page; a copy shown once lin
   // No papers page named: the run's literature page.
   assert.deepEqual(titles(runPage([["a.json", data]]))[0], ["a", "literature.html#paper-123", null, "Store paper"]);
   assert.ok(!/semanticscholar/.test(runPage([["a.json", data]]).panel.innerHTML), "never links outwards");
+});
+
+test("evidence that cites two papers links both", () => {
+  const data = {
+    papers: [{ key: "s2-1", corpusId: "123", title: "First" }, { key: "s2-2", corpusId: "456", title: "Second" }],
+    theories: [{
+      ...theory("theory-1", "One", QUERY_A),
+      statements: [{ name: "S", statement: "x", evidence: [{ text: "both", paper: "s2-1", papers: ["s2-1", "s2-2"] }] }],
+    }],
+  };
+  const { panel } = runPage([["a.json", data]]);
+  assert.deepEqual([...panel.querySelectorAll(".ap-ev-item .ap-ev-paper")].map(el => el.textContent), ["First", "Second"]);
 });
 
 test("a hash naming a query opens its tab on load", () => {

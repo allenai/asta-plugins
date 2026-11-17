@@ -414,7 +414,7 @@ def test_workspace_fetches_run_pages_only_when_a_page_uses_them(
     tmp_path, rules, page, needs_pages
 ):
     source = tmp_path / "release/plugins/asta-tools/skills/workspace/assets/_extensions"
-    for name in ["evidence", "asta-pages"]:
+    for name in ["evidence", "asta-templates"]:
         shutil.copytree(ASSETS / "_extensions" / name, source / name)
     archive = tmp_path / "release.tar.gz"
     with tarfile.open(archive, "w:gz") as bundle:
@@ -433,5 +433,5 @@ def test_workspace_fetches_run_pages_only_when_a_page_uses_them(
     )
 
     assert (project / "_extensions/evidence").is_dir()
-    pages = project / "_extensions/asta-pages/_extension.yml"
+    pages = project / "_extensions/asta-templates/_extension.yml"
     assert pages.is_file() == needs_pages

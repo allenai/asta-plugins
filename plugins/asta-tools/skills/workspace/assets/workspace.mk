@@ -35,8 +35,8 @@ workspace-assets:
 		required_exts="$$required_exts asta-slides"; \
 	fi; \
 	if find . -type d \( -path ./build -o -path ./_site -o -path ./venv -o -path ./paper-previews -o -name _extensions -o -name node_modules -o \( ! -path . -name '.*' \) -o \( ! -path . -exec test -e '{}/.git' \; \) \) -prune -o -type f -name '*.qmd' -exec grep -Eq '\{\{< *asta-(theories|literature|autods|workflow) ' {} \; -print -quit | grep -q . \
-		|| cat _quarto*.yml 2>/dev/null | sed '/^[[:space:]]*#/d' | grep -Eq '^[[:space:]]*-[[:space:]]*(asta-pages[[:space:]]*$$|path:[[:space:]]*_extensions/asta-pages/)'; then \
-		required_exts="$$required_exts asta-pages"; \
+		|| cat _quarto*.yml 2>/dev/null | sed '/^[[:space:]]*#/d' | grep -Eq '^[[:space:]]*-[[:space:]]*(asta-templates[[:space:]]*$$|path:[[:space:]]*_extensions/asta-templates/)'; then \
+		required_exts="$$required_exts asta-templates"; \
 	fi; \
 	if cat _quarto*.yml 2>/dev/null | sed '/^[[:space:]]*#/d' | grep -Eq '_extensions/asta-theme/(light\.scss|dark\.scss|asta\.css|asta-head\.html)'; then \
 		required_exts="$$required_exts asta-theme"; \

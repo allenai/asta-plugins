@@ -1,22 +1,25 @@
 ---
 name: generate-theories
-description: Builds literature-grounded scientific theories with Theorizer -- hosted by Asta, with the `theorize` CLI and your own key, or in the coding agent with the library. Use when someone asks to generate theories or hypotheses, to "theorize about" a question, what theories explain something, or to run the Theorizer.
-allowed-tools: Bash(theorize *) Bash(asta auth *) Bash(asta generate-theories *) Bash(asta artifacts *) Bash(asta documents *) Bash(s2 *) Bash(asta-papers *) Bash(jq *) Bash(uv tool *) Bash(uv venv *) Bash(uv pip *) Bash(python *) Bash(.venv/bin/*) Bash(command -v *) Bash(mkdir *) Bash(open *)
+description: Builds literature-grounded scientific theories with Theorizer -- remote on Asta, or local with the library. Use when someone asks to generate theories or hypotheses, to "theorize about" a question, what theories explain something, or to run the Theorizer.
+allowed-tools: Bash(asta auth *) Bash(asta generate-theories *) Bash(asta artifacts *) Bash(asta documents *) Bash(s2 *) Bash(asta-papers *) Bash(jq *) Bash(uv tool *) Bash(uv venv *) Bash(uv pip *) Bash(python *) Bash(python3 *) Bash(.venv/bin/*) Bash(quarto *) Bash(make *) Bash(command -v *) Bash(mkdir *) Bash(open *)
 ---
 
 # Generate theories
 
 Theorizer builds theories from papers. From the question it plans a search and an extraction schema. It extracts findings from each paper's full text, then generates theories whose laws cite those findings. It can then ask the papers which variables the schema missed, and run a pass for each new schema. It can also score how new each law is.
 
-Source: [allenai/asta-theorizer](https://github.com/allenai/asta-theorizer).
+Source: [allenai/asta-theorizer](https://github.com/allenai/asta-theorizer). Its guide, [AGENTS.md](https://github.com/allenai/asta-theorizer/blob/main/AGENTS.md), is how to use the library locally.
 
-## Three ways to run it
+## Local or remote
 
-- **Hosted.** We pay for it. [hosted.md](hosted.md)
-- **CLI.** You pay for it, with your own API key, on this computer. It bakes in our preferences. [cli.md](cli.md), with [papers.md](papers.md) for finding and fetching papers.
-- **Library.** You pay for it, in a coding agent: you read the papers and write the findings and theories yourself, and the library gives you the types and keeps the citations straight. [library.md](library.md)
+- **Remote.** On Asta's servers. [workflows/remote.md](workflows/remote.md)
+- **Local.** On this computer, with the library and its guide: with the person's model key, or with none, where you write the findings and theories yourself. [workflows/local.md](workflows/local.md), with [scripts/theorizer_local.py](scripts/theorizer_local.py).
 
-If the project has settled this already (`.asta/mode.json`), use that. Otherwise ask, and don't switch partway through a run.
+If the plan already says which, use that. Otherwise ask, and don't switch partway through a run.
+
+## A full run
+
+[workflows/theory-generation.md](workflows/theory-generation.md) is the whole loop: plan, papers, a first pass, a check-in, then refining (4a) or discovering variables (4b) with a pass per new schema, and a summary. It also has the run's folders, the run's page ([templates/page.qmd](templates/page.qmd)) and [scripts/theorizer-site-data](scripts/theorizer-site-data), which writes the data the workspace site shows. Other workflows reuse its steps.
 
 ## The question
 
@@ -31,18 +34,18 @@ Theorizer reads the papers and nothing else. Anything else the theories must ans
 
 ## Papers
 
-- **Full text only.** Theorizer extracts from whatever text a paper has, abstracts included, so keep abstract-only papers out (cli.md and papers.md say how).
-- **Say what the theories rest on:** how many papers out of the target, how many were tried, and why the rest have no full text.
-- **The person's own papers,** a folder, files or a glob, can be the whole corpus or add to a search.
+- **Full text only.** Theorizer extracts from whatever text a paper has, abstracts included, so keep abstract-only papers out (`--require-full-text`, workflows/local.md).
+- **Say what the theories rest on:** how many papers out of the target, how many were tried, and why the rest have no full text, where the fetch says.
+- **The person's own papers,** a folder, files or a glob, can be the whole corpus or add to a search. Locally, convert their PDFs to markdown first, or read them with Mistral if they have a key (workflows/local.md, "Their PDFs").
 
 ## Checks
 
-- **The plan** (CLI and hosted): check that it has a search query and a schema before going on. A failed model call can leave an empty plan behind.
-- **The extraction, before you generate:** which papers failed and why, and which had nothing to extract. A paper with nothing in it is a result, not a failure. Don't generate from a fraction of the papers without saying so.
+- **The plan,** when Theorizer made it: check that it has a search query and a schema before going on. A failed model call can leave an empty plan behind.
+- **The extraction, before you generate:** which papers failed and why, and which had nothing to extract. A paper with nothing in it is a result, not a failure. Fewer than about 3 findings a paper is thin; say so. Don't generate from a fraction of the papers without saying so.
 - **Check in after the first theories.** Discovering variables and running the schema passes cost several times the first pass.
 
 ## Reading the theories
 
-- **Call a theory by its name,** everywhere. `theorize show theory-1` prints one theory's laws and what each cites.
+- **Call a theory by its name,** everywhere.
 - **Cluster them by the explanation they give.** Theories from different schemas often restate each other, and a cluster several schemas reached rests on more of the evidence. For each cluster, say what it's about plainly, then technically, and why the person should care. Point them to the clusters worth reading first.
 - **A theory's text can't be edited.** If its figures overstate their evidence, say which theory, in your own words.

@@ -4,7 +4,7 @@ Map what the literature knows and doesn't know about a question. Build theories 
 
 It's the reverse of [Data Driven Theory Generation](../data-driven-theory-generation/README.md). There, the experiments come first and the theories explain them. Here, the theories and their predictions are fixed first and the data tests them. A prediction written before the data is seen is a real test; a theory fitted to the data afterwards isn't.
 
-The papers and theories are [Theory generation](../theory-generation/README.md)'s steps, and the verdicts are [Secondary reproduction](../secondary-reproduction/README.md)'s.
+The papers and theories are the steps of the `generate-theories` skill's theory generation run (its `workflows/theory-generation.md`), and the verdicts are [Secondary reproduction](../secondary-reproduction/README.md)'s.
 
 ## Plan
 
@@ -21,7 +21,7 @@ The papers and theories are [Theory generation](../theory-generation/README.md)'
 | 8. Tests | AutoDS runs the committed tests on the data; the verdicts are audited | one experiment per prediction |
 | 9. What's missing | The study each undecided prediction needs | |
 | 10. Revision (optional) | Theorizer revises the theories against the verdicts | |
-| 11. Report | A review-article report ([index.md](index.md)), or a computational review | chosen with the plan |
+| 11. Report | The report ([templates/report.qmd](../../templates/report.qmd)), written and then revised on what `check-claims` finds | |
 
 > You can make the run more specific:
 >
@@ -30,8 +30,7 @@ The papers and theories are [Theory generation](../theory-generation/README.md)'
 > - **Theory shape:** A threshold equation, an "if–then" rule, or another form?
 > - **Papers:** A local paper index to search, and whether it is the whole corpus or adds to Semantic Scholar?
 > - **Writing style:** Papers whose writing the report should follow? By default it follows the style of the papers in the run.
-> - **Report format:** A format for the final report, such as a journal's review style, a grant section or your lab's template? By default it is a review-article report.
-> - **Computational review:** Should the report be written as a computational review, with blinded critics checking every section? It takes much longer and costs more.
+> - **Report format:** A format for the final report, such as a journal's review style, a grant section or your lab's template? By default it is the report template, with the gaps as its questions and the tests as its experiments.
 
 ## Papers from a local index
 
@@ -81,7 +80,7 @@ Gaps come from what the authors say is open, from Theorizer's sweep, and from wh
 
 ## Steps
 
-1. **Plan and papers.** Plan once, with this mission, and check the plan has a query and a schema with the methods fields:
+1. **Plan and papers.** The Theorizer project is `<run>/01-plan-and-papers/theory`, with its searches beside it in `01-plan-and-papers/searches`; write its site data to `01-plan-and-papers/data/theorizer.json` with the `generate-theories` skill's `scripts/theorizer-site-data` (the page's Papers section reads `papers.json` beside it). Every step opens that one project; each step's scripts and logs go in its own folder. The papers target is for this first search; papers that answer a gap's search join the corpus beyond it. Plan once, with this mission, and check the plan has a query and a schema with the methods fields:
 
    ```
    This run maps what the literature knows and leaves open about the question, then builds
@@ -95,9 +94,9 @@ Gaps come from what the authors say is open, from Theorizer's sweep, and from wh
    independent units; the correction for multiple comparisons; the effect-size metric; the
    significance threshold; power or sample-size reasoning; and the robustness checks.
    ```
-2. **Extract,** once.
-3. **Field standards,** in `field-standards.md`: for each kind of claim the papers test, what they do (tests, nulls, controls, units, corrections, effect sizes, thresholds, robustness), counted from the extraction's methods fields ("permutation null in 34 of 60"), never by keyword. Then what up to 5 of the field's own methods-guidance papers say, in a separate project so they stay out of the theories. Where practice and guidance differ, follow the guidance and say so. Add how the field writes, from two or three well-cited papers, or the person's. Every rule names its papers.
-4. **Gap map,** in `gaps.md`: sweep for state of the literature, evidence quality, context dependence, null results, heterogeneity and critical appraisal (`generate-theories`), then build the map as above. Then have a subagent given only the map and the extractions check every entry against the rows it cites, and apply its fixes; one run's check found wrong tags and a known that didn't hold. **Check in and wait** with the ranked map and the standards' summary. *Thin* and *underpowered null* gaps call for data, not a theory: offer to send them to step 9.
+2. **Extract,** once, in that project; a summary of what came out goes in `02-extract/`.
+3. **Field standards,** in `field-standards.md`: for each kind of claim the papers test, what they do (tests, nulls, controls, units, corrections, effect sizes, thresholds, robustness), counted from the extraction's methods fields ("permutation null in 34 of 60"), never by keyword. Then what up to 5 of the field's own methods-guidance papers say, in a separate Theorizer project (`03-field-standards/theory`) so they stay out of the theories. Where practice and guidance differ, follow the guidance and say so. Add how the field writes, from two or three well-cited papers, or the person's. Every rule names its papers.
+4. **Gap map,** in `gaps.md`: sweep for state of the literature, evidence quality, context dependence, null results, heterogeneity and critical appraisal (`generate-theories`; locally the output types `STATE OF THE LITERATURE`, `APPRAISAL OF EVIDENCE QUALITY`, `CONTEXT DEPENDENCE`, `NULL RESULT` and the inference types `CONTRAST ARGUMENT (HETEROGENEITY)`, `CRITICAL APPRAISAL OF THE EVIDENCE`). Sweep once, with the step-1 mission. The sweep's theories are gap candidates, not the run's theories: read them from what it returns and keep them out of the theory store. Then build the map as above. Then have a subagent given only the map, the extractions and the abstracts of the abstract-only papers it cites check every entry against the rows it cites, and apply its fixes; one run's check found wrong tags and a known that didn't hold. **Check in and wait** with the ranked map and the standards' summary. *Thin* and *underpowered null* gaps call for data, not a theory: offer to send them to step 9.
 5. **Theories.** The chosen gaps go into the mission:
 
    ```
@@ -106,6 +105,8 @@ Gaps come from what the authors say is open, from Theorizer's sweep, and from wh
    TARGET GAPS. Each theory must aim to close at least one gap below and name it by its ID in
    the theory's name. A theory that restates a known finding, or explains the corpus without
    touching a gap, is not what this run needs.
+
+   ACCOUNTS: <each competing account, and what it predicts>
 
    GAPS:
    - [G1, conflicting] <the gap as a question>
@@ -120,10 +121,10 @@ Gaps come from what the authors say is open, from Theorizer's sweep, and from wh
    that would falsify it, each in a setting where it has not yet been tested.
    ```
 
-   Generate once, then sweep with the types the gaps call for: conflicting → context dependence and heterogeneity; boundary → context dependence and analogy; untested link → mechanistic explanation and abduction. Set aside any theory too broad to fail, any that restates one study, and any that names no gap. If a gap needs a field the extraction lacks, plan and extract again, and say what it costs. Write each gap's theories for the site with `theorizer-site-data --gap <ID>`.
-6. **Theory cards,** one per theory in `theories/<id>.md`: rationale (and the main rival), what's known, what's unknown, what it proposes, how it closes the gap, supporting and falsifying experiments, and all the related evidence. Each experiment has a design, a committed prediction (in the field's standards), and its feasibility: the known techniques for each variable, each with a paper that used it and its limits, or "no known technique found", which is itself a finding. Use "support" and "falsify", never "prove". Check the cards as the map was checked, then **commit them before opening any data.**
+   Generate once and sweep once, each over all the chosen gaps, with the types the gaps call for: conflicting → context dependence and heterogeneity (`CONTEXT DEPENDENCE`, `CONTRAST ARGUMENT (HETEROGENEITY)`); boundary → context dependence and analogy (`ARGUMENT FROM ANALOGY`); untested link → mechanistic explanation and abduction (`MECHANISTIC EXPLANATION`, `ABDUCTION (BEST EXPLANATION)`). Save these to the theory store. Set aside any theory too broad to fail, any that restates one study, and any that names no gap; say why in `gaps.md`, and leave them off the site with `--exclude <their ids>`. If a gap needs a field the extraction lacks, plan and extract again, and say what it costs. Write each gap's theories for the site with `theorizer-site-data <the project> <run>/05-theories/data/theorizer-<ID>.json --gap <ID>`, which keeps the theories whose name gives the gap.
+6. **Theory cards,** one per theory in `06-theory-cards/<id>.md`: rationale (and the main rival), what's known, what's unknown, what it proposes, how it closes the gap, supporting and falsifying experiments, and all the related evidence. Each experiment has a design, a committed prediction (in the field's standards), and its feasibility: the known techniques for each variable, each with a paper that used it and its limits, or "no known technique found", which is itself a finding. Use "support" and "falsify", never "prove". Check the cards as the map was checked, then **commit them before opening any data.**
 7. **Data and testability.** Each prediction is *testable*, *proxy* (tested, with the proxy as a caveat) or *not testable* (no data, underpowered, or not identifiable).
-8. **Tests,** with AutoDS (the `autodiscovery` skill), in one run on the test data. Each committed prediction is one experiment, with the card's design and decision rule as its plan: on the CLI as warmstart seeds, in the library as nodes you write, hosted as the run's intent ("Test each of these as written: <the hypotheses and designs>"). Match each experiment to its card first: a prediction with no matching experiment, or one run with a different design, is undecided. Read each matched experiment against its committed decision rule and give Secondary reproduction's verdict; report AutoDS's belief change beside the verdict, never as it. Experiments AutoDS adds beyond the predictions are exploratory, never tests of the theories.
+8. **Tests,** with AutoDS (the `autodiscovery` skill), in one run on the test data. Each committed prediction is one experiment, with the card's design and decision rule as its plan: locally as the CLI's warmstart seeds or as nodes you write with the library, remotely as the run's intent ("Test each of these as written: <the hypotheses and designs>"). Match each experiment to its card first: a prediction with no matching experiment, or one run with a different design, is undecided. Read each matched experiment against its committed decision rule and give Secondary reproduction's verdict; report AutoDS's belief change beside the verdict, never as it. Experiments AutoDS adds beyond the predictions are exploratory, never tests of the theories.
 9. **What's missing,** in `missing.md`: for each undecided prediction and each data gap, what to measure, the design and the rival it separates, the sample size and where its effect size came from (never invented), whether such data may exist, and what each result would mean. Then ask the person whether they have such data.
 10. **Revision,** optional: the verdicts as the mission, as in Secondary reproduction.
-11. **Report,** in the person's format or [index.md](index.md)'s. If they chose a computational review with the plan, write it with the [Computational review](../review/README.md) steps. The run's page is `templates/page.qmd`, with `{{RUN}}` set to the run's folder name, and its Theories and Tests shortcodes repeated once per chosen gap, with `<gap ID>` set to each.
+11. **Report,** in the person's format or [templates/report.qmd](../../templates/report.qmd)'s, with the gaps as its questions and the tests as its experiments. Write it, run the `check-claims` skill on it, and revise it on what that finds. The run's page is `templates/page.qmd`, with `{{RUN}}` set to the run's folder name, and its Theories and Tests shortcodes repeated once per chosen gap, with `<gap ID>` set to each.

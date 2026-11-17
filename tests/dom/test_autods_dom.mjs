@@ -6,11 +6,11 @@ import vm from "node:vm";
 import { parseHTML } from "linkedom";
 
 const code = fs.readFileSync(
-  new URL("../../plugins/asta-tools/skills/workspace/assets/_extensions/asta-pages/autods.js", import.meta.url),
+  new URL("../../plugins/asta-tools/skills/workspace/assets/_extensions/asta-templates/autods.js", import.meta.url),
   "utf8",
 );
 
-// A local run as asta-pages.lua embeds it: its mcts_node records (node_1_0 loads the data).
+// A local run as asta-templates.lua embeds it: its mcts_node records (node_1_0 loads the data).
 const node = (id, idx, parent) => ({ id, creation_idx: idx, parent_id: parent, success: true, hypothesis: `About ${id}.` });
 const RUN = { kind: "nodes", source: "run", nodes: [node("node_2_1", 2, "node_1_0"), node("node_3_1", 3, "node_2_1"), node("node_3_12", 4, "node_2_1")] };
 

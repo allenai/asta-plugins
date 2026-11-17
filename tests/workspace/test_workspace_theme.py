@@ -26,7 +26,8 @@ def install(project, archive, rules="workspace.mk"):
 def source_archive(tmp_path, theme=True, invalid_asset=None, damage="missing"):
     root = tmp_path / "source/asta-plugins-test"
     extensions = root / "plugins/asta-tools/skills/workspace/assets/_extensions"
-    for name in ("evidence", "asta-theme") if theme else ("evidence",):
+    # The scaffold's _quarto.yml lists the asta-templates filter, so a source must supply it too
+    for name in ("evidence", "asta-theme", "asta-templates") if theme else ("evidence", "asta-templates"):
         shutil.copytree(ASSETS / "_extensions" / name, extensions / name)
     if invalid_asset:
         path = extensions / "asta-theme" / invalid_asset
@@ -131,6 +132,7 @@ def test_old_source_only_allowed_for_configurations_without_the_theme(
 def test_offline_render_needs_all_referenced_assets(tmp_path, cache):
     (tmp_path / "_quarto.yml").write_bytes((ASSETS / "_quarto.yml").read_bytes())
     shutil.copytree(ASSETS / "_extensions/evidence", tmp_path / "_extensions/evidence")
+    shutil.copytree(ASSETS / "_extensions/asta-templates", tmp_path / "_extensions/asta-templates")
     if cache != "none":
         shutil.copytree(
             ASSETS / "_extensions/asta-theme", tmp_path / "_extensions/asta-theme"
@@ -158,6 +160,7 @@ def test_custom_theme_survives_refresh(tmp_path, customization, offline, rules):
         subprocess.run(["git", "init", "-q", str(project)], check=True)
     (target / "dark.scss").write_text("my theme")
     shutil.copytree(ASSETS / "_extensions/evidence", project / "_extensions/evidence")
+    shutil.copytree(ASSETS / "_extensions/asta-templates", project / "_extensions/asta-templates")
     if customization == "committed":
         subprocess.run(
             ["git", "-C", str(project), "add", "_extensions/asta-theme/dark.scss"],

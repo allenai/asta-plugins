@@ -6,7 +6,7 @@ import vm from "node:vm";
 import { parseHTML } from "linkedom";
 
 const code = fs.readFileSync(
-  new URL("../../plugins/asta-tools/skills/workspace/assets/_extensions/asta-pages/literature.js", import.meta.url),
+  new URL("../../plugins/asta-tools/skills/workspace/assets/_extensions/asta-templates/literature.js", import.meta.url),
   "utf8",
 );
 
