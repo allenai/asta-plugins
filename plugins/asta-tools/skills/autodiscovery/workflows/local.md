@@ -196,6 +196,25 @@ save_mcts_node(node, OUT, to_root=True)
 - **Choosing what's next is yours.** A real run picks the parent with its selection policy; following the surprise by hand is a choice, so say so in the run's README.
 - **Never call** anything that takes a model: `beliefs.get_belief`, `calculate_prior_and_posterior_beliefs`, `MCTSNode.get_next_experiment`, `deduplication.dedupe`, `agents.get_agents`, `run.main`. `save_nodes(..., model=None, embedding_model=None, run_dedupe=False)` is safe.
 
+### Priors and posteriors with subagents
+
+You wrote the hypothesis and the code, so your own judgement of it isn't blind. Hand the beliefs to subagents that see only what AutoDS's own belief calls see, two at a time unless the person says otherwise.
+
+- **Prior: five subagents, one judgement each.** Each gets the hypothesis, the plan and the data description: no data, no code, no results, and not the other judgements. It answers with one category (definitely true, maybe true, uncertain, maybe false, definitely false, or can't say) and a sentence why. Count the five answers into `DistributionFormat`, save the node and commit, before anyone writes code.
+- **Review: one subagent.** It gets the plan, the code and its output, and checks for bugs, leaks and results true by construction. It doesn't see any beliefs. Its answer is `node.review`.
+- **Posterior: five fresh subagents.** Each gets the hypothesis, the plan, the code output, the analysis and the review, but not the prior. Same answer format, counted the same way.
+- **Keep every answer** beside the node (`node_<level>_<n>.beliefs.json`), so anyone can recount them.
+
+```text
+Judge this hypothesis from what you know of the field.
+Hypothesis: <hypothesis>
+Plan: <experiment_plan>
+Data: <description.md>
+Answer with one of: definitely true, maybe true, uncertain, maybe false, definitely false, can't say. Then one sentence why.
+```
+
+For the posterior, add the code output, the analysis and the review under the plan, and change the first line to "Judge this hypothesis from this experiment's result."
+
 ### Reading it back
 
 `load_mcts_from_json(OUT)` gives the tree, `nodes_to_csv(OUT, "nodes.csv")` (from `autodiscovery.nodes_to_csv`) the table, and `autodiscovery.report.generate_report(OUT)` an HTML report (it reads the settings from an `args.json` in the folder, if there is one). Keep the prompt and the data description in the run folder too, as `description.md`. Set `MCTSNode._creation_counter = 0` before each load in the same process.
