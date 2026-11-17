@@ -7,7 +7,7 @@ This adds only what the guide can't know:
     papers_from_store(path, limit, ids) the full-text papers of an `asta-papers store` file, added to the project's paperstore
     add_papers(papers)                  the library's papers (PaperImport.import_papers) into the project's paperstore
     save_theories(packed, question)     a generation's theories into the theory store, with their generator and model
-    write_records(paper_id, records, schema, question)   one paper's records, written by you, once
+    write_records(paper_id, records, schema, extraction_query)   one paper's records, written by you, once
     records()                           every record in the project, with its uuid and paper
     write_theories(theories, question)  theories you wrote, refused if a law cites a uuid no record has
 
@@ -28,7 +28,8 @@ RECORD_FIELDS = ("name_short", "name_full", "brief_description")
 
 def open_without_keys(project: str) -> None:
     """Open the project with no model key: none from the person's key file, none from the shell.
-    A model stage called by mistake then fails at once instead of spending."""
+    A model stage called by mistake then fails at once instead of spending. A Semantic Scholar key
+    in the shell still loads; it is for paper lookups, not a model."""
     for name in list(th.Config.KEY_ENV_VARS.values()) + ["LITELLM_BASE_URL", "LITELLM_USER_KEY"]:
         os.environ.pop(name, None)
     th.Config.USER_CONFIG_DIR = os.path.join(os.path.abspath(project), ".no-user-keys")
@@ -106,10 +107,11 @@ def save_theories(packed: dict, question: str, method: str | None = None) -> lis
     return _register(theories, question, method, packed.get("model"))
 
 
-def write_records(paper_id: str, records: list, schema: list, question: str, schema_id: str = "schema-1") -> list:
+def write_records(paper_id: str, records: list, schema: list, extraction_query: str, schema_id: str = "schema-1") -> list:
     """One paper's records, written by you: each has name_short, name_full, brief_description and
-    one key per schema slot. Returns them with the uuid each law cites. A paper's records are
-    written once per schema; a second call returns the first call's records and says so."""
+    one key per schema slot. `extraction_query` is what the schema asks of each paper (the page
+    shows it above the findings). Returns the records with the uuid each law cites. A paper's
+    records are written once per schema; a second call returns the first call's and says so."""
     slots = tuple(s["name"] for s in schema)
     for i, record in enumerate(records):
         missing = [k for k in RECORD_FIELDS + slots if k not in record]
@@ -118,7 +120,7 @@ def write_records(paper_id: str, records: list, schema: list, question: str, sch
     store = th.Project.get_theory_store()
     if schema_id not in store.extraction_schemas:
         store.add_extraction_schema(
-            th.Legacy.ExtractionQuerySchema(schema=schema, extraction_query=question, supporting_theory_ids=[], id=schema_id, model_str="written")
+            th.Legacy.ExtractionQuerySchema(schema=schema, extraction_query=extraction_query, supporting_theory_ids=[], id=schema_id, model_str="written")
         )
     for result in store.extraction_results.values():
         if result.paper_id == paper_id and result.extraction_schema_id == schema_id:
