@@ -2,7 +2,7 @@
 """theorizer-site-data: write the slim data file a run's literature and theory pages read.
 
     theorizer-site-data <step>/theory <step>/data/theorizer.json [--bib references.bib]
-                        [--metadata hist/metadata.json] [--gap G7]
+                        [--metadata hist/metadata.json] [--gap G7] [--exclude theory-3,theory-9]
 
 Reads a Theorizer project directory (the asta-theorizer library's) and writes one JSON file with
 only what the pages show: paper metadata (no full text), the searches, the extracted findings
@@ -26,6 +26,9 @@ With `--gap ID`, the file keeps only that gap's theories: those whose name or qu
 gap (`G7`, as a word; the gap-driven mission asks each theory to name its gap). Each, and the
 file, carries `"gap": "ID"`. The site's link cards group a gap's theories by it (a mention of G7
 in the text links G7's theories and its gap map entry). Exit status 4 when no theory names it.
+
+With `--exclude IDS` (comma-separated theory ids), those theories are left out of the file: the
+ones a run set aside, which stay in the theory store.
 
 Standard library only. Exit status 0 on success, 2 for bad usage, 3 when the project cannot be
 read (no paperstore.json and no theorystore.json).
@@ -451,6 +454,14 @@ def main(argv: list[str]) -> int:
     bib = None
     metadata = None
     gap = None
+    exclude = set()
+    if "--exclude" in argv:
+        i = argv.index("--exclude")
+        if i + 1 >= len(argv):
+            print("theorizer-site-data: --exclude needs theory ids (theory-3,theory-9)", file=sys.stderr)
+            return 2
+        exclude = {x.strip() for x in argv[i + 1].split(",") if x.strip()}
+        argv = argv[:i] + argv[i + 2:]
     if "--gap" in argv:
         i = argv.index("--gap")
         if i + 1 >= len(argv) or not argv[i + 1].strip():
@@ -486,6 +497,8 @@ def main(argv: list[str]) -> int:
         return 3
     request, searches, ordered = data["request"], data["searches"], data["papers"]
     findings, theories = data["findings"], data["theories"]
+    if exclude:
+        theories = data["theories"] = [t for t in theories if t["id"] not in exclude]
     if gap:
         named = re.compile(r"(?<![A-Za-z0-9])" + re.escape(gap) + r"(?![A-Za-z0-9])")
         theories = [t for t in theories if named.search(t["name"] or "") or named.search(t["query"] or "")]

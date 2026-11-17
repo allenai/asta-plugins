@@ -44,6 +44,6 @@ The plan, and nothing more:
 3. **What they can change,** when the README lists it, word for word.
 4. **One question,** on its own line: "Would you like to run the workflow, or provide an updated query?"
 
-If they already asked for it to run on its own, write the plan to the run's `workflow.yaml` and go on. Don't fill in datasets, papers or hypotheses they left open; the run finds them. Run long commands in the background, and check each command's output before the next. In a hosted sandbox a background job ends soon after your turn does, so wait for long steps inside the turn and tell the person what's running.
+If they already asked for it to run on its own, write the plan to the run's `workflow.yaml` and go on. Don't fill in datasets, papers or hypotheses they left open; the run finds them. Run long commands in the background, and check each command's output before the next. In a hosted sandbox or a headless session (`claude -p`), the session can end soon after your turn does, so wait for long steps inside the turn and tell the person what's running.
 
 Data Search has no command: it's your own work with the web and a shell. Describe what you find as the `autodiscovery` skill's "Describing the data" says.

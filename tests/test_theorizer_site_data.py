@@ -320,3 +320,12 @@ def test_a_gaps_file_keeps_the_theories_that_name_it(tmp_path):
     data = json.loads(out.read_text())
     assert [(t["name"], t["gap"]) for t in data["theories"]] == [("G1: Gating", "G1"), ("Drift", "G1")]
     assert _module().main([str(project), str(out), "--gap", "G2"]) == 4
+
+
+def test_set_aside_theories_are_left_out(tmp_path):
+    project = _project(tmp_path)
+    theories = {f"theory-{i}": {"id": f"theory-{i}", "components": {"theory_name": f"G1: T{i}"}} for i in (1, 2, 3)}
+    (project / "theorystore.json").write_text(json.dumps({"theories": theories}))
+    out = tmp_path / "data" / "theorizer-G1.json"
+    assert _module().main([str(project), str(out), "--gap", "G1", "--exclude", "theory-2,theory-3"]) == 0
+    assert [t["id"] for t in json.loads(out.read_text())["theories"]] == ["theory-1"]
