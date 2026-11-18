@@ -288,6 +288,7 @@ import socket
 import sys
 from urllib.parse import urlsplit
 
+assert os.environ["DISABLE_AUTOUPDATER"] == "1"
 url = urlsplit(os.environ["ANTHROPIC_BASE_URL"])
 connection = http.client.HTTPConnection(url.hostname, url.port)
 connection.putrequest("POST", "/v1/messages")

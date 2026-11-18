@@ -166,6 +166,7 @@ def capture(home: Path) -> bytes:
                     "ANTHROPIC_BASE_URL": f"http://127.0.0.1:{server.server_port}",
                     "ANTHROPIC_API_KEY": "local-test-placeholder",
                     "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+                    "DISABLE_AUTOUPDATER": "1",
                 },
                 stdin=subprocess.DEVNULL,
                 capture_output=True,

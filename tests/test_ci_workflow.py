@@ -36,6 +36,74 @@ def test_code_quality_runs_on_x86_for_every_build_runner():
     assert JOBS["code-quality"]["runs-on"] == "ubuntu-latest"
 
 
+@pytest.mark.parametrize("cli", ["claude-code", "codex"])
+@pytest.mark.parametrize(
+    ("proposed", "error"),
+    [
+        ("1.10.0", None),
+        ("1.9.0", None),
+        ("1.8.9", "would downgrade"),
+        ("1.10.0-rc.1", "Expected numeric"),
+    ],
+)
+def test_required_code_quality_rejects_stale_pin_bumps(tmp_path, cli, proposed, error):
+    steps = JOBS["code-quality"]["steps"]
+    checkout = next(
+        step for step in steps if step.get("uses", "").startswith("actions/checkout@")
+    )
+    guard = next(
+        step
+        for step in steps
+        if step.get("name") == "Reject automated CLI pin downgrades"
+    )
+    assert int(checkout["with"]["fetch-depth"]) >= 2
+    assert f"'automation/{cli}-pin'" in guard["if"]
+    pin_file = Path(f".github/{cli}-version")
+    pin = tmp_path / pin_file
+    pin.parent.mkdir()
+    subprocess.run(["git", "init", "--quiet"], cwd=tmp_path, check=True)
+    for version in ("1.9.0", proposed):
+        pin.write_text(f"{version}\n")
+        subprocess.run(["git", "add", pin_file], cwd=tmp_path, check=True)
+        subprocess.run(
+            [
+                "git",
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.com",
+                "commit",
+                "--allow-empty",
+                "--quiet",
+                "-m",
+                f"Pin {cli} to {version}",
+            ],
+            cwd=tmp_path,
+            check=True,
+        )
+
+    result = subprocess.run(
+        ["bash", "-eo", "pipefail", "-c", guard["run"]],
+        cwd=tmp_path,
+        env={"PATH": os.environ["PATH"], "PIN_FILE": str(pin_file)},
+        capture_output=True,
+        text=True,
+    )
+    if error:
+        assert result.returncode != 0
+        assert error in result.stdout
+    else:
+        assert result.returncode == 0, result.stderr
+
+
+def test_workflows_disable_claude_code_background_updates():
+    canary = yaml.load(
+        (WORKFLOWS / "claude-plugin-canary.yml").read_text(), Loader=yaml.BaseLoader
+    )["jobs"]["canary"]
+    for job in (JOBS["test"], JOBS["plugin-install"], canary):
+        assert job["env"]["DISABLE_AUTOUPDATER"] == "1"
+
+
 @pytest.mark.parametrize("result", ["success", "failure", "cancelled", "skipped"])
 def test_tests_ok_passes_only_on_success(result):
     step = JOBS["tests-ok"]["steps"][-1]
