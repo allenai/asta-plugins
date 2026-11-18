@@ -3,11 +3,10 @@
 Follow this from [repo setup](repo-setup.md) when the account
 `gh api user -q .login` reports isn't the person who asked for the workspace
 (the requester), for example an agent creating the repo under its own GitHub
-account. Setup makes the requester the repo's admin, but a refused admin grant
-never stops it: setup finishes without their access, and the final reply says
-in one line how they get it. Otherwise, when a step fails or GitHub reports
-something unexpected, stop and tell the requester what GitHub said. Compare
-GitHub logins case-insensitively throughout.
+account. Build the private workspace and open its setup PR even if you can't
+confirm the requester is an admin. For failures outside the permission step,
+stop and tell the requester what failed. Compare GitHub logins
+case-insensitively throughout.
 
 ## 1. Identify both accounts
 
@@ -41,59 +40,59 @@ empty repo private. Push nothing yet. Read
 `gh api repos/<owner>/<name> -q '{full_name, private}'` and verify the exact
 target and `private: true`; stop on a mismatch or failed read.
 
-## 4. Make the requester admin
+## 4. Check and try to grant admin access
 
 1. Check the requester's effective permission, where `<login>` is their
    verified login:
    `gh api repos/<owner>/<name>/collaborators/<login>/permission -q '{permission, role_name}'`.
-   For a user with no access to a private organization repo, GitHub returns
-   HTTP 200 with `"permission": "none"` and an empty `role_name`; every fresh
-   repo starts here.
-   - `admin`: go to section 5 without changing access, including when admin
-     access comes through a team or organization role.
-   - `none`, `read` or `write`: go to step 2.
-   - Anything else, or a failed read (a `404` means the login isn't a GitHub
-     user), stops setup for diagnosis.
-2. Try the grant once:
+   Use `.permission` for the effective base access (`admin`, `write`, `read`,
+   or `none`). [`role_name`](https://docs.github.com/en/rest/collaborators/collaborators#get-repository-permissions-for-a-user)
+   can describe a custom role. If the result is `admin`, continue without a
+   grant. If the read fails or the result is unexpected, record access as
+   unconfirmed and continue without attempting a grant.
+2. If `.permission` is `none`, `read`, or `write`, try the grant once:
    `gh api --include -X PUT repos/<owner>/<name>/collaborators/<login> -f permission=admin`.
-   - `204`: rerun the permission check in step 1; it passes only on
-     `.permission == "admin"` (the
-     [permission API](https://docs.github.com/en/rest/collaborators/collaborators#get-repository-permissions-for-a-user)
-     defines this as base access, while `role_name` also describes custom
-     roles).
-   - Anything else leaves the requester **without access**, and setup goes on
-     to section 5 regardless: your harness or tools refuse to run the grant
-     (for example, a permission mode that blocks access grants the requester
-     didn't ask for), GitHub answers `201` (an invitation), any other status,
-     or the recheck after a `204` returns something other than `admin` or
-     fails. Don't retry the grant, run it another way or ask about it now;
-     section 5 tells the requester how to get access.
+   - `201`: record a pending invitation alongside the permission you read.
+   - A tool refusal or a definite rejection from GitHub: keep the permission
+     you read and record that the grant was refused.
+   - `204` or an unclear result: repeat only the permission read. Use its
+     result for the handoff. If that read fails, access is unconfirmed.
+
+Continue to section 5 after any grant outcome. Leave further grant attempts
+for an explicit request from the requester.
 
 ## 5. Return to repo setup
 
 Resume [Apply](repo-setup.md#2-apply) inside step 1, after its repo creation:
 if the repo has no branches (an existing empty repo), push the empty-tree root
 commit to `main`; then merge the established default branch into the local
-workspace, and continue at step 2. In step 7, also tell the requester that
-they are the repo's admin, but only once the permission check returned
-`admin`.
+workspace, and continue at step 2.
 
-When the requester is without access, they can't open the private preview or
-merge, so finish setup for them:
+With confirmed `admin`, use the normal step 4 handoff. Otherwise, once the
+setup PR checks pass (or `make check` passes with Pages off), send “Your private
+workspace is built and ready to review in <PR link>. An authorized maintainer
+can review and merge it.” Include the private preview and any paper PDF link
+from step 4 when Pages is on and the requester has confirmed `read` or `write`
+access. Add one line about access:
 
-- In step 4, merge the setup PR yourself once its checks pass, without sending
-  step 4's message, and continue at step 5. If your merge is refused too, skip
-  steps 5 and 6 and send only the last line below in place of step 7.
-- In step 7, add in place of "You're its admin." the one line that fits:
-  - After a `201`: "You don't have access yet: accept your invitation at
-    <https://github.com/<owner>/<name>/invitations>."
-  - Otherwise: "You don't have access yet: reply "make me its admin" and I'll
-    add you."
-  - If your merge was refused: "It's built but not published, and you don't
-    have access yet: reply "add me and publish it" and I'll make you its admin
-    and publish it."
+- Pending invitation: “Accept your admin invitation at
+  <https://github.com/<owner>/<name>/invitations>.” If access is `none`, start
+  the line with “You don't have repo access yet.”
+- `none`: “You don't have repo access yet. Reply to request admin access.”
+- `read` or `write`: “You have <read or write> access. Reply if you need admin
+  access.”
+- Unconfirmed: “I couldn't verify your repo access. Reply if you need admin
+  access.”
 
-When they reply asking for access, run section 4 from step 1, then resume
-anything left unpublished at step 4's merge, and reply "You're its admin."
-(with step 7's message if the site was just published). That reply is the
-request a permission mode needed, so the grant isn't refused for want of it.
+Leave the PR open for review. Access and merge approvals are independent.
+Finish steps 5–7 of [Apply](repo-setup.md#2-apply) after the setup PR is merged.
+
+On an explicit request for admin access, recheck the requester identity, the
+existing private organization repo, and its setup PR. Use section 4 on that
+repo, pointing to any known pending invitation instead of sending another.
+Say “You're its admin” only after a permission read confirms `admin`. If a
+grant is still blocked, say what you verified and direct the requester to an
+organization admin who can grant access. If the same reply explicitly
+requests a merge, follow Apply step 4's authorization and checks. Otherwise,
+or if the merge is refused, point to the PR for an authorized maintainer to
+merge.

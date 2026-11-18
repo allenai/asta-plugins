@@ -37,7 +37,8 @@ turned-off setting again; Overleaf pairing reads this record too.
 ## 2. Apply
 
 Apply each setting that is on. When a step fails or GitHub reports something
-unexpected, stop and tell the owner what GitHub said.
+unexpected, stop and tell the owner what GitHub said. Delegated setup handles
+permission failures in its own handoff.
 
 Before step 1, check that `gh api user -q .login` is the requester (the person
 who asked for the workspace). If it isn't, or you can't tell, follow
@@ -56,18 +57,19 @@ or pushing anything.
    public. Then enable the stub's `on.push` and `on.pull_request`.
 4. Push the scaffold to a branch and open a PR, so that the owner sees the
    site's preview before it's published and GitHub signs the squash merge (no
-   signing prompt on their machine stalls the setup). Once its checks pass,
-   send only: "Your workspace is ready for a look: <preview link>. Merge
-   <PR link> to publish it, and tell me; I'll then finish the setup." With a
-   paper, add "Its paper's PDF: <PDF link>." Nothing else: not what was built,
-   what's private, what the setup will finish, or what comes next. The
-   owner merges it, since an agent merging its own PR is often refused; merge
-   it yourself only if they ask you to, or when you set it up under another
-   account and the requester has no access yet (see
-   [repo setup for someone else](repo-setup-delegated.md#5-return-to-repo-setup)).
-   Without Pages there is no preview and
-   no check: send "Merge <PR link> to add the workspace, and tell me." once
-   `make check` passes, and in step 7 link the repo in place of the site.
+   signing prompt on their machine stalls the setup). Wait for the PR checks
+   with Pages on. Without Pages there is no preview or PR check, so use the
+   passing `make check` from step 2.
+   - For delegated setup without confirmed admin access, use the
+     [delegated handoff](repo-setup-delegated.md#5-return-to-repo-setup).
+   - Otherwise, with Pages on, send only: "Your workspace is ready for a
+     look: <preview link>. Merge <PR link> to publish it, and tell me; I'll
+     then finish the setup." With a paper, add "Its paper's PDF: <PDF link>."
+   - Otherwise, with Pages off, send only: "Merge <PR link> to add the
+     workspace, and tell me." In step 7 link the repo in place of the site.
+
+   The owner merges the PR. Merge it yourself only if they explicitly ask
+   you to and your policies allow it. Continue at step 5 after the PR merges.
 5. With protections on, apply both rulesets from `assets/rulesets/`
    (`gh api repos/{owner}/{repo}/rulesets -X POST --input <file>`) only now
    that `docs.yml` is on the default branch. Without Pages, apply only
@@ -76,9 +78,10 @@ or pushing anything.
    `--enable-squash-merge`, each only if its setting is on.
 7. Send only this, filled in, as your whole reply: "Your workspace is set up:
    <site link>. It uses Asta's managed settings, shown in <Settings link>."
-   If you set it up under another account, add "You're its admin.", or,
-   when the requester has no access yet, the one line on how to get it from
-   [repo setup for someone else](repo-setup-delegated.md#5-return-to-repo-setup).
+   For delegated setup, check current permission without changing it and add
+   the access line from
+   [repo setup for someone else](repo-setup-delegated.md#5-return-to-repo-setup),
+   or "You're its admin." if the read confirmed `admin`.
    If they asked for Overleaf, add "Next, Overleaf: send me your
    Overleaf project's link." No list of what was turned on, and no notes on
    how you did it. If a setting isn't on, say instead in one line which
