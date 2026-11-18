@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Workspace setup under another account no longer stops when the requester can't be made the repo's admin (a refused grant, an invitation, or a harness that blocks unrequested access grants): setup finishes, and the final reply says in one line that they have no access yet and how to get it.
 - CI's locked Claude Code, Codex and `plugins` versions move to `ci-tools`, where Dependabot's npm updater can open PRs. A daily check is the only alert for stalled updates: it opens, updates and closes one GitHub issue per CLI, including when Dependabot fails before opening a PR. The separate CI-failure alert workflow is removed.
 - The Claude Code and Codex plugin install checks fail when a skill from `asta-tools`, `asta-assistant`, or `asta-dev` is missing from the model's prompt or its description changes during rendering.
 - Require `asta-documents` 0.4.2 or newer for `asta documents`.

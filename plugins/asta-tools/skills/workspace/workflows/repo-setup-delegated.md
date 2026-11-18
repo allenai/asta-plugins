@@ -3,8 +3,9 @@
 Follow this from [repo setup](repo-setup.md) when the account
 `gh api user -q .login` reports isn't the person who asked for the workspace
 (the requester), for example an agent creating the repo under its own GitHub
-account. The requester must be the repo's admin before anything is pushed; this
-is required, not an optional setup default. When a step fails or GitHub reports
+account. Setup makes the requester the repo's admin, but a refused admin grant
+never stops it: setup finishes without their access, and the final reply says
+in one line how they get it. Otherwise, when a step fails or GitHub reports
 something unexpected, stop and tell the requester what GitHub said. Compare
 GitHub logins case-insensitively throughout.
 
@@ -53,25 +54,46 @@ target and `private: true`; stop on a mismatch or failed read.
    - `none`, `read` or `write`: go to step 2.
    - Anything else, or a failed read (a `404` means the login isn't a GitHub
      user), stops setup for diagnosis.
-2. Add the requester as admin:
-   `gh api --include -X PUT repos/<owner>/<name>/collaborators/<login> -f permission=admin`,
-   and inspect the HTTP status:
-   - `204`: rerun the permission check in step 1.
-   - `201` creates an invitation, which never passes. Stop, and tell the
-     requester to accept it; the next run starts again at the permission
-     check in step 1.
-   - Any other status stops setup for diagnosis.
-3. After a `204`, require `.permission == "admin"`; the
-   [permission API](https://docs.github.com/en/rest/collaborators/collaborators#get-repository-permissions-for-a-user)
-   defines this as base access, while `role_name` also describes custom
-   roles. Any other permission or a failed read stops setup; don't grant
-   again.
+2. Try the grant once:
+   `gh api --include -X PUT repos/<owner>/<name>/collaborators/<login> -f permission=admin`.
+   - `204`: rerun the permission check in step 1; it passes only on
+     `.permission == "admin"` (the
+     [permission API](https://docs.github.com/en/rest/collaborators/collaborators#get-repository-permissions-for-a-user)
+     defines this as base access, while `role_name` also describes custom
+     roles).
+   - Anything else leaves the requester **without access**, and setup goes on
+     to section 5 regardless: your harness or tools refuse to run the grant
+     (for example, a permission mode that blocks access grants the requester
+     didn't ask for), GitHub answers `201` (an invitation), any other status,
+     or the recheck after a `204` returns something other than `admin` or
+     fails. Don't retry the grant, run it another way or ask about it now;
+     section 5 tells the requester how to get access.
 
 ## 5. Return to repo setup
 
-Don't push or report the requester as admin until the permission check returns
-`admin`. Then resume [Apply](repo-setup.md#2-apply) inside
-step 1, after its repo creation: if the repo has no branches (an existing empty
-repo), push the empty-tree root commit to `main`; then merge the established
-default branch into the local workspace, and continue at step 2. In step 7,
-also tell the requester that they are the repo's admin.
+Resume [Apply](repo-setup.md#2-apply) inside step 1, after its repo creation:
+if the repo has no branches (an existing empty repo), push the empty-tree root
+commit to `main`; then merge the established default branch into the local
+workspace, and continue at step 2. In step 7, also tell the requester that
+they are the repo's admin, but only once the permission check returned
+`admin`.
+
+When the requester is without access, they can't open the private preview or
+merge, so finish setup for them:
+
+- In step 4, merge the setup PR yourself once its checks pass, without sending
+  step 4's message, and continue at step 5. If your merge is refused too, skip
+  steps 5 and 6 and end with the second line below in place of step 7.
+- In step 7, add in place of "You're its admin." the one line that fits:
+  - After a `201`: "You don't have access yet: accept your invitation at
+    <https://github.com/<owner>/<name>/invitations>."
+  - Otherwise: "You don't have access yet: reply "make me its admin" and I'll
+    add you."
+  - If your merge was refused: "It's built but not published, and you don't
+    have access yet: reply "add me and publish it" and I'll make you its admin
+    and publish it."
+
+When they reply asking for access, run section 4 from step 1, then resume
+anything left unpublished at step 4's merge, and reply "You're its admin."
+(with step 7's message if the site was just published). That reply is the
+request a permission mode needed, so the grant isn't refused for want of it.

@@ -62,7 +62,10 @@ or pushing anything.
    paper, add "Its paper's PDF: <PDF link>." Nothing else: not what was built,
    what's private, what the setup will finish, or what comes next. The
    owner merges it, since an agent merging its own PR is often refused; merge
-   it yourself only if they ask you to. Without Pages there is no preview and
+   it yourself only if they ask you to, or when you set it up under another
+   account and the requester has no access yet (see
+   [repo setup for someone else](repo-setup-delegated.md#5-return-to-repo-setup)).
+   Without Pages there is no preview and
    no check: send "Merge <PR link> to add the workspace, and tell me." once
    `make check` passes, and in step 7 link the repo in place of the site.
 5. With protections on, apply both rulesets from `assets/rulesets/`
@@ -73,7 +76,9 @@ or pushing anything.
    `--enable-squash-merge`, each only if its setting is on.
 7. Send only this, filled in, as your whole reply: "Your workspace is set up:
    <site link>. It uses Asta's managed settings, shown in <Settings link>."
-   If you set it up under another account, add "You're its admin."
+   If you set it up under another account, add "You're its admin.", or,
+   when the requester has no access yet, the one line on how to get it from
+   [repo setup for someone else](repo-setup-delegated.md#5-return-to-repo-setup).
    If they asked for Overleaf, add "Next, Overleaf: send me your
    Overleaf project's link." No list of what was turned on, and no notes on
    how you did it. If a setting isn't on, say instead in one line which
