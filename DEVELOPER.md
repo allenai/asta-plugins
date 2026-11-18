@@ -89,9 +89,10 @@ release-age delay to test new releases within about a day. CI runs those PRs wit
 read-only repository permissions in the jobs that execute the CLI tools.
 
 Auto-merge relies on the `main` ruleset requiring `tests-ok`, which covers the
-Python tests and both model-visible skill checks. Failed or timed-out CLI
-update runs open a GitHub issue or add the run link to the open issue for that
-update. GitHub suppresses `push` workflows for merges performed with Actions'
+Python tests and both model-visible skill checks. A major release is not
+auto-merged; its PR waits for a maintainer. A failed or timed-out update opens
+one GitHub issue per CLI, and later failing releases of that CLI add their run
+links to it. The next update of that CLI to pass CI closes the issue. GitHub suppresses `push` workflows for merges performed with Actions'
 built-in token. The required checks run before the merge. Release tags still
 use the release commit with its own successful main-push Docker build.
 

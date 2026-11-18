@@ -111,7 +111,7 @@ def test_dependabot_checks_for_cli_updates_every_day_without_a_cooldown():
     assert entry["cooldown"]["default-days"] == 0
 
 
-def test_auto_merge_is_limited_to_dependabot_ci_tools_updates():
+def test_auto_merge_is_limited_to_non_major_dependabot_ci_tools_updates():
     workflow = yaml.load(
         (WORKFLOWS / "ci-tools-auto-merge.yml").read_text(), Loader=yaml.BaseLoader
     )
@@ -122,23 +122,27 @@ def test_auto_merge_is_limited_to_dependabot_ci_tools_updates():
         "github.event.pull_request.user.login == 'dependabot[bot]'",
         "github.event.pull_request.head.repo.full_name == github.repository",
     ]
-    meta, merge = job["steps"]
+    meta, merge, hold = job["steps"]
     action, ref = meta["uses"].split("@")
     assert action == "dependabot/fetch-metadata" and len(ref) == 40
-    assert merge["if"] == "steps.meta.outputs.directory == '/dot-github/ci-tools'"
+    ci_tools = "steps.meta.outputs.directory == '/dot-github/ci-tools'"
+    major = "steps.meta.outputs.update-type {} 'version-update:semver-major'"
+    assert merge["if"] == f"{ci_tools} && {major.format('!=')}"
+    assert hold["if"] == f"{ci_tools} && {major.format('==')}"
+    assert hold["run"].startswith("gh pr comment") and "--auto" not in hold["run"]
     assert merge["run"].startswith("gh pr merge --auto")
     assert '--match-head-commit "$HEAD_SHA"' in merge["run"]
     assert merge["env"]["HEAD_SHA"] == "${{ github.event.pull_request.head.sha }}"
 
 
-def test_alerts_are_limited_to_failed_or_timed_out_ci_tools_updates():
+def test_alerts_are_limited_to_completed_ci_tools_updates():
     workflow = yaml.load(
         (WORKFLOWS / "ci-tools-alert.yml").read_text(), Loader=yaml.BaseLoader
     )
     job = workflow["jobs"]["alert"]
     condition = job["if"].removeprefix("${{ ").removesuffix(" }}")
     assert re.split(r"\s+&&\s+", condition) == [
-        'contains(fromJSON(\'["failure","timed_out"]\'), '
+        'contains(fromJSON(\'["failure","timed_out","success"]\'), '
         "github.event.workflow_run.conclusion)",
         "github.event.workflow_run.event == 'pull_request'",
         "github.event.workflow_run.actor.login == 'dependabot[bot]'",
@@ -148,26 +152,36 @@ def test_alerts_are_limited_to_failed_or_timed_out_ci_tools_updates():
     ]
 
 
-@pytest.mark.parametrize("matching_issue", [False, True])
-@pytest.mark.parametrize("conclusion", ["failure", "timed_out"])
-def test_failed_update_creates_one_open_issue_per_branch(
-    tmp_path, matching_issue, conclusion
+@pytest.mark.parametrize(
+    ("conclusion", "matching_issue", "expected"),
+    [
+        (
+            "failure",
+            False,
+            ["create", "--title", "CI fails on CLI updates: openai/codex"],
+        ),
+        ("timed_out", True, ["comment", "3"]),
+        ("success", True, ["close", "3"]),
+        ("success", False, []),
+    ],
+)
+@pytest.mark.parametrize("version", ["0.171.0", "1.0.0-alpha.1"])
+def test_update_failures_share_one_issue_per_cli(
+    tmp_path, conclusion, matching_issue, expected, version
 ):
     workflow = yaml.load(
         (WORKFLOWS / "ci-tools-alert.yml").read_text(), Loader=yaml.BaseLoader
     )
     job = workflow["jobs"]["alert"]
-    assert (
-        job["concurrency"]["group"]
-        == "ci-tools-alert-${{ github.event.workflow_run.head_branch }}"
-    )
+    assert job["concurrency"] == {"group": "ci-tools-alert", "queue": "max"}
 
-    branch = "dependabot/npm_and_yarn/dot-github/ci-tools/openai/codex-0.171.0"
-    title = "CI failed on CLI update openai/codex-0.171.0"
+    # Any release of the CLI finds the issue an earlier release opened.
+    branch = f"dependabot/npm_and_yarn/dot-github/ci-tools/openai/codex-{version}"
+    title = "CI fails on CLI updates: openai/codex"
     issues = [
         [
             {"title": title, "number": 1, "pull_request": {}},
-            {"title": "Other", "number": 2},
+            {"title": "CI fails on CLI updates: anthropic-ai/claude-code", "number": 2},
         ]
     ]
     if matching_issue:
@@ -193,6 +207,7 @@ def test_failed_update_creates_one_open_issue_per_branch(
         check=True,
         text=True,
     )
-    expected = ["comment", "3"] if matching_issue else ["create", "--title", title]
-    assert result.stdout.splitlines()[: 1 + len(expected)] == ["issue", *expected]
-    assert f"CI result: `{conclusion}`" in result.stdout
+    lines = result.stdout.splitlines()
+    assert lines[: 1 + len(expected)] == (["issue", *expected] if expected else [])
+    if conclusion != "success":
+        assert f"CI result: `{conclusion}`" in result.stdout
