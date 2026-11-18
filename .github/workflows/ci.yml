@@ -99,8 +99,11 @@ jobs:
 
   plugin-install:
     # Verify `npx plugins add` installs the plugins into Claude Code and Codex.
-    # No API auth required. Also verify the skill descriptions Codex renders.
+    # No API auth required. Also verify both model-visible skill lists.
     runs-on: ${{ inputs.build-runner || 'ubuntu-latest' }}
+    env:
+      # The older integration-test pin drops skill descriptions at its default budget.
+      CLAUDE_CODE_TEST_VERSION: "2.1.325"
     steps:
       - uses: actions/checkout@v4
 

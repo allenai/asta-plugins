@@ -1,32 +1,26 @@
 #!/usr/bin/env python3
-"""Fail when Codex does not show an asta skill to the model in full.
-
-Reads `codex debug prompt-input` JSON and checks that every
-plugins/*/skills/*/SKILL.md appears in the rendered skills list with its
-complete frontmatter description. Codex drops or shortens skills silently when
-the shared skills prompt budget runs out, so the install alone proves nothing.
-
-Usage: check-codex-skill-prompt.py <prompt-input.json>
-"""
+"""Verify complete Asta skill descriptions in the prompt sent to the model."""
 
 from __future__ import annotations
 
+import argparse
 import json
 import re
 import sys
+from itertools import takewhile
 from pathlib import Path
 
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 FRONTMATTER = re.compile(r"\A---\n(.*?)^---[ \t]*$", re.MULTILINE | re.DOTALL)
-SKILL_LINE = re.compile(r"^- ([a-z0-9-]+):([a-z0-9-]+): (.*)$")
+SKILL_LINE = re.compile(r"^- ([a-z0-9-]+):([a-z0-9-]+)(?:: ?(.*))?$")
 SKILL_ENTRY = re.compile(
     r"(?:(?P<description>.*) )?\(file: (?P<path>(?:/|r[0-9]+/).*)\)"
 )
 
 
-def skill_prompt_lines(prompt: object) -> list[str]:
+def codex_skill_lines(prompt: object) -> list[str]:
     opening = "<skills_instructions>"
     closing = "</skills_instructions>"
     if not isinstance(prompt, list) or any(
@@ -64,14 +58,52 @@ def skill_prompt_lines(prompt: object) -> list[str]:
     return lines[1:-1]
 
 
+def claude_skill_lines(prompt: object) -> list[str]:
+    if not isinstance(prompt, dict):
+        raise ValueError("expected a Claude Code Messages API request")
+
+    # Claude Code can place its generated skill list in the system prompt or a
+    # system-role message. User messages cannot satisfy the check.
+    messages = prompt.get("messages", [])
+    system = prompt.get("system", [])
+    blocks = list(system) if isinstance(system, list) else []
+    if isinstance(messages, list):
+        for message in messages:
+            if isinstance(message, dict) and message.get("role") == "system":
+                content = message.get("content")
+                if isinstance(content, list):
+                    blocks.extend(content)
+
+    heading = "The following skills are available for use with the Skill tool:"
+    listings = []
+    for block in blocks:
+        if not isinstance(block, dict) or block.get("type") != "text":
+            continue
+        value = block.get("text")
+        if not isinstance(value, str):
+            continue
+        lines = iter(value.splitlines())
+        for line in lines:
+            if line == heading:
+                first = next(lines, "")
+                if not first:
+                    first = next(lines, "")
+                entries = [first, *takewhile(lambda row: row.startswith("- "), lines)]
+                listings.append(entries if first.startswith("- ") else [])
+
+    if len(listings) != 1 or not listings[0]:
+        raise ValueError("expected one non-empty Claude Code skills list")
+    return listings[0]
+
+
 def squash(text: str) -> str:
     return " ".join(text.split())
 
 
-def expected_skills() -> dict[str, str]:
+def expected_skills(source: Path) -> dict[str, str]:
     skills = {}
-    for skill_md in sorted(REPO_ROOT.glob("plugins/*/skills/*/SKILL.md")):
-        path = skill_md.relative_to(REPO_ROOT)
+    for skill_md in sorted(source.glob("plugins/*/skills/*/SKILL.md")):
+        path = skill_md.relative_to(source)
         frontmatter = FRONTMATTER.match(skill_md.read_text(encoding="utf-8"))
         if not frontmatter:
             raise ValueError(f"{path}: missing or unterminated YAML frontmatter")
@@ -90,21 +122,25 @@ def expected_skills() -> dict[str, str]:
 
 
 def main() -> int:
-    if len(sys.argv) != 2:
-        print("Usage: check-codex-skill-prompt.py <prompt-input.json>", file=sys.stderr)
-        return 2
-    prompt_path = Path(sys.argv[1])
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("target", choices=("codex", "claude-code"))
+    parser.add_argument("prompt", type=Path)
+    parser.add_argument("--source", type=Path, default=REPO_ROOT)
+    args = parser.parse_args()
+    is_codex = args.target == "codex"
+    harness = "Codex" if is_codex else "Claude Code"
     try:
-        expected = expected_skills()
+        expected = expected_skills(args.source)
         if not expected:
             raise ValueError(
                 "no expected skills found under plugins/*/skills/*/SKILL.md"
             )
-        prompt = json.loads(prompt_path.read_text(encoding="utf-8"))
-        lines = skill_prompt_lines(prompt)
+        prompt = json.loads(args.prompt.read_text(encoding="utf-8"))
+        lines = codex_skill_lines(prompt) if is_codex else claude_skill_lines(prompt)
     except json.JSONDecodeError as error:
         print(
-            f"  ✗ invalid Codex prompt JSON in {prompt_path}: {error}", file=sys.stderr
+            f"  ✗ invalid {harness} prompt JSON in {args.prompt}: {error}",
+            file=sys.stderr,
         )
         return 1
     except (OSError, ValueError) as error:
@@ -118,26 +154,32 @@ def main() -> int:
         if match:
             key = f"{match[1]}:{match[2]}"
             if key in rendered:
-                failures.append(f"{key}: duplicate entry in the Codex skills prompt")
+                failures.append(
+                    f"{key}: duplicate entry in the {harness} skills prompt"
+                )
                 continue
-            rendered[key] = match[3]
+            rendered[key] = match[3] or ""
 
     for key, want in expected.items():
         entry = rendered.get(key)
         if entry is None:
-            failures.append(f"{key}: not in the Codex skills prompt")
+            failures.append(f"{key}: not in the {harness} skills prompt")
             continue
-        skill = key.split(":", 1)[1]
-        match = SKILL_ENTRY.fullmatch(entry)
-        if not match or not match["path"].endswith(f"/{skill}/SKILL.md"):
-            failures.append(f"{key}: missing or invalid SKILL.md path suffix")
-            continue
-        got = squash(match["description"] or "")
+        if is_codex:
+            skill = key.split(":", 1)[1]
+            match = SKILL_ENTRY.fullmatch(entry)
+            if not match or not match["path"].endswith(f"/{skill}/SKILL.md"):
+                failures.append(f"{key}: missing or invalid SKILL.md path suffix")
+                continue
+            entry = match["description"] or ""
+        else:
+            want = want.replace("<", "&lt;").replace(">", "&gt;")
+        got = squash(entry)
         if not got:
-            failures.append(f"{key}: empty description in the Codex skills prompt")
+            failures.append(f"{key}: empty description in the {harness} skills prompt")
         elif got != want:
             failures.append(
-                f"{key}: description mismatch in the Codex skills prompt\n"
+                f"{key}: description mismatch in the {harness} skills prompt\n"
                 f"    expected {want!r}\n"
                 f"    rendered {got!r}"
             )
@@ -146,7 +188,9 @@ def main() -> int:
         print(f"  ✗ {failure}", file=sys.stderr)
     if failures:
         return 1
-    print(f"  ✓ codex prompt: all {len(expected)} skills shown with full descriptions")
+    print(
+        f"  ✓ {harness} prompt: all {len(expected)} skills shown with full descriptions"
+    )
     return 0
 
 

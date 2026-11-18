@@ -6,8 +6,8 @@
 # and checks that the expected skill files and hooks landed in the agent's
 # plugin cache.
 #
-# For codex it also renders the model-visible prompt and checks every skill is
-# listed with its full description (needs uv and Python 3).
+# Also verify complete model-visible descriptions for asta-tools and
+# asta-assistant with the optional Ai2 asta-dev plugin (needs uv and Python 3).
 #
 # Usage: scripts/verify-plugin-install.sh <claude-code|codex>
 #
@@ -94,25 +94,58 @@ else
   fail=1
 fi
 
-# Codex silently drops or shortens skills that overflow its skills prompt
-# budget, so check what the model would actually be shown.
-if [ "$TARGET" = codex ]; then
-  echo "==> Verifying the skills Codex shows to the model"
-  PROMPT_JSON="$TMPHOME/prompt-input.json"
-  if ! PYTHON3="$(command -v python3)"; then
-    echo "  ✗ python3 is required to verify the Codex skills prompt" >&2
-    fail=1
-  elif (cd "$TMPHOME" && HOME="$TMPHOME" CODEX_HOME="$TMPHOME/.codex" codex debug prompt-input) >"$PROMPT_JSON"; then
-    uv run --no-project --python "$PYTHON3" --with 'PyYAML==6.0.3' \
-      python "$REPO_ROOT/scripts/check-codex-skill-prompt.py" "$PROMPT_JSON" || fail=1
-  else
-    echo "  ✗ codex debug prompt-input failed" >&2
-    fail=1
-  fi
+# Install the prompt test's three plugins together in a separate home so
+# asta-flows does not consume the skill budget.
+if ! PYTHON3="$(command -v python3)"; then
+  echo "  ✗ python3 is required to verify the skills prompt" >&2
+  exit 1
+fi
+PROMPT_SOURCE="$TMPHOME/prompt-source"
+PROMPT_HOME="$TMPHOME/prompt-home"
+mkdir -p "$PROMPT_HOME"
+"$PYTHON3" - "$REPO_ROOT" "$PROMPT_SOURCE" asta-tools asta-assistant asta-dev <<'PYTHON'
+import json
+import shutil
+import sys
+from pathlib import Path
+
+source, fixture = map(Path, sys.argv[1:3])
+manifest = Path(".claude-plugin/marketplace.json")
+data = json.loads((source / manifest).read_text(encoding="utf-8"))
+by_name = {plugin["name"]: plugin for plugin in data["plugins"]}
+data["plugins"] = [by_name[name] for name in sys.argv[3:]]
+(fixture / manifest).parent.mkdir(parents=True)
+(fixture / manifest).write_text(json.dumps(data), encoding="utf-8")
+for plugin in data["plugins"]:
+    shutil.copytree(source / plugin["source"], fixture / plugin["source"])
+PYTHON
+
+echo "==> Verifying the skills '$TARGET' shows to the model"
+HOME="$PROMPT_HOME" CODEX_HOME="$PROMPT_HOME/.codex" npm_config_cache="$TMPHOME/.npm" \
+  npx -y "$PLUGINS_CLI" add "$PROMPT_SOURCE" --target "$TARGET" --yes
+PROMPT_JSON="$TMPHOME/prompt.json"
+capture_prompt() {
+  case "$TARGET" in
+    codex)
+      (cd "$PROMPT_HOME" && env -i PATH="$PATH" HOME="$PROMPT_HOME" \
+        CODEX_HOME="$PROMPT_HOME/.codex" codex debug prompt-input)
+      ;;
+    claude-code)
+      "$PYTHON3" "$REPO_ROOT/scripts/capture-claude-skill-prompt.py" "$PROMPT_HOME"
+      ;;
+  esac
+}
+if capture_prompt >"$PROMPT_JSON"; then
+  uv run --no-project --python "$PYTHON3" --with 'PyYAML==6.0.3' \
+    python "$REPO_ROOT/scripts/check-skill-prompt.py" "$TARGET" "$PROMPT_JSON" \
+    --source "$PROMPT_SOURCE" || fail=1
+else
+  echo "  ✗ failed to capture the '$TARGET' skills prompt" >&2
+  fail=1
 fi
 
 if [ "$fail" -ne 0 ]; then
   echo "==> FAILED: plugin install verification for '$TARGET'" >&2
   exit 1
 fi
-echo "==> OK: asta-tools + asta-flows asta-assistant + asta-dev installed into '$TARGET'"
+echo "==> OK: asta-tools + asta-flows + asta-assistant + asta-dev installed into '$TARGET'"

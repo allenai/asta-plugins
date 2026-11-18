@@ -1,4 +1,4 @@
-"""Regression tests for the Codex plugin install check."""
+"""Regression tests for the model-visible plugin skill check."""
 
 import json
 import shutil
@@ -8,9 +8,7 @@ from pathlib import Path
 
 import pytest
 
-CHECKER = (
-    Path(__file__).resolve().parents[1] / "scripts" / "check-codex-skill-prompt.py"
-)
+CHECKER = Path(__file__).resolve().parents[1] / "scripts" / "check-skill-prompt.py"
 SKILL_ENTRY = (
     "- asta-flows:run-workflow: Full description (file: r0/run-workflow/SKILL.md)"
 )
@@ -28,6 +26,35 @@ def message(role, text):
 
 def skills_message(text=SKILLS_BLOCK):
     return message("developer", text)
+
+
+def run_check(tmp_path, target, prompt, skill_source):
+    checker = tmp_path / "scripts" / CHECKER.name
+    checker.parent.mkdir()
+    shutil.copyfile(CHECKER, checker)
+    if skill_source is not None:
+        skill = (
+            tmp_path / "plugins" / "asta-flows" / "skills" / "run-workflow" / "SKILL.md"
+        )
+        skill.parent.mkdir(parents=True)
+        skill.write_bytes(skill_source.encode("utf-8"))
+
+    prompt_json = tmp_path / "prompt.json"
+    prompt_json.write_text(prompt if isinstance(prompt, str) else json.dumps(prompt))
+    return subprocess.run(
+        [sys.executable, checker, target, prompt_json], capture_output=True, text=True
+    )
+
+
+def check_result(result, error):
+
+    if error:
+        assert result.returncode == 1
+        assert error in result.stderr
+        assert "Traceback" not in result.stderr
+    else:
+        assert result.returncode == 0, result.stderr
+        assert "all 1 skills shown with full descriptions" in result.stdout
 
 
 @pytest.mark.parametrize(
@@ -171,26 +198,30 @@ def skills_message(text=SKILLS_BLOCK):
     ],
 )
 def test_check_codex_skill_prompt(tmp_path, prompt, skill_source, error):
-    checker = tmp_path / "scripts" / CHECKER.name
-    checker.parent.mkdir()
-    shutil.copyfile(CHECKER, checker)
-    if skill_source is not None:
-        skill = (
-            tmp_path / "plugins" / "asta-flows" / "skills" / "run-workflow" / "SKILL.md"
-        )
-        skill.parent.mkdir(parents=True)
-        skill.write_bytes(skill_source.encode("utf-8"))
+    check_result(run_check(tmp_path, "codex", prompt, skill_source), error)
 
-    prompt_json = tmp_path / "prompt.json"
-    prompt_json.write_text(prompt if isinstance(prompt, str) else json.dumps(prompt))
-    result = subprocess.run(
-        [sys.executable, checker, prompt_json], capture_output=True, text=True
-    )
 
-    if error:
-        assert result.returncode == 1
-        assert error in result.stderr
-        assert "Traceback" not in result.stderr
+@pytest.mark.parametrize(
+    ("entry", "role", "error"),
+    [
+        ("- asta-flows:run-workflow: Full &lt;description&gt;", "system", None),
+        ("- asta-flows:run-workflow: Full &lt;description&gt;", None, None),
+        ("- asta-flows:run-workflow", "system", "empty description"),
+        ("- asta-flows:run-workflow: Full", "system", "description mismatch"),
+        ("- unrelated", "system", "not in the Claude Code skills prompt"),
+        (
+            "- asta-flows:run-workflow: Full &lt;description&gt;",
+            "user",
+            "expected one non-empty Claude Code skills list",
+        ),
+    ],
+)
+def test_check_claude_skill_prompt(tmp_path, entry, role, error):
+    heading = "The following skills are available for use with the Skill tool:"
+    text = {"type": "text", "text": f"{heading}\n\n{entry}\n\nEnd"}
+    if role is None:
+        prompt = {"system": [text], "messages": []}
     else:
-        assert result.returncode == 0, result.stderr
-        assert "all 1 skills shown with full descriptions" in result.stdout
+        prompt = {"messages": [{"role": role, "content": [text]}]}
+    skill_source = SKILL_SOURCE.replace("Full description", "Full <description>")
+    check_result(run_check(tmp_path, "claude-code", prompt, skill_source), error)
