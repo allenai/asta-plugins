@@ -153,17 +153,23 @@ The version lives in three places:
    a `GITHUB_TOKEN` tag push starts no workflows. If either pre-tag check fails,
    Release pushes no tag and comments on the merged PR. After tagging, Release
    waits for Docker promotion and reports dispatch or Docker failures on the
-   PR. Re-run the failed Release jobs to retry. A later push to `main` also
-   retries the same version, using the recorded tag commit if it was tagged.
+   PR. Re-run the failed Release jobs to retry at the original commit. While
+   the same version is current, a later push to `main` can retry pre-tag checks
+   or a dispatch that never started. Once a Docker run has failed, re-run the
+   failed Release jobs or dispatch Release on `main` to retry promotion.
    Until the tag exists, the plugin's `SessionStart` hook keeps the installed
-   CLI or installs the `latest` release. Every PR runs
+   CLI or installs from the repository's `latest` branch, which tracks
+   promoted final releases. Every PR runs
    `manage-version.py check`, so a partial bump fails before it merges.
    Every `main` push publishes run-specific candidates
    (`ghcr.io/allenai/asta:sha-<commit>-run-<id>-attempt-<n>` and `…-tex`) and
    smoke-tests them by digest; candidates never move `:latest`. The tag does not
    rebuild: `docker.yml` promotes the validated candidate digests to `:<tag>` /
    `:<tag>-tex`, and a final `vX.Y.Z` tag (not `-rc.N`) then moves `:latest` /
-   `:latest-tex` to the highest final release. `make push-version-tag` remains
+   `:latest-tex` to the highest final release. Promotion needs the candidate
+   run's artifacts, so complete it within the repository's artifact retention
+   window. The version-bump flow supports final `vX.Y.Z` releases.
+   `make push-version-tag` remains
    the manual fallback (it needs a successful `workspace-release-checks.yml`
    dispatch on the commit); a tag pushed by a person starts `docker.yml` itself.
 6. *(Future)* Publish to PyPI: `make publish` (or `make publish-test` for

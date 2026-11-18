@@ -9,7 +9,7 @@ INSTALL_URL="git+$REPO_URL@v$PLUGIN_VERSION"
 # plugin updated from main can name a version with no tag yet. Exit 2 means
 # git reached the remote and the tag is absent.
 tag_missing() {
-    git ls-remote --exit-code --tags "$REPO_URL" "refs/tags/v$PLUGIN_VERSION" >/dev/null 2>&1
+    GIT_TERMINAL_PROMPT=0 git ls-remote --exit-code --tags "$REPO_URL" "refs/tags/v$PLUGIN_VERSION" >/dev/null 2>&1
     [ $? -eq 2 ]
 }
 

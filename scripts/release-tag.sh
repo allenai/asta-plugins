@@ -3,7 +3,10 @@ set -euo pipefail
 
 operation=${1:?expected plan, push, or promote}
 tag=${2:?expected a version tag}
-[[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+if ! [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "::error::Expected a final release tag in vX.Y.Z format"
+  exit 1
+fi
 ref="refs/tags/$tag"
 annotation="Created by the Release workflow"
 
@@ -65,9 +68,13 @@ case "$operation" in
 
     run=$(jq -r '[.[] | select(.status != "completed")][0].databaseId // empty' <<<"$runs")
     if [ -z "$run" ]; then
+      if [ "${RETRY_FAILED_DOCKER:-false}" != true ] && jq -e 'length > 0' <<<"$runs" >/dev/null; then
+        echo "$tag's Docker release previously failed. Re-run the failed Release jobs to retry promotion."
+        exit 0
+      fi
       run=$(gh api --method POST "repos/$GITHUB_REPOSITORY/actions/workflows/docker.yml/dispatches" \
-        -H 'X-GitHub-Api-Version: 2026-03-10' -f "ref=$ref" -f "inputs[expected-sha]=$expected" \
-        --jq '.workflow_run_id | numbers')
+        -H 'X-GitHub-Api-Version: 2026-03-10' -f "ref=$ref" -f "inputs[expected-sha]=$expected" |
+        jq -r '.workflow_run_id | numbers')
       if ! [[ "$run" =~ ^[0-9]+$ ]]; then
         echo "::error::Docker dispatch did not return a run ID for $tag"
         exit 1

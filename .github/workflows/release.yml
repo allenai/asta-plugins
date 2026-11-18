@@ -92,6 +92,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.version.outputs.tag }}
           TAG_SHA: ${{ needs.version.outputs.tag_sha || github.sha }}
+          RETRY_FAILED_DOCKER: ${{ github.event_name == 'workflow_dispatch' || github.run_attempt > 1 }}
         run: scripts/release-tag.sh promote "$TAG" "$TAG_SHA"
 
   report-failure:
@@ -135,4 +136,15 @@ jobs:
           msg="$msg Release run: $RUN_URL."
           echo "::error::$msg"
           pr=$(gh api "repos/$GITHUB_REPOSITORY/commits/$RELEASE_SHA/pulls" --jq '[.[] | select(.merged_at != null and .base.ref == "main")][0].number // empty')
-          if [ -n "$pr" ]; then gh pr comment "$pr" --repo "$GITHUB_REPOSITORY" --body "$msg"; fi
+          if [ -n "$pr" ]; then
+            marker="<!-- asta-release-failure: ${TAG:-$RELEASE_SHA} -->"
+            body=$(printf '%s\n%s' "$marker" "$msg")
+            comments="repos/$GITHUB_REPOSITORY/issues/$pr/comments"
+            existing=$(gh api --paginate --slurp "$comments" | jq -r --arg marker "$marker" \
+              '[.[][] | select(.user.login == "github-actions[bot]" and (.body | startswith($marker + "\n")))][0].id // empty')
+            if [ -n "$existing" ]; then
+              gh api --method PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$existing" -f "body=$body" >/dev/null
+            else
+              gh pr comment "$pr" --repo "$GITHUB_REPOSITORY" --body "$body"
+            fi
+          fi
