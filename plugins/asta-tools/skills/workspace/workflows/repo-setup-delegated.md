@@ -83,7 +83,7 @@ merge, so finish setup for them:
 
 - In step 4, merge the setup PR yourself once its checks pass, without sending
   step 4's message, and continue at step 5. If your merge is refused too, skip
-  steps 5 and 6 and end with the second line below in place of step 7.
+  steps 5 and 6 and send only the last line below in place of step 7.
 - In step 7, add in place of "You're its admin." the one line that fits:
   - After a `201`: "You don't have access yet: accept your invitation at
     <https://github.com/<owner>/<name>/invitations>."
