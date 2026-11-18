@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Workspace setup under another account builds the private workspace and opens its setup PR even if an admin grant is refused or an invitation is pending. The handoff tells the requester what access they have and how to request admin access. Publication follows the normal merge approval.
+- Workspace setup under another account builds the private workspace and opens its setup PR even if an admin grant is refused or an invitation is pending. The handoff gives one line about the requester's access and tells them how to resume setup after the PR merges.
 - CI's locked Claude Code, Codex and `plugins` versions move to `ci-tools`, where Dependabot's npm updater can open PRs. A daily check is the only alert for stalled updates: it opens, updates and closes one GitHub issue per CLI, including when Dependabot fails before opening a PR. The separate CI-failure alert workflow is removed.
 - The Claude Code and Codex plugin install checks fail when a skill from `asta-tools`, `asta-assistant`, or `asta-dev` is missing from the model's prompt or its description changes during rendering.
 - Require `asta-documents` 0.4.2 or newer for `asta documents`.

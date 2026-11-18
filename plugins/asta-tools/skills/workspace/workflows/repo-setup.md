@@ -68,8 +68,9 @@ or pushing anything.
    - Otherwise, with Pages off, send only: "Merge <PR link> to add the
      workspace, and tell me." In step 7 link the repo in place of the site.
 
-   The owner merges the PR. Merge it yourself only if they explicitly ask
-   you to and your policies allow it. Continue at step 5 after the PR merges.
+   The requester or an authorized maintainer merges the PR. Merge it yourself
+   only if the requester explicitly asks you to and your policies allow it.
+   Continue at step 5 after the PR merges.
 5. With protections on, apply both rulesets from `assets/rulesets/`
    (`gh api repos/{owner}/{repo}/rulesets -X POST --input <file>`) only now
    that `docs.yml` is on the default branch. Without Pages, apply only
@@ -78,10 +79,9 @@ or pushing anything.
    `--enable-squash-merge`, each only if its setting is on.
 7. Send only this, filled in, as your whole reply: "Your workspace is set up:
    <site link>. It uses Asta's managed settings, shown in <Settings link>."
-   For delegated setup, check current permission without changing it and add
-   the access line from
-   [repo setup for someone else](repo-setup-delegated.md#5-return-to-repo-setup),
-   or "You're its admin." if the read confirmed `admin`.
+   For delegated setup, use the read-only
+   [access check](repo-setup-delegated.md#read-access-and-choose-one-line) and
+   add its access line.
    If they asked for Overleaf, add "Next, Overleaf: send me your
    Overleaf project's link." No list of what was turned on, and no notes on
    how you did it. If a setting isn't on, say instead in one line which
