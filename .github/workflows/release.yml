@@ -1,0 +1,162 @@
+name: Release
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: release
+  queue: max
+jobs:
+  version:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      create_tag: ${{ steps.version.outputs.create_tag }}
+      tag_sha: ${{ steps.version.outputs.tag_sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check the version and find release work
+        id: version
+        run: |
+          set -euo pipefail
+          python3 scripts/manage-version.py check
+          tag="v$(python3 scripts/manage-version.py show)"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          scripts/release-tag.sh plan "$tag"
+
+  checks:
+    needs: version
+    if: needs.version.outputs.create_tag == 'true'
+    permissions:
+      contents: write
+      pull-requests: write
+      pages: read
+      packages: read
+    uses: ./.github/workflows/workspace-release-checks.yml
+
+  image:
+    needs: version
+    if: needs.version.outputs.create_tag == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    permissions:
+      actions: read
+      checks: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Wait for main's published and verified images
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/wait-for-main-image.sh "$GITHUB_SHA"
+
+  tag:
+    needs: [version, checks, image]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Push the checked commit's version tag
+        env:
+          TAG: ${{ needs.version.outputs.tag }}
+        run: scripts/release-tag.sh push "$TAG" "$GITHUB_SHA"
+
+  promote:
+    needs: [version, tag]
+    if: >-
+      !cancelled() && needs.version.result == 'success' &&
+      (needs.tag.result == 'success' || needs.version.outputs.tag_sha != '')
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    permissions:
+      actions: write
+      checks: read
+      contents: read
+    outputs:
+      tag_verified: ${{ steps.docker.outputs.tag_verified }}
+      run_url: ${{ steps.docker.outputs.run_url }}
+    steps:
+      - uses: actions/checkout@v4
+      # A GITHUB_TOKEN tag push starts no workflow. Dispatch is exempt.
+      - name: Complete the tag's Docker release
+        id: docker
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.version.outputs.tag }}
+          TAG_SHA: ${{ needs.version.outputs.tag_sha || github.sha }}
+          RETRY_FAILED_DOCKER: ${{ github.event_name == 'workflow_dispatch' || github.run_attempt > 1 }}
+        run: scripts/release-tag.sh promote "$TAG" "$TAG_SHA"
+
+  report-release:
+    needs: [version, checks, image, tag, promote]
+    if: >-
+      !cancelled() && (failure() ||
+      (needs.promote.result == 'success' && needs.promote.outputs.run_url != ''))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Report release failure or recovery on the merged PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.version.outputs.tag }}
+          RELEASE_SHA: ${{ needs.version.outputs.tag_sha || github.sha }}
+          CHECKS: ${{ needs.checks.result }}
+          IMAGE: ${{ needs.image.result }}
+          PROMOTION: ${{ needs.promote.result }}
+          RELEASE_FAILED: ${{ contains(needs.*.result, 'failure') }}
+          TAG_VERIFIED: ${{ needs.promote.outputs.tag_verified }}
+          DOCKER_RUN: ${{ needs.promote.outputs.run_url }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          if [ "$RELEASE_FAILED" = false ]; then
+            msg="Release $TAG recovered. The Docker release completed successfully: $DOCKER_RUN."
+          elif [ "$PROMOTION" = failure ]; then
+            if [ -n "$DOCKER_RUN" ]; then
+              msg="Tag $TAG was verified at $RELEASE_SHA. The Docker release did not complete successfully: $DOCKER_RUN."
+            elif [ "$TAG_VERIFIED" = true ]; then
+              msg="Tag $TAG was verified at $RELEASE_SHA, but no Docker release run could be confirmed."
+            else
+              msg="Release could not verify tag $TAG at $RELEASE_SHA for Docker promotion."
+            fi
+            msg="$msg Re-run the failed Release jobs to retry promotion."
+          elif [ "$CHECKS" = failure ] || [ "$IMAGE" = failure ]; then
+            msg="Release $TAG pushed no tag. Workspace release checks: $CHECKS. Main Docker images: $IMAGE. Resolve the failed checks and re-run the failed Release jobs."
+          elif [ -n "$TAG" ]; then
+            msg="Release $TAG could not publish or verify the tag for $RELEASE_SHA. Resolve the tag error and re-run the failed Release jobs."
+          else
+            msg="Release could not determine the version to tag. Fix the version check on main."
+          fi
+          if [ "$RELEASE_FAILED" = true ]; then
+            msg="$msg Release run: $RUN_URL."
+            echo "::error::$msg"
+          fi
+          pr=$(gh api "repos/$GITHUB_REPOSITORY/commits/$RELEASE_SHA/pulls" --jq '[.[] | select(.merged_at != null and .base.ref == "main")][0].number // empty')
+          if [ -n "$pr" ]; then
+            marker="<!-- asta-release-failure: ${TAG:-$RELEASE_SHA} -->"
+            body=$(printf '%s\n%s' "$marker" "$msg")
+            comments="repos/$GITHUB_REPOSITORY/issues/$pr/comments"
+            existing=$(gh api --paginate --slurp "$comments" | jq -r --arg marker "$marker" --arg body "$body" \
+              '[.[][] | select(.user.login == "github-actions[bot]" and (.body | startswith($marker + "\n")))][0] |
+               if . == null then "missing" elif .body == $body then "unchanged" else .id end')
+            case "$existing" in
+              missing)
+                if [ "$RELEASE_FAILED" = true ]; then
+                  gh pr comment "$pr" --repo "$GITHUB_REPOSITORY" --body "$body"
+                fi
+                ;;
+              unchanged) ;;
+              *) gh api --method PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$existing" -f "body=$body" >/dev/null ;;
+            esac
+          fi

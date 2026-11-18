@@ -1078,6 +1078,26 @@ def test_preview_job_conditions(event, action, head_repo, actor, expected) -> No
         )
 
 
+@pytest.mark.parametrize(
+    "event,action",
+    [("push", ""), ("workflow_dispatch", ""), ("pull_request", "closed")],
+)
+def test_validation_only_site_build_does_not_write_pages(event, action):
+    workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+    context = {
+        "inputs.publish": False,
+        "github.event_name": event,
+        "github.event.action": action,
+        "github.repository": "owner/site",
+        "github.event.pull_request.head.repo.full_name": "owner/site",
+        "github.actor": "contributor",
+        "github.ref": "refs/heads/main",
+        "github.event.repository.default_branch": "main",
+    }
+    for job in ("deploy", "cleanup-preview"):
+        assert not _condition_enabled(workflow["jobs"][job]["if"], context)
+
+
 def _condition_enabled(expression, context):
     # These workflow guards use only comparisons, boolean operators, !, always()
     # and format() with positional {N} placeholders.
