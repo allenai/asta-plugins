@@ -1,0 +1,10 @@
+{
+  "name": "asta-plugins-ci-tools",
+  "private": true,
+  "description": "CI plugin tools locked in package-lock.json and updated by Dependabot.",
+  "dependencies": {
+    "@anthropic-ai/claude-code": "2.1.325",
+    "@openai/codex": "0.170.0",
+    "plugins": "1.3.7"
+  }
+}

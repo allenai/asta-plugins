@@ -16,9 +16,11 @@ set -euo pipefail
 
 TARGET="${1:?usage: verify-plugin-install.sh <claude-code|codex>}"
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd -P)"
-# @latest is what `npx plugins add` gives users — green means users can install.
-# Override PLUGINS_CLI to pin if an upstream release regresses.
-PLUGINS_CLI="${PLUGINS_CLI:-plugins@latest}"
+# CI uses the locked binary. Local runs default to the public npx install path.
+plugins_cli=(npx -y "${PLUGINS_CLI:-plugins@latest}")
+if [[ -n "${PLUGINS_CLI_BIN:-}" ]]; then
+  plugins_cli=("$PLUGINS_CLI_BIN")
+fi
 if ! PYTHON3="$(command -v python3)"; then
   echo "  ✗ python3 is required to verify the skills prompt" >&2
   exit 1
@@ -71,7 +73,7 @@ PYTHON
 
 echo "==> Installing asta plugins into '$TARGET' (HOME=$TMPHOME)"
 HOME="$TMPHOME" CODEX_HOME="$TMPHOME/.codex" \
-  npx -y "$PLUGINS_CLI" add "$REPO_ROOT" --target "$TARGET" --yes
+  "${plugins_cli[@]}" add "$REPO_ROOT" --target "$TARGET" --yes
 
 case "$TARGET" in
   claude-code)
@@ -135,7 +137,7 @@ fi
 
 echo "==> Verifying the skills '$TARGET' shows to the model"
 HOME="$PROMPT_HOME" CODEX_HOME="$PROMPT_HOME/.codex" npm_config_cache="$TMPHOME/.npm" \
-  npx -y "$PLUGINS_CLI" add "$PROMPT_SOURCE" --target "$TARGET" --yes
+  "${plugins_cli[@]}" add "$PROMPT_SOURCE" --target "$TARGET" --yes
 PROMPT_JSON="$TMPHOME/prompt.json"
 capture_prompt() {
   case "$TARGET" in

@@ -12,9 +12,6 @@ on:
   pull_request:
     branches: [main]
 
-env:
-  CLAUDE_CODE_TEST_VERSION: "2.1.283"
-
 jobs:
   code-quality:
     # x86 for every build-runner: these checks read source, so the machine
@@ -43,19 +40,26 @@ jobs:
 
   test:
     runs-on: ${{ inputs.build-runner || 'ubuntu-latest' }}
+    permissions:
+      contents: read
     strategy:
       matrix:
         python-version: ["3.11", "3.12", "3.13", "3.14", "3.15"]
     env:
       UV_PYTHON: ${{ matrix.python-version }}
+      DISABLE_AUTOUPDATER: "1"
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
-      - name: Install Claude Code CLI
-        run: |
-          curl -fsSL https://claude.ai/install.sh | bash -s "$CLAUDE_CODE_TEST_VERSION"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install locked CLI tools
+        run: bash scripts/install-ci-clis.sh
 
       - name: Install uv
         uses: astral-sh/setup-uv@v4
@@ -69,17 +73,19 @@ jobs:
         run: make test-plugins
 
   tests-ok:
-    # One check for main to require that keeps its name when the Python matrix changes.
-    needs: test
+    # One required check that keeps its name when the Python matrix changes; it
+    # also gates the install and model-visible skill-description checks.
+    needs: [test, plugin-install]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - run: |
-          echo "test: $RESULT"
-          test "$RESULT" = success
+          echo "test: $TEST_RESULT, plugin-install: $INSTALL_RESULT"
+          test "$TEST_RESULT" = success && test "$INSTALL_RESULT" = success
         env:
-          RESULT: ${{ needs.test.result }}
+          TEST_RESULT: ${{ needs.test.result }}
+          INSTALL_RESULT: ${{ needs.plugin-install.result }}
 
   docker:
     runs-on: ${{ inputs.build-runner || 'ubuntu-latest' }}
@@ -101,23 +107,22 @@ jobs:
     # Verify `npx plugins add` installs the plugins into Claude Code and Codex.
     # No API auth required. Also verify both model-visible skill lists.
     runs-on: ${{ inputs.build-runner || 'ubuntu-latest' }}
+    permissions:
+      contents: read
     env:
-      # The older integration-test pin drops skill descriptions at its default budget.
-      CLAUDE_CODE_TEST_VERSION: "2.1.325"
+      DISABLE_AUTOUPDATER: "1"
+      PLUGINS_CLI_BIN: ${{ github.workspace }}/.github/ci-tools/node_modules/.bin/plugins
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
 
-      - name: Install Claude Code CLI
-        run: |
-          curl -fsSL https://claude.ai/install.sh | bash -s "$CLAUDE_CODE_TEST_VERSION"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-
-      - name: Install Codex CLI
-        run: npm install -g @openai/codex
+      - name: Install locked CLI tools
+        run: bash scripts/install-ci-clis.sh
 
       - name: Install uv
         uses: astral-sh/setup-uv@v4

@@ -27,3 +27,4 @@ skills-lock.json
 !/.asta/overleaf/
 
 .envrc
+.github/ci-tools/node_modules/
