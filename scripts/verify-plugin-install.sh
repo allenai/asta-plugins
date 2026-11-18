@@ -7,7 +7,7 @@
 # plugin cache.
 #
 # For codex it also renders the model-visible prompt and checks every skill is
-# listed with its full description (needs uvx).
+# listed with its full description (needs uv and Python 3).
 #
 # Usage: scripts/verify-plugin-install.sh <claude-code|codex>
 #
@@ -31,7 +31,8 @@ TMPHOME="$(mktemp -d)"
 trap 'rm -rf "$TMPHOME"' EXIT
 
 echo "==> Installing asta plugins into '$TARGET' (HOME=$TMPHOME)"
-HOME="$TMPHOME" npx -y "$PLUGINS_CLI" add "$REPO_ROOT" --target "$TARGET" --yes
+HOME="$TMPHOME" CODEX_HOME="$TMPHOME/.codex" \
+  npx -y "$PLUGINS_CLI" add "$REPO_ROOT" --target "$TARGET" --yes
 
 case "$TARGET" in
   claude-code)
@@ -98,8 +99,9 @@ fi
 if [ "$TARGET" = codex ]; then
   echo "==> Verifying the skills Codex shows to the model"
   PROMPT_JSON="$TMPHOME/prompt-input.json"
-  if HOME="$TMPHOME" codex debug prompt-input >"$PROMPT_JSON"; then
-    uvx --with pyyaml python "$REPO_ROOT/scripts/check-codex-skill-prompt.py" "$PROMPT_JSON" || fail=1
+  if (cd "$TMPHOME" && HOME="$TMPHOME" CODEX_HOME="$TMPHOME/.codex" codex debug prompt-input) >"$PROMPT_JSON"; then
+    uv run --no-project --python "$(command -v python3)" --with 'PyYAML==6.0.3' \
+      python "$REPO_ROOT/scripts/check-codex-skill-prompt.py" "$PROMPT_JSON" || fail=1
   else
     echo "  ✗ codex debug prompt-input failed" >&2
     fail=1

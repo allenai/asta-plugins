@@ -99,7 +99,7 @@ jobs:
 
   plugin-install:
     # Verify `npx plugins add` installs the plugins into Claude Code and Codex.
-    # No API auth required — only checks the installed files land correctly.
+    # No API auth required. Also verify the skill descriptions Codex renders.
     runs-on: ${{ inputs.build-runner || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
