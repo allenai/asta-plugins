@@ -124,7 +124,8 @@ jobs:
         shell: bash
         run: |
           changed_paths=$(git diff --name-only HEAD^1 HEAD -- \
-            Dockerfile docker image/skills-cli scripts/base-image-context.sh src/asta \
+            Dockerfile .dockerignore Dockerfile.dockerignore \
+            docker image/skills-cli scripts/base-image-context.sh src/asta \
             plugins/asta-tools/skills/workspace/assets/devcontainer.json \
             plugins/asta-tools/skills/workspace/assets/paper-preview.sh \
             tests/dom tests/fixtures/devcontainer-smoke \

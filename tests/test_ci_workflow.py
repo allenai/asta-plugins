@@ -62,6 +62,8 @@ def test_claude_selective_install_runs_in_ci():
 
 DEVCONTAINER_PATHS = [
     "Dockerfile",
+    ".dockerignore",
+    "Dockerfile.dockerignore",
     "docker/entrypoint.sh",
     "image/skills-cli/package-lock.json",
     "scripts/base-image-context.sh",
