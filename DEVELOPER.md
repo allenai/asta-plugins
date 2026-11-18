@@ -155,8 +155,10 @@ The version lives in three places:
    waits for Docker promotion and reports dispatch or Docker failures on the
    PR. Re-run the failed Release jobs to retry at the original commit. While
    the same version is current, a later push to `main` can retry pre-tag checks
-   or a dispatch that never started. Once a Docker run has failed, re-run the
-   failed Release jobs or dispatch Release on `main` to retry promotion.
+   or a dispatch that never started. A failed Docker run keeps Release red and
+   is linked from the merged PR. Re-run the failed Release jobs or dispatch
+   Release on `main` to retry promotion. Successful promotion updates the PR's
+   existing failure comment to record recovery.
    Until the tag exists, the plugin's `SessionStart` hook keeps the installed
    CLI or installs from the repository's `latest` branch, which tracks
    promoted final releases. Every PR runs

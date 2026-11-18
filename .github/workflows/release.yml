@@ -95,16 +95,18 @@ jobs:
           RETRY_FAILED_DOCKER: ${{ github.event_name == 'workflow_dispatch' || github.run_attempt > 1 }}
         run: scripts/release-tag.sh promote "$TAG" "$TAG_SHA"
 
-  report-failure:
+  report-release:
     needs: [version, checks, image, tag, promote]
-    if: failure()
+    if: >-
+      !cancelled() && (failure() ||
+      (needs.promote.result == 'success' && needs.promote.outputs.run_url != ''))
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       contents: read
       pull-requests: write
     steps:
-      - name: Comment on the merged PR
+      - name: Report release failure or recovery on the merged PR
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.version.outputs.tag }}
@@ -112,12 +114,15 @@ jobs:
           CHECKS: ${{ needs.checks.result }}
           IMAGE: ${{ needs.image.result }}
           PROMOTION: ${{ needs.promote.result }}
+          RELEASE_FAILED: ${{ contains(needs.*.result, 'failure') }}
           TAG_VERIFIED: ${{ needs.promote.outputs.tag_verified }}
           DOCKER_RUN: ${{ needs.promote.outputs.run_url }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
-          if [ "$PROMOTION" = failure ]; then
+          if [ "$RELEASE_FAILED" = false ]; then
+            msg="Release $TAG recovered. The Docker release completed successfully: $DOCKER_RUN."
+          elif [ "$PROMOTION" = failure ]; then
             if [ -n "$DOCKER_RUN" ]; then
               msg="Tag $TAG was verified at $RELEASE_SHA. The Docker release did not complete successfully: $DOCKER_RUN."
             elif [ "$TAG_VERIFIED" = true ]; then
@@ -133,18 +138,25 @@ jobs:
           else
             msg="Release could not determine the version to tag. Fix the version check on main."
           fi
-          msg="$msg Release run: $RUN_URL."
-          echo "::error::$msg"
+          if [ "$RELEASE_FAILED" = true ]; then
+            msg="$msg Release run: $RUN_URL."
+            echo "::error::$msg"
+          fi
           pr=$(gh api "repos/$GITHUB_REPOSITORY/commits/$RELEASE_SHA/pulls" --jq '[.[] | select(.merged_at != null and .base.ref == "main")][0].number // empty')
           if [ -n "$pr" ]; then
             marker="<!-- asta-release-failure: ${TAG:-$RELEASE_SHA} -->"
             body=$(printf '%s\n%s' "$marker" "$msg")
             comments="repos/$GITHUB_REPOSITORY/issues/$pr/comments"
-            existing=$(gh api --paginate --slurp "$comments" | jq -r --arg marker "$marker" \
-              '[.[][] | select(.user.login == "github-actions[bot]" and (.body | startswith($marker + "\n")))][0].id // empty')
-            if [ -n "$existing" ]; then
-              gh api --method PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$existing" -f "body=$body" >/dev/null
-            else
-              gh pr comment "$pr" --repo "$GITHUB_REPOSITORY" --body "$body"
-            fi
+            existing=$(gh api --paginate --slurp "$comments" | jq -r --arg marker "$marker" --arg body "$body" \
+              '[.[][] | select(.user.login == "github-actions[bot]" and (.body | startswith($marker + "\n")))][0] |
+               if . == null then "missing" elif .body == $body then "unchanged" else .id end')
+            case "$existing" in
+              missing)
+                if [ "$RELEASE_FAILED" = true ]; then
+                  gh pr comment "$pr" --repo "$GITHUB_REPOSITORY" --body "$body"
+                fi
+                ;;
+              unchanged) ;;
+              *) gh api --method PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$existing" -f "body=$body" >/dev/null ;;
+            esac
           fi

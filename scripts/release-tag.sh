@@ -60,18 +60,15 @@ case "$operation" in
     echo "tag_verified=true" >> "$GITHUB_OUTPUT"
     runs=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow docker.yml \
       --branch "$tag" --commit "$expected" --limit 30 --json databaseId,event,status,conclusion)
-    runs=$(jq '[.[] | select(.event == "push" or .event == "workflow_dispatch")]' <<<"$runs")
-    if jq -e 'any(.[]; .conclusion == "success")' <<<"$runs" >/dev/null; then
-      echo "$tag's Docker release already succeeded"
-      exit 0
-    fi
-
-    run=$(jq -r '[.[] | select(.status != "completed")][0].databaseId // empty' <<<"$runs")
-    if [ -z "$run" ]; then
-      if [ "${RETRY_FAILED_DOCKER:-false}" != true ] && jq -e 'length > 0' <<<"$runs" >/dev/null; then
-        echo "$tag's Docker release previously failed. Re-run the failed Release jobs to retry promotion."
-        exit 0
-      fi
+    existing=$(jq -c --arg retry "${RETRY_FAILED_DOCKER:-false}" '
+      [.[] | select(.event == "push" or .event == "workflow_dispatch")] |
+      first(.[] | select(.conclusion == "success")) //
+      first(.[] | select(.status != "completed")) //
+      (if $retry != "true" then first(.[]) else empty end)
+    ' <<<"$runs")
+    if [ -n "$existing" ]; then
+      run=$(jq -r '.databaseId' <<<"$existing")
+    else
       run=$(gh api --method POST "repos/$GITHUB_REPOSITORY/actions/workflows/docker.yml/dispatches" \
         -H 'X-GitHub-Api-Version: 2026-03-10' -f "ref=$ref" -f "inputs[expected-sha]=$expected" |
         jq -r '.workflow_run_id | numbers')
@@ -82,6 +79,14 @@ case "$operation" in
     fi
     run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$run"
     echo "run_url=$run_url" >> "$GITHUB_OUTPUT"
+    if [ -n "$existing" ] && [ "$(jq -r '.status' <<<"$existing")" = completed ]; then
+      if [ "$(jq -r '.conclusion' <<<"$existing")" = success ]; then
+        echo "$tag's Docker release already succeeded: $run_url"
+        exit 0
+      fi
+      echo "::error::$tag's Docker release previously failed: $run_url. Re-run the failed Release jobs to retry promotion."
+      exit 1
+    fi
     echo "Waiting for Docker release $run_url"
     timeout 170m gh run watch "$run" --repo "$GITHUB_REPOSITORY" --exit-status --interval 30
     ;;

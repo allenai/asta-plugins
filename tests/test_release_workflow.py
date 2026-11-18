@@ -153,18 +153,18 @@ def test_conflicting_tag_is_neither_moved_nor_dispatched(release):
 
 
 @pytest.mark.parametrize(
-    ("event", "status", "conclusion", "retry", "watched"),
+    ("event", "status", "conclusion", "retry", "run_id", "watched", "exit_code"),
     [
-        ("workflow_dispatch", "completed", "success", "false", None),
-        ("workflow_dispatch", "in_progress", None, "false", "24"),
-        ("workflow_dispatch", "completed", "failure", "false", None),
-        ("workflow_dispatch", "completed", "failure", "true", "42"),
-        ("push", "completed", "success", "false", None),
-        ("pull_request", "completed", "success", "false", "42"),
+        ("workflow_dispatch", "completed", "success", "false", "24", False, 0),
+        ("workflow_dispatch", "in_progress", None, "false", "24", True, 0),
+        ("workflow_dispatch", "completed", "failure", "false", "24", False, 1),
+        ("workflow_dispatch", "completed", "failure", "true", "42", True, 0),
+        ("push", "completed", "success", "false", "24", False, 0),
+        ("pull_request", "completed", "success", "false", "42", True, 0),
     ],
 )
 def test_promotion_reuses_active_and_successful_runs(
-    release, event, status, conclusion, retry, watched
+    release, event, status, conclusion, retry, run_id, watched, exit_code
 ):
     release.manual_tag(release.checked, annotated=True)
     runs = [
@@ -181,22 +181,23 @@ def test_promotion_reuses_active_and_successful_runs(
         DOCKER_RUNS=json.dumps(runs),
         RETRY_FAILED_DOCKER=retry,
     )
-    assert result.returncode == 0, result.stderr
+    assert result.returncode == exit_code, result.stdout + result.stderr
     commands = (release.path / "gh.log").read_text().splitlines()
     assert f"--branch {TAG} --commit {release.checked}" in commands[0]
-    if watched == "42":
+    if run_id == "42":
         assert f"ref={TAG_REF}" in commands[1]
         assert f"inputs[expected-sha]={release.checked}" in commands[1]
         assert "X-GitHub-Api-Version: 2026-03-10" in commands[1]
     else:
         assert not any(command.startswith("api ") for command in commands)
     assert outputs["tag_verified"] == "true"
+    assert outputs["run_url"].endswith(f"/{run_id}")
+    if exit_code:
+        assert outputs["run_url"] in result.stdout
     if watched:
-        assert commands[-1].startswith(f"run watch {watched} ")
-        assert outputs["run_url"].endswith(f"/{watched}")
+        assert commands[-1].startswith(f"run watch {run_id} ")
     else:
         assert len(commands) == 1
-        assert "run_url" not in outputs
 
 
 def test_dispatch_and_docker_failures_preserve_the_tag_for_retry(release):
@@ -256,24 +257,49 @@ def test_docker_dispatch_rejects_a_branch_or_unverified_commit(
     assert (result.returncode == 0) == valid, result.stdout + result.stderr
 
 
-@pytest.mark.parametrize("existing", [False, True])
-def test_failure_report_updates_only_the_workflows_own_comment(release, existing):
+@pytest.mark.parametrize(
+    ("stage", "existing", "action"),
+    [
+        ("checks", None, "create"),
+        ("promotion", None, "create"),
+        ("promotion", "failure", "update"),
+        ("recovery", "failure", "update"),
+        ("recovery", "recovery", None),
+        ("recovery", None, None),
+    ],
+)
+def test_release_report_updates_only_the_workflows_own_comment(
+    release, stage, existing, action
+):
     workflow = yaml.safe_load((ROOT / ".github/workflows/release.yml").read_text())
-    report = workflow["jobs"]["report-failure"]["steps"][0]["run"]
+    report = workflow["jobs"]["report-release"]["steps"][0]["run"]
     marker = f"<!-- asta-release-failure: {TAG} -->\n"
+    docker_run = "https://github.com/test/repo/actions/runs/42"
+    recovery = f"Release {TAG} recovered. The Docker release completed successfully: {docker_run}."
     comments = [{"id": 8, "user": {"login": "someone"}, "body": marker}]
-    if existing:
+    if existing is not None:
         comments.append(
-            {"id": 9, "user": {"login": "github-actions[bot]"}, "body": marker}
+            {
+                "id": 9,
+                "user": {"login": "github-actions[bot]"},
+                "body": marker + (recovery if existing == "recovery" else "Retry."),
+            }
         )
     result = subprocess.run(
         ["bash", "-c", report],
         env=release.env(
             TAG=TAG,
             RELEASE_SHA=release.checked,
-            CHECKS="failure",
-            IMAGE="success",
-            PROMOTION="skipped",
+            CHECKS="failure" if stage == "checks" else "skipped",
+            IMAGE="success" if stage == "checks" else "skipped",
+            PROMOTION={
+                "checks": "skipped",
+                "promotion": "failure",
+                "recovery": "success",
+            }[stage],
+            RELEASE_FAILED=str(stage != "recovery").lower(),
+            TAG_VERIFIED="true",
+            DOCKER_RUN=docker_run,
             RUN_URL="https://github.com/test/repo/actions/runs/10",
             PR_COMMENTS=json.dumps([comments]),
         ),
@@ -282,12 +308,25 @@ def test_failure_report_updates_only_the_workflows_own_comment(release, existing
     )
     assert result.returncode == 0, result.stderr
     commands = (release.path / "gh.log").read_text()
-    if existing:
+    if action == "update":
         assert "api --method PATCH repos/test/repo/issues/comments/9" in commands
         assert "pr comment" not in commands
-    else:
+    elif action == "create":
         assert "pr comment 7" in commands
         assert "PATCH" not in commands
+    else:
+        assert "pr comment" not in commands
+        assert "PATCH" not in commands
+    if stage == "checks":
+        assert "::error::" in result.stdout
+        assert f"Release {TAG} pushed no tag." in commands
+        assert "Workspace release checks: failure" in commands
+    elif stage == "promotion":
+        assert "::error::" in result.stdout
+        assert f"Docker release did not complete successfully: {docker_run}" in commands
+    elif action == "update":
+        assert recovery in commands
+        assert "retry" not in commands
 
 
 def test_release_calls_keep_the_x86_browser_gate_on_push():
