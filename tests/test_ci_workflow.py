@@ -4,6 +4,7 @@ import json
 import os
 import re
 import subprocess
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -138,7 +139,7 @@ def test_alerts_are_limited_to_completed_ci_tools_updates():
     job = workflow["jobs"]["alert"]
     condition = job["if"].removeprefix("${{ ").removesuffix(" }}")
     assert re.split(r"\s+&&\s+", condition) == [
-        'contains(fromJSON(\'["failure","timed_out","success"]\'), '
+        'contains(fromJSON(\'["failure","timed_out"]\'), '
         "github.event.workflow_run.conclusion)",
         "github.event.workflow_run.event == 'pull_request'",
         "github.event.workflow_run.actor.login == 'dependabot[bot]'",
@@ -153,12 +154,12 @@ def test_alerts_are_limited_to_completed_ci_tools_updates():
     [
         (
             "failure",
-            False,
+            None,
             ["create", "--title", "CLI update stuck: openai/codex"],
         ),
-        ("timed_out", True, ["comment", "3"]),
-        ("success", True, ["close", "3"]),
-        ("success", False, []),
+        ("timed_out", "current", ["comment", "3"]),
+        ("failure", "legacy", ["comment", "3"]),
+        ("timed_out", "both", ["comment", "3"]),
     ],
 )
 @pytest.mark.parametrize("version", ["0.171.0", "1.0.0-alpha.1"])
@@ -174,6 +175,7 @@ def test_update_failures_share_one_issue_per_cli(
     # Any release of the CLI finds the issue an earlier release opened.
     branch = f"dependabot/npm_and_yarn/ci-tools/openai/codex-{version}"
     title = "CLI update stuck: openai/codex"
+    legacy_title = "CI fails on CLI updates: openai/codex"
     issues = [
         [
             {"title": title, "number": 1, "pull_request": {}},
@@ -181,7 +183,16 @@ def test_update_failures_share_one_issue_per_cli(
         ]
     ]
     if matching_issue:
-        issues.append([{"title": title, "number": 3}])
+        if matching_issue == "both":
+            issues[0].append({"title": legacy_title, "number": 4})
+        issues.append(
+            [
+                {
+                    "title": legacy_title if matching_issue == "legacy" else title,
+                    "number": 3,
+                }
+            ]
+        )
     gh = tmp_path / "gh"
     gh.write_text(
         '#!/bin/bash\nif [[ "$1" == api ]]; then\n'
@@ -204,9 +215,11 @@ def test_update_failures_share_one_issue_per_cli(
         text=True,
     )
     lines = result.stdout.splitlines()
-    assert lines[: 1 + len(expected)] == (["issue", *expected] if expected else [])
-    if conclusion != "success":
-        assert f"CI result: `{conclusion}`" in result.stdout
+    if matching_issue == "legacy":
+        assert lines[:5] == ["issue", "edit", "3", "--title", title]
+        lines = lines[5:]
+    assert lines[: 1 + len(expected)] == ["issue", *expected]
+    assert f"CI result: `{conclusion}`" in result.stdout
 
 
 def test_freshness_runs_after_dependabot_and_shares_the_alert_queue():
@@ -224,27 +237,51 @@ def test_freshness_runs_after_dependabot_and_shares_the_alert_queue():
     ) >= 2 * 60
     job = workflow["jobs"]["freshness"]
     assert job["concurrency"] == {"group": "ci-tools-alert", "queue": "max"}
+    checkout, check = job["steps"]
+    assert checkout["with"]["ref"] == "refs/heads/main"
+    assert (
+        check["env"]["DEPENDABOT_CHECK_UTC"]
+        == f"{dependabot_hour.zfill(2)}:{dependabot_minute}"
+    )
+    assert (int(hour) - int(dependabot_hour)) * 60 + int(minute) - int(
+        dependabot_minute
+    ) >= int(check["env"]["GRACE_HOURS"]) * 60
 
 
 @pytest.mark.parametrize(
-    ("latest", "hours_ago", "issue", "commented", "expected"),
+    (
+        "latest",
+        "hours_ago",
+        "issue",
+        "reported_in",
+        "other_releases",
+        "run_hour",
+        "expected",
+    ),
     [
-        ("0.170.0", 100, True, False, ["close", "3"]),
-        ("0.170.0", 100, False, False, []),
-        ("0.171.0", 2, False, False, []),
+        ("0.170.0", 100, "current", None, {}, 12, ["close", "3"]),
+        ("0.170.0", 100, "legacy", None, {}, 12, ["close", "3"]),
+        ("0.170.0", 100, None, None, {}, 12, []),
+        ("0.171.0", 2, None, None, {"0.171.0-alpha.1": 30}, 12, []),
+        ("0.171.0", 4, None, None, {}, 10, []),
         (
             "0.171.0",
-            30,
-            False,
-            False,
+            4,
+            None,
+            None,
+            {},
+            12,
             ["create", "--title", "CLI update stuck: openai/codex"],
         ),
-        ("0.171.0", 30, True, False, ["comment", "3"]),
-        ("0.171.0", 30, True, True, []),
+        ("0.171.0", 30, "current", None, {}, 12, ["comment", "3"]),
+        ("0.171.0", 30, "legacy", None, {}, 12, ["comment", "3"]),
+        ("0.171.0", 30, "current", "body", {}, 12, []),
+        ("0.171.0", 30, "current", "comment", {}, 12, []),
+        ("0.172.0", 2, "current", None, {"0.171.0": 30}, 12, ["comment", "3"]),
     ],
 )
 def test_freshness_alerts_once_when_main_lags_a_release(
-    tmp_path, latest, hours_ago, issue, commented, expected
+    tmp_path, latest, hours_ago, issue, reported_in, other_releases, run_hour, expected
 ):
     workflow = yaml.load(
         (WORKFLOWS / "ci-tools-freshness.yml").read_text(), Loader=yaml.BaseLoader
@@ -254,28 +291,39 @@ def test_freshness_alerts_once_when_main_lags_a_release(
     (tmp_path / "ci-tools/package.json").write_text(
         json.dumps({"dependencies": {"@openai/codex": "0.170.0"}})
     )
-    published = subprocess.run(
-        ["date", "-u", "-d", f"{hours_ago} hours ago", "+%Y-%m-%dT%H:%M:%SZ"],
-        capture_output=True,
-        check=True,
-        text=True,
-    ).stdout.strip()
+    now = datetime(2026, 11, 18, run_hour, 17, tzinfo=UTC)
+    times = {
+        version: (now - timedelta(hours=age)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        for version, age in {latest: hours_ago, **other_releases}.items()
+    }
     title = "CLI update stuck: openai/codex"
+    marker = "`@openai/codex@0.171.0`"
     issues = [[{"title": title, "number": 1, "pull_request": {}}]]
     if issue:
-        issues.append([{"title": title, "number": 3}])
+        issues.append(
+            [
+                {
+                    "title": "CI fails on CLI updates: openai/codex"
+                    if issue == "legacy"
+                    else title,
+                    "number": 3,
+                    "body": f"{marker} was available" if reported_in == "body" else "",
+                }
+            ]
+        )
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    (bin_dir / "npm").write_text(
-        '#!/bin/bash\nif [[ "$3" == time ]]; then printf "%s\\n" "$TIMES"; '
-        'else printf "%s\\n" "$LATEST"; fi\n'
+    (bin_dir / "npm").write_text('#!/bin/bash\nprintf "%s\\n" "$METADATA"\n')
+    (bin_dir / "date").write_text(
+        '#!/bin/bash\nif [[ "$2" == +%s ]]; then printf "%s\\n" "$NOW"; '
+        'else /usr/bin/date -u -d "2026-11-18 $3" +%s; fi\n'
     )
     (bin_dir / "gh").write_text(
         '#!/bin/bash\nif [[ "$1" == api && "$*" == */comments* ]]; then\n'
         '  printf "%s\\n" "$COMMENTS"\nelif [[ "$1" == api ]]; then\n'
         '  printf "%s\\n" "$ISSUES"\nelse\n  printf "%s\\n" "$@"\nfi\n'
     )
-    for tool in ("npm", "gh"):
+    for tool in ("npm", "gh", "date"):
         (bin_dir / tool).chmod(0o755)
     result = subprocess.run(
         ["bash", "-e", "-o", "pipefail", "-c", step["run"]],
@@ -284,23 +332,27 @@ def test_freshness_alerts_once_when_main_lags_a_release(
             "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
             "GH_REPO": "allenai/asta-plugins",
             "RUN_URL": "https://github.com/allenai/asta-plugins/actions/runs/123",
+            "DEPENDABOT_CHECK_UTC": step["env"]["DEPENDABOT_CHECK_UTC"],
             "GRACE_HOURS": step["env"]["GRACE_HOURS"],
-            "LATEST": latest,
-            "TIMES": json.dumps({latest: published}),
+            "NOW": str(int(now.timestamp())),
+            "METADATA": json.dumps({"dist-tags.latest": latest, "time": times}),
             "ISSUES": json.dumps(issues),
-            "COMMENTS": "`@openai/codex@0.171.0` was released" if commented else "",
+            "COMMENTS": f"{marker} was available" if reported_in == "comment" else "",
         },
         capture_output=True,
         check=True,
         text=True,
     )
     lines = result.stdout.splitlines()
+    if issue == "legacy":
+        assert lines[:5] == ["issue", "edit", "3", "--title", title]
+        lines = lines[5:]
     if expected:
         assert lines[: 1 + len(expected)] == ["issue", *expected]
     else:
         assert len(lines) == 1
-    stale = latest != "0.170.0" and hours_ago >= 26
+    stale = bool(reported_in or expected[:1] in (["create"], ["comment"]))
     assert lines[-1] == f"stale={int(stale)}"
     if expected[:1] in (["create"], ["comment"]):
-        assert "`@openai/codex@0.171.0` was released 30 hours ago" in result.stdout
+        assert f"{marker} was available" in result.stdout
         assert "still locks `0.170.0`" in result.stdout

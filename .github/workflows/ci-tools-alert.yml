@@ -1,7 +1,7 @@
 name: CI tools update alert
 
-# Each CLI gets one open issue that collects every failing release, so a lasting
-# break stays one thread; an update of that CLI that passes CI closes it.
+# Each CLI gets one open issue that collects every failing release. The
+# freshness workflow closes it when the lock on main catches up.
 on:
   workflow_run:
     workflows: [CI]
@@ -13,7 +13,7 @@ permissions:
 jobs:
   alert:
     if: >-
-      ${{ contains(fromJSON('["failure","timed_out","success"]'), github.event.workflow_run.conclusion)
+      ${{ contains(fromJSON('["failure","timed_out"]'), github.event.workflow_run.conclusion)
           && github.event.workflow_run.event == 'pull_request'
           && github.event.workflow_run.actor.login == 'dependabot[bot]'
           && github.event.workflow_run.head_repository.full_name == github.repository
@@ -36,16 +36,17 @@ jobs:
           update="${BRANCH##*/ci-tools/}"
           cli="${update%-[0-9]*}"
           title="CLI update stuck: $cli"
-          number="$(gh api --paginate --slurp "repos/$GH_REPO/issues?state=open&per_page=100" \
-            | jq -r --arg t "$title" '[.[][] | select(.title == $t and (has("pull_request") | not))][0].number // empty')"
-          if [[ "$CONCLUSION" == success ]]; then
-            if [[ -n "$number" ]]; then
-              gh issue close "$number" --comment "CI passed on \`$update\` at \`$SHA\`. Run: $RUN_URL"
-            fi
-            exit 0
-          fi
+          legacy_title="CI fails on CLI updates: $cli"
+          issue="$(gh api --paginate --slurp "repos/$GH_REPO/issues?state=open&per_page=100" \
+            | jq -c --arg title "$title" --arg legacy "$legacy_title" '
+                [.[][] | select((.title == $title or .title == $legacy) and (has("pull_request") | not))]
+                | min_by(.title != $title)')"
+          number="$(jq -r '.number // empty' <<< "$issue")"
           body="CI result: \`$CONCLUSION\` at \`$SHA\` on Dependabot branch \`$BRANCH\`. The update stays unmerged until it passes. Run: $RUN_URL"
           if [[ -n "$number" ]]; then
+            if [[ "$(jq -r '.title' <<< "$issue")" == "$legacy_title" ]]; then
+              gh issue edit "$number" --title "$title"
+            fi
             gh issue comment "$number" --body "$body"
           else
             gh issue create --title "$title" --body "$body"

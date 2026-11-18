@@ -1,8 +1,7 @@
 name: CI tools freshness
 
-# Alerts on the outcome, not one failure mode: if main still locks an older CLI
-# a day after a release, Dependabot did not open the update, CI failed on it, or
-# auto-merge stalled. Runs 4h after Dependabot's 08:17 UTC check.
+# Check for releases that were available before Dependabot's daily check and
+# still have not merged after its CI and auto-merge window.
 on:
   schedule:
     - cron: "17 12 * * *"
@@ -20,40 +19,70 @@ jobs:
       queue: max
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: refs/heads/main
+          persist-credentials: false
       - shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          GRACE_HOURS: "26"
+          DEPENDABOT_CHECK_UTC: "08:17"
+          GRACE_HOURS: "4"
         run: |
           now="$(date -u +%s)"
+          cutoff="$(date -u -d "$DEPENDABOT_CHECK_UTC" +%s)"
+          # A manual run before today's CI window has finished uses yesterday's check.
+          if (( now < cutoff + GRACE_HOURS * 3600 )); then
+            cutoff=$(( cutoff - 86400 ))
+          fi
           stale=0
           for pkg in $(jq -r '.dependencies | keys[]' ci-tools/package.json); do
             locked="$(jq -r --arg p "$pkg" '.dependencies[$p]' ci-tools/package.json)"
-            latest="$(npm view "$pkg" dist-tags.latest)"
+            metadata="$(npm view "$pkg" dist-tags.latest time --json)"
+            latest="$(jq -er '."dist-tags.latest" | select(test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))' <<< "$metadata")"
+            # Ignore prereleases and use the newest release available by the cutoff.
+            eligible="$(jq -r --arg locked "$locked" --arg latest "$latest" --argjson cutoff "$cutoff" '
+              def version: split(".") | map(tonumber);
+              ($locked | version) as $locked_version | ($latest | version) as $latest_version
+              | .time | to_entries
+              | map(select(.key | test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))
+                    | (.key | version) as $version
+                    | select($version > $locked_version and $version <= $latest_version)
+                    | select((.value | sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601) <= $cutoff))
+              | max_by(.key | version).key // empty
+            ' <<< "$metadata")"
             title="CLI update stuck: ${pkg#@}"
-            number="$(gh api --paginate --slurp "repos/$GH_REPO/issues?state=open&per_page=100" \
-              | jq -r --arg t "$title" '[.[][] | select(.title == $t and (has("pull_request") | not))][0].number // empty')"
+            legacy_title="CI fails on CLI updates: ${pkg#@}"
+            issue="$(gh api --paginate --slurp "repos/$GH_REPO/issues?state=open&per_page=100" \
+              | jq -c --arg title "$title" --arg legacy "$legacy_title" '
+                  [.[][] | select((.title == $title or .title == $legacy) and (has("pull_request") | not))]
+                  | min_by(.title != $title)')"
+            number="$(jq -r '.number // empty' <<< "$issue")"
+            if [[ -n "$number" && "$(jq -r '.title' <<< "$issue")" == "$legacy_title" ]]; then
+              gh issue edit "$number" --title "$title"
+            fi
             if [[ "$locked" == "$latest" ]]; then
               if [[ -n "$number" ]]; then
                 gh issue close "$number" --comment "\`main\` locks the latest \`$pkg\` release, \`$latest\`. Run: $RUN_URL"
               fi
               continue
             fi
-            published="$(npm view "$pkg" time --json | jq -r --arg v "$latest" '.[$v]')"
-            age_hours=$(( (now - $(date -u -d "$published" +%s)) / 3600 ))
-            if (( age_hours < GRACE_HOURS )); then
+            if [[ -z "$eligible" ]]; then
               continue
             fi
             stale=1
-            marker="\`$pkg@$latest\`"
-            if [[ -n "$number" ]] && gh api --paginate "repos/$GH_REPO/issues/$number/comments" \
-                --jq '.[].body' | grep -qF "$marker"; then
-              continue
-            fi
-            body="$marker was released $age_hours hours ago, but \`main\` still locks \`$locked\`. Dependabot did not open the update PR, CI failed on it, or auto-merge stalled. Dependabot runs: https://github.com/$GH_REPO/network/updates. Run: $RUN_URL"
+            marker="\`$pkg@$eligible\`"
+            body="$marker was available by Dependabot's scheduled check, but \`main\` still locks \`$locked\`. The update may have stalled before PR creation, in CI, or at merge. Dependabot runs: https://github.com/$GH_REPO/network/updates. Run: $RUN_URL"
             if [[ -n "$number" ]]; then
+              issue_body="$(jq -r '.body // empty' <<< "$issue")"
+              if [[ "$issue_body" == *"$marker"* ]]; then
+                continue
+              fi
+              comments="$(gh api --paginate "repos/$GH_REPO/issues/$number/comments" --jq '.[].body')"
+              if [[ "$comments" == *"$marker"* ]]; then
+                continue
+              fi
               gh issue comment "$number" --body "$body"
             else
               gh issue create --title "$title" --body "$body"
