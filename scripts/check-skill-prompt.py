@@ -13,6 +13,7 @@ from pathlib import Path
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+MARKETPLACE = Path(".claude-plugin/marketplace.json")
 FRONTMATTER = re.compile(r"\A---\n(.*?)^---[ \t]*$", re.MULTILINE | re.DOTALL)
 SKILL_LINE = re.compile(r"^- ([a-z0-9-]+):([a-z0-9-]+)(?:: ?(.*))?$")
 SKILL_ENTRY = re.compile(
@@ -100,24 +101,33 @@ def squash(text: str) -> str:
     return " ".join(text.split())
 
 
+def skill_description(source: Path, skill_md: Path) -> str:
+    path = skill_md.relative_to(source)
+    frontmatter = FRONTMATTER.match(skill_md.read_text(encoding="utf-8"))
+    if not frontmatter:
+        raise ValueError(f"{path}: missing or unterminated YAML frontmatter")
+    try:
+        metadata = yaml.safe_load(frontmatter[1])
+    except yaml.YAMLError as error:
+        raise ValueError(f"{path}: invalid YAML frontmatter: {error}") from error
+    description = metadata.get("description") if isinstance(metadata, dict) else None
+    if not isinstance(description, str) or not description.strip():
+        raise ValueError(f"{path}: description must be a non-empty string")
+    return squash(description)
+
+
 def expected_skills(source: Path) -> dict[str, str]:
+    marketplace = json.loads((source / MARKETPLACE).read_text(encoding="utf-8"))
     skills = {}
-    for skill_md in sorted(source.glob("plugins/*/skills/*/SKILL.md")):
-        path = skill_md.relative_to(source)
-        frontmatter = FRONTMATTER.match(skill_md.read_text(encoding="utf-8"))
-        if not frontmatter:
-            raise ValueError(f"{path}: missing or unterminated YAML frontmatter")
-        try:
-            metadata = yaml.safe_load(frontmatter[1])
-        except yaml.YAMLError as error:
-            raise ValueError(f"{path}: invalid YAML frontmatter: {error}") from error
-        description = (
-            metadata.get("description") if isinstance(metadata, dict) else None
-        )
-        if not isinstance(description, str) or not description.strip():
-            raise ValueError(f"{path}: description must be a non-empty string")
-        plugin = skill_md.parents[2].name
-        skills[f"{plugin}:{skill_md.parent.name}"] = squash(description)
+    for plugin in marketplace["plugins"]:
+        name = plugin["name"]
+        location = plugin["source"]
+        if not isinstance(location, str):
+            raise ValueError(f"{name}: expected a local plugin source in {MARKETPLACE}")
+        for skill_md in sorted((source / location).glob("skills/*/SKILL.md")):
+            skills[f"{name}:{skill_md.parent.name}"] = skill_description(
+                source, skill_md
+            )
     return skills
 
 
@@ -132,9 +142,11 @@ def main() -> int:
     try:
         expected = expected_skills(args.source)
         if not expected:
-            raise ValueError(
-                "no expected skills found under plugins/*/skills/*/SKILL.md"
-            )
+            raise ValueError("no expected skills found in the marketplace plugins")
+    except (OSError, ValueError) as error:
+        print(f"  ✗ {error}", file=sys.stderr)
+        return 1
+    try:
         prompt = json.loads(args.prompt.read_text(encoding="utf-8"))
         lines = codex_skill_lines(prompt) if is_codex else claude_skill_lines(prompt)
     except json.JSONDecodeError as error:

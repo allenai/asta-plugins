@@ -1,6 +1,7 @@
 """Regression tests for the model-visible plugin skill check."""
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -9,6 +10,7 @@ from pathlib import Path
 import pytest
 
 CHECKER = Path(__file__).resolve().parents[1] / "scripts" / "check-skill-prompt.py"
+CAPTURE = CHECKER.with_name("capture-claude-skill-prompt.py")
 SKILL_ENTRY = (
     "- asta-flows:run-workflow: Full description (file: r0/run-workflow/SKILL.md)"
 )
@@ -32,10 +34,14 @@ def run_check(tmp_path, target, prompt, skill_source):
     checker = tmp_path / "scripts" / CHECKER.name
     checker.parent.mkdir()
     shutil.copyfile(CHECKER, checker)
+    source = "./plugins/workflows"
+    marketplace = tmp_path / ".claude-plugin" / "marketplace.json"
+    marketplace.parent.mkdir()
+    marketplace.write_text(
+        json.dumps({"plugins": [{"name": "asta-flows", "source": source}]})
+    )
     if skill_source is not None:
-        skill = (
-            tmp_path / "plugins" / "asta-flows" / "skills" / "run-workflow" / "SKILL.md"
-        )
+        skill = tmp_path / source / "skills" / "run-workflow" / "SKILL.md"
         skill.parent.mkdir(parents=True)
         skill.write_bytes(skill_source.encode("utf-8"))
 
@@ -47,7 +53,6 @@ def run_check(tmp_path, target, prompt, skill_source):
 
 
 def check_result(result, error):
-
     if error:
         assert result.returncode == 1
         assert error in result.stderr
@@ -204,13 +209,17 @@ def test_check_codex_skill_prompt(tmp_path, prompt, skill_source, error):
 @pytest.mark.parametrize(
     ("entry", "role", "error"),
     [
-        ("- asta-flows:run-workflow: Full &lt;description&gt;", "system", None),
-        ("- asta-flows:run-workflow: Full &lt;description&gt;", None, None),
+        (
+            "- asta-flows:run-workflow: Full &lt;description&gt; & examples",
+            "system",
+            None,
+        ),
+        ("- asta-flows:run-workflow: Full &lt;description&gt; & examples", None, None),
         ("- asta-flows:run-workflow", "system", "empty description"),
         ("- asta-flows:run-workflow: Full", "system", "description mismatch"),
         ("- unrelated", "system", "not in the Claude Code skills prompt"),
         (
-            "- asta-flows:run-workflow: Full &lt;description&gt;",
+            "- asta-flows:run-workflow: Full &lt;description&gt; & examples",
             "user",
             "expected one non-empty Claude Code skills list",
         ),
@@ -223,5 +232,74 @@ def test_check_claude_skill_prompt(tmp_path, entry, role, error):
         prompt = {"system": [text], "messages": []}
     else:
         prompt = {"messages": [{"role": role, "content": [text]}]}
-    skill_source = SKILL_SOURCE.replace("Full description", "Full <description>")
+    skill_source = SKILL_SOURCE.replace(
+        "Full description", "|\n  Full <description>\n  & examples"
+    )
     check_result(run_check(tmp_path, "claude-code", prompt, skill_source), error)
+
+
+@pytest.mark.parametrize(
+    ("separator", "error"),
+    [
+        ("\n", "duplicate entry in the Claude Code skills prompt"),
+        (
+            "\n\nThe following skills are available for use with the Skill tool:\n\n",
+            "expected one non-empty Claude Code skills list",
+        ),
+    ],
+)
+def test_duplicate_claude_skills(tmp_path, separator, error):
+    heading = "The following skills are available for use with the Skill tool:"
+    skill = "- asta-flows:run-workflow: Full description"
+    prompt = {
+        "system": [{"type": "text", "text": f"{heading}\n\n{skill}{separator}{skill}"}]
+    }
+    check_result(run_check(tmp_path, "claude-code", prompt, SKILL_SOURCE), error)
+
+
+def test_capture_claude_main_request(tmp_path, monkeypatch):
+    claude = tmp_path / "claude"
+    claude.write_text(
+        f"#!{sys.executable}\n"
+        """\
+import http.client
+import json
+import os
+import sys
+from urllib.parse import urlsplit
+
+url = urlsplit(os.environ["ANTHROPIC_BASE_URL"])
+connection = http.client.HTTPConnection(url.hostname, url.port)
+connection.putrequest("POST", "/v1/messages")
+connection.endheaders()
+response = connection.getresponse()
+assert response.status == 411
+assert json.load(response)["error"]["message"] == "Content-Length is required"
+
+def post(payload):
+    connection.request("POST", "/v1/messages", json.dumps(payload))
+    response = connection.getresponse()
+    content = response.read()
+    assert response.status == 200, content
+    return response.headers["Content-Type"], content
+
+probe = sys.argv[-1]
+aux = {"model": "claude-sonnet-5-5", "messages": [{"role": "user", "content": probe}]}
+content_type, content = post(aux)
+assert content_type == "application/json"
+assert json.loads(content)["stop_reason"] == "end_turn"
+
+main = {**aux, "stream": True, "tools": [{"name": "Read"}]}
+main["messages"] = [{"role": "user", "content": [{"type": "text", "text": probe}]}]
+content_type, content = post(main)
+assert content_type == "text/event-stream"
+assert b"event: message_stop" in content
+"""
+    )
+    claude.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}{os.environ['PATH']}")
+    result = subprocess.run(
+        [sys.executable, CAPTURE, tmp_path], capture_output=True, text=True, timeout=10
+    )
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["tools"] == [{"name": "Read"}]
