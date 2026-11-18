@@ -3,10 +3,9 @@
 Follow this from [repo setup](repo-setup.md) when the account
 `gh api user -q .login` reports isn't the person who asked for the workspace
 (the requester), for example an agent creating the repo under its own GitHub
-account. The requester must be the repo's admin before anything is pushed; this
-is required, not an optional setup default. When a step fails or GitHub reports
-something unexpected, stop and tell the requester what GitHub said. Compare
-GitHub logins case-insensitively throughout.
+account. The admin grant in section 4 never stops setup. When any other
+step fails or GitHub reports something unexpected, stop and tell the requester
+what GitHub said. Compare GitHub logins case-insensitively throughout.
 
 ## 1. Identify both accounts
 
@@ -40,38 +39,35 @@ empty repo private. Push nothing yet. Read
 `gh api repos/<owner>/<name> -q '{full_name, private}'` and verify the exact
 target and `private: true`; stop on a mismatch or failed read.
 
-## 4. Make the requester admin
+## 4. Try once to make the requester admin
 
-1. Check the requester's effective permission, where `<login>` is their
+1. Read the requester's effective permission, where `<login>` is their
    verified login:
-   `gh api repos/<owner>/<name>/collaborators/<login>/permission -q '{permission, role_name}'`.
-   For a user with no access to a private organization repo, GitHub returns
-   HTTP 200 with `"permission": "none"` and an empty `role_name`; every fresh
-   repo starts here.
-   - `admin`: go to section 5 without changing access, including when admin
-     access comes through a team or organization role.
-   - `none`, `read` or `write`: go to step 2.
-   - Anything else, or a failed read (a `404` means the login isn't a GitHub
-     user), stops setup for diagnosis.
-2. Add the requester as admin:
-   `gh api --include -X PUT repos/<owner>/<name>/collaborators/<login> -f permission=admin`,
-   and inspect the HTTP status:
-   - `204`: rerun the permission check in step 1.
-   - `201` creates an invitation, which never passes. Stop, and tell the
-     requester to accept it; the next run starts again at the permission
-     check in step 1.
-   - Any other status stops setup for diagnosis.
-3. After a `204`, require `.permission == "admin"`; the
-   [permission API](https://docs.github.com/en/rest/collaborators/collaborators#get-repository-permissions-for-a-user)
-   defines this as base access, while `role_name` also describes custom
-   roles. Any other permission or a failed read stops setup; don't grant
-   again.
+   `gh api repos/<owner>/<name>/collaborators/<login>/permission -q .permission`.
+   If it is `admin` (directly, through a team or an organization role), go to
+   section 5.
+2. Otherwise, try the grant once:
+   `gh api --include -X PUT repos/<owner>/<name>/collaborators/<login> -f permission=admin`.
+   After a `204`, read the permission again. Don't retry or work around a
+   refusal, whether from GitHub or from your own tools: those can refuse a
+   permission grant the requester didn't ask for.
+
+Whatever the outcome, continue to section 5, and pick the access line:
+
+- Confirmed `admin`: "You're its admin."
+- A `201` (an invitation): "Accept your invitation at
+  <https://github.com/<owner>/<name>/invitations> to open it."
+- Anything else: "You don't have admin access yet: reply 'make me its
+  admin' and I'll grant it."
+
+That reply is the requester's own request for the grant, so repeat this
+section once on it and reply with the new access line. They then review and
+merge the setup PR as in any start.
 
 ## 5. Return to repo setup
 
-Don't push or report the requester as admin until the permission check returns
-`admin`. Then resume [Apply](repo-setup.md#2-apply) inside
-step 1, after its repo creation: if the repo has no branches (an existing empty
-repo), push the empty-tree root commit to `main`; then merge the established
-default branch into the local workspace, and continue at step 2. In step 7,
-also tell the requester that they are the repo's admin.
+Resume [Apply](repo-setup.md#2-apply) inside step 1, after its repo creation:
+if the repo has no branches (an existing empty repo), push the empty-tree root
+commit to `main`; then merge the established default branch into the local
+workspace, and continue at step 2. In step 4, add the access line from
+section 4 to its message.
