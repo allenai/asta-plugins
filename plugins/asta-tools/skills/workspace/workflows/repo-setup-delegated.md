@@ -3,10 +3,9 @@
 Follow this from [repo setup](repo-setup.md) when the account
 `gh api user -q .login` reports isn't the person who asked for the workspace
 (the requester), for example an agent creating the repo under its own GitHub
-account. Build the private workspace and open its setup PR even if you can't
-confirm the requester is an admin. For failures outside the permission step,
-stop and tell the requester what failed, including GitHub's error when
-available. Compare GitHub logins case-insensitively throughout.
+account. The admin grant in section 4 never stops setup. When any other
+step fails or GitHub reports something unexpected, stop and tell the requester
+what GitHub said. Compare GitHub logins case-insensitively throughout.
 
 ## 1. Identify both accounts
 
@@ -19,9 +18,6 @@ available. Compare GitHub logins case-insensitively throughout.
    up an account proves that it exists, not that it belongs to the requester.
 3. If the verified requester login is the acting login, this workflow doesn't
    apply; return to repo setup.
-4. Before creating anything, read `gh api users/<login> -q .login` and require
-   it to match the verified requester login. Stop if GitHub can't confirm the
-   account. This lookup checks the account still exists.
 
 ## 2. Check the owner before creating anything
 
@@ -40,98 +36,38 @@ and report an unknown owner, failed lookup or unexpected type.
 Create the repo private with a README, so the default branch exists
 (`gh repo create <owner>/<name> --private --add-readme`), or make an existing
 empty repo private. Push nothing yet. Read
-`gh api repos/<owner>/<name> -q '{id, full_name, private, default_branch}'`
-and verify the exact target and `private: true`; stop on a mismatch or failed
-read.
+`gh api repos/<owner>/<name> -q '{full_name, private}'` and verify the exact
+target and `private: true`; stop on a mismatch or failed read.
 
-## 4. Check and try to grant admin access
+## 4. Try once to make the requester admin
 
-1. [Read the requester's access](#read-access-and-choose-one-line). If the
-   permission read failed or was unexpected, recheck that the exact target repo
-   is still accessible and private as in section 3. Stop if that recheck fails.
-2. Try the grant once only for verified `none`, `read`, or `write` access and
-   only after the invitation lookup successfully checks every page and finds
-   no match. If either check is inconclusive, continue setup without a grant.
-   To grant admin, run
+1. Read the requester's effective permission, where `<login>` is their
+   verified login:
+   `gh api repos/<owner>/<name>/collaborators/<login>/permission -q .permission`.
+   If it is `admin` (directly, through a team or an organization role), go to
+   section 5.
+2. Otherwise, try the grant once:
    `gh api --include -X PUT repos/<owner>/<name>/collaborators/<login> -f permission=admin`.
-   - `201`: record the pending invitation alongside the permission you read.
-   - A tool refusal or an HTTP rejection such as `403` or `422`: keep the
-     permission you read and record that the grant was refused.
-   - `204` or an unclear result: repeat only the read-only access check and use
-     its result for the handoff.
+   After a `204`, read the permission again. Don't retry or work around a
+   refusal, whether from GitHub or from your own tools: those can refuse a
+   permission grant the requester didn't ask for.
 
-Continue to section 5 after any grant outcome. Leave further grant attempts
-for an explicit request from the requester.
+Whatever the outcome, continue to section 5, and pick the access line:
+
+- Confirmed `admin`: "You're its admin."
+- A `201` (an invitation): "Accept your invitation at
+  <https://github.com/<owner>/<name>/invitations> to open it."
+- Anything else: "You don't have admin access yet: reply 'make me its
+  admin' and I'll grant it."
+
+That reply is the requester's own request for the grant, so repeat this
+section once on it and reply with the new access line. They then review and
+merge the setup PR as in any start.
 
 ## 5. Return to repo setup
 
 Resume [Apply](repo-setup.md#2-apply) inside step 1, after its repo creation:
 if the repo has no branches (an existing empty repo), push the empty-tree root
 commit to `main`; then merge the established default branch into the local
-workspace, and continue at step 2.
-
-With confirmed `admin`, use the normal step 4 handoff. Otherwise, once the
-setup PR checks pass (or `make check` passes with Pages off), send only the
-following lines.
-
-- "Your private workspace is built in <PR link>." With `none` or unconfirmed
-  access, add "You can open the PR once you have access." With confirmed
-  `read` or `write` access and Pages on, include the private preview and any
-  paper PDF link from step 4.
-- One access line from [below](#read-access-and-choose-one-line).
-- "After you've reviewed it, merge the PR or ask an authorized maintainer to
-  merge it. Tell me once it has merged so I can finish the setup."
-
-Leave the PR open for the requester's review.
-
-### Resume the original setup
-
-On a follow-up, use the repository and PR number from the original setup
-handoff. If that handoff is unavailable, ask for the original setup PR link
-and verify the PR adds the scaffold for that workspace before resuming.
-Recheck the exact private repository as in section 3. Read the original PR
-with `gh api repos/<owner>/<name>/pulls/<number>` and confirm its number and
-that `base.repo.id` and `base.ref` match the repository's ID and current default
-branch. Stop and report a failed read or mismatch before changing anything.
-
-On an explicit request for admin access, also reverify the requester identity
-and organization owner as in sections 1–2, then repeat section 4 on that repo.
-If the requester also explicitly asks you to merge the open PR they've reviewed,
-follow Apply step 4's authorization and checks. Repeat the repository and PR
-checks after any merge attempt.
-
-Finish [Apply](repo-setup.md#2-apply) steps 5–7 only if `merged: true` for the
-verified setup PR and setup is still pending. If setup is already complete and
-they asked for access, send one access line. If the PR is open, give its link,
-one access line, and the same request to report the merge. Include the preview
-and paper PDF when available to the requester. If the PR is closed without a
-merge, report that the setup PR was closed before setup finished.
-
-### Read access and choose one line
-
-Read `gh api repos/<owner>/<name>/collaborators/<login>/permission -q '{permission, role_name}'`
-for the verified requester. Use `.permission` for the effective access (`admin`,
-`write`, `read`, or `none`). [`role_name`](https://docs.github.com/en/rest/collaborators/collaborators#get-repository-permissions-for-a-user)
-can describe a custom role. A failed or unexpected permission read leaves
-access unconfirmed. Unless admin is confirmed, also read
-`gh api --paginate --slurp repos/<owner>/<name>/invitations` and look for a
-pending invitation whose `invitee.login` matches the verified requester across
-all pages. A failed or incomplete list leaves invitation status unknown. A
-`201` grant in the current step also confirms an invitation.
-
-Use the first matching line.
-
-- `admin`: "You're its admin."
-- Pending invitation: "Accept your repository invitation at
-  <https://github.com/<owner>/<name>/invitations>." If access is `none`, start
-  the line with "You don't have repo access yet."
-- `none`: "You don't have repo access yet. Reply 'make me its admin' and
-  I'll grant it."
-- `read` or `write`: "You have <read or write> access. Reply 'make me its
-  admin' if you need admin access."
-- Unconfirmed: "I couldn't verify your repo access. Reply 'make me its
-  admin' and I'll grant it."
-
-That reply makes the grant the requester's own request, which tools that
-refuse unrequested permission grants allow. Handle it as in
-[Resume the original setup](#resume-the-original-setup).
+workspace, and continue at step 2. In step 4, add the access line from
+section 4 to its message.
