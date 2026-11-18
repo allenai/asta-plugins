@@ -82,16 +82,22 @@ jobs:
     timeout-minutes: 5
     steps:
       - run: |
-          echo "test: $TEST_RESULT, plugin-install: $INSTALL_RESULT, devcontainer: $SCOPE_RESULT/$SMOKE_RESULT"
+          echo "test: $TEST_RESULT, plugin-install: $INSTALL_RESULT, devcontainer: $SCOPE_RESULT/$IMAGE_CHANGED/$SMOKE_RESULT"
           test "$TEST_RESULT" = success && test "$INSTALL_RESULT" = success || exit 1
-          case "$SCOPE_RESULT/$SMOKE_RESULT" in
-            skipped/skipped|success/skipped|success/success) ;;
-            *) exit 1 ;;
-          esac
+          if [ "$EVENT_NAME" != pull_request ]; then
+            test "$SCOPE_RESULT/$SMOKE_RESULT" = skipped/skipped
+          else
+            case "$SCOPE_RESULT/$IMAGE_CHANGED/$SMOKE_RESULT" in
+              success/true/success|success/false/skipped) ;;
+              *) exit 1 ;;
+            esac
+          fi
         env:
+          EVENT_NAME: ${{ github.event_name }}
           TEST_RESULT: ${{ needs.test.result }}
           INSTALL_RESULT: ${{ needs.plugin-install.result }}
           SCOPE_RESULT: ${{ needs.devcontainer-scope.result }}
+          IMAGE_CHANGED: ${{ needs.devcontainer-scope.outputs.changed }}
           SMOKE_RESULT: ${{ needs.devcontainer-smoke.result }}
 
   devcontainer-scope:

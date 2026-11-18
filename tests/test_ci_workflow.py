@@ -30,12 +30,17 @@ def test_tests_ok_needs_every_per_python_job_and_plugin_install():
     gate = JOBS["tests-ok"]
     assert per_python and per_python | {
         "plugin-install",
+        "devcontainer-scope",
         "devcontainer-smoke",
     } <= _needs(gate)
     assert gate["if"] == "always()"
     env = gate["steps"][-1]["env"]
     assert env["TEST_RESULT"] == "${{ needs.test.result }}"
     assert env["INSTALL_RESULT"] == "${{ needs.plugin-install.result }}"
+    assert env["EVENT_NAME"] == "${{ github.event_name }}"
+    assert env["SCOPE_RESULT"] == "${{ needs.devcontainer-scope.result }}"
+    assert env["IMAGE_CHANGED"] == "${{ needs.devcontainer-scope.outputs.changed }}"
+    assert env["SMOKE_RESULT"] == "${{ needs.devcontainer-smoke.result }}"
 
 
 def test_code_quality_runs_on_x86_for_every_build_runner():
@@ -81,23 +86,31 @@ def test_devcontainer_smoke_gates_tests_ok_on_image_prs():
 
 
 @pytest.mark.parametrize(
-    ("scope", "smoke", "ok"),
+    ("event", "scope", "changed", "smoke", "ok"),
     [
-        ("skipped", "skipped", True),
-        ("success", "skipped", True),
-        ("success", "success", True),
-        ("success", "failure", False),
-        ("success", "cancelled", False),
-        ("failure", "skipped", False),
+        ("push", "skipped", "", "skipped", True),
+        ("workflow_dispatch", "skipped", "", "skipped", True),
+        ("pull_request", "skipped", "", "skipped", False),
+        ("pull_request", "failure", "", "skipped", False),
+        ("pull_request", "success", "", "skipped", False),
+        ("pull_request", "success", "false", "skipped", True),
+        ("pull_request", "success", "true", "success", True),
+        ("pull_request", "success", "true", "skipped", False),
+        ("pull_request", "success", "true", "failure", False),
+        ("pull_request", "success", "true", "cancelled", False),
     ],
 )
-def test_tests_ok_requires_the_devcontainer_smoke_when_it_runs(scope, smoke, ok):
+def test_tests_ok_requires_the_devcontainer_smoke_for_image_prs(
+    event, scope, changed, smoke, ok
+):
     step = JOBS["tests-ok"]["steps"][-1]
     env = {
         **os.environ,
+        "EVENT_NAME": event,
         "TEST_RESULT": "success",
         "INSTALL_RESULT": "success",
         "SCOPE_RESULT": scope,
+        "IMAGE_CHANGED": changed,
         "SMOKE_RESULT": smoke,
     }
     result = subprocess.run(["bash", "-c", step["run"]], env=env, capture_output=True)
@@ -112,6 +125,7 @@ def test_tests_ok_passes_only_when_both_succeed(test_result, install_result):
         ["bash", "-c", step["run"]],
         env=dict(
             os.environ,
+            EVENT_NAME="push",
             TEST_RESULT=test_result,
             INSTALL_RESULT=install_result,
             SCOPE_RESULT="skipped",
