@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The Codex plugin install check fails when an Asta skill is missing from the model's prompt or its description changes during rendering.
 - Require `asta-documents` 0.4.2 or newer for `asta documents`.
 - The shared site workflow's What changed step waits for its stderr log to finish writing before it reads or deletes it, so the step no longer fails at random with "Directory not empty".
 - What changed opens a collapsed section (`<details>`: a folded code cell, a Markdown fold) that holds a change, so the change is seen and not only counted; sections without one stay as the author left them.

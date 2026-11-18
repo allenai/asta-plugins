@@ -99,8 +99,11 @@ fi
 if [ "$TARGET" = codex ]; then
   echo "==> Verifying the skills Codex shows to the model"
   PROMPT_JSON="$TMPHOME/prompt-input.json"
-  if (cd "$TMPHOME" && HOME="$TMPHOME" CODEX_HOME="$TMPHOME/.codex" codex debug prompt-input) >"$PROMPT_JSON"; then
-    uv run --no-project --python "$(command -v python3)" --with 'PyYAML==6.0.3' \
+  if ! PYTHON3="$(command -v python3)"; then
+    echo "  ✗ python3 is required to verify the Codex skills prompt" >&2
+    fail=1
+  elif (cd "$TMPHOME" && HOME="$TMPHOME" CODEX_HOME="$TMPHOME/.codex" codex debug prompt-input) >"$PROMPT_JSON"; then
+    uv run --no-project --python "$PYTHON3" --with 'PyYAML==6.0.3' \
       python "$REPO_ROOT/scripts/check-codex-skill-prompt.py" "$PROMPT_JSON" || fail=1
   else
     echo "  ✗ codex debug prompt-input failed" >&2

@@ -19,20 +19,37 @@ from pathlib import Path
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SKILL_LINE = re.compile(r"^- ([a-z0-9-]+):([a-z0-9-]+): (.*?)(?: \(file: [^)]*\))?$")
+FRONTMATTER = re.compile(r"\A---\n(.*?)^---[ \t]*$", re.MULTILINE | re.DOTALL)
+SKILL_LINE = re.compile(r"^- ([a-z0-9-]+):([a-z0-9-]+): (.*)$")
 
 
-def skill_prompt_lines(prompt: list[dict]) -> list[str]:
+def skill_prompt_lines(prompt: object) -> list[str]:
     opening = "<skills_instructions>"
     closing = "</skills_instructions>"
-    blocks = [
-        entry["text"].splitlines()
-        for item in prompt
-        if item.get("type") == "message" and item.get("role") == "developer"
-        for entry in item["content"]
-        if entry.get("type") == "input_text"
-        and entry["text"].startswith(opening + "\n")
-    ]
+    if not isinstance(prompt, list) or any(
+        not isinstance(item, dict) for item in prompt
+    ):
+        raise ValueError("expected a list of Codex prompt items")
+
+    blocks = []
+    for item in prompt:
+        if item.get("type") != "message" or item.get("role") != "developer":
+            continue
+        content = item.get("content")
+        if not isinstance(content, list):
+            raise ValueError("expected a list of Codex developer message content items")
+        for entry in content:
+            if not isinstance(entry, dict):
+                raise ValueError(
+                    "expected an object in Codex developer message content"
+                )
+            if entry.get("type") != "input_text":
+                continue
+            value = entry.get("text")
+            if not isinstance(value, str):
+                raise ValueError("expected text in Codex developer message content")
+            if value.startswith(opening + "\n"):
+                blocks.append(value.splitlines())
     if len(blocks) != 1:
         raise ValueError(
             f"expected one Codex skills instructions block, found {len(blocks)}"
@@ -51,36 +68,60 @@ def squash(text: str) -> str:
 def expected_skills() -> dict[str, str]:
     skills = {}
     for skill_md in sorted(REPO_ROOT.glob("plugins/*/skills/*/SKILL.md")):
-        raw = skill_md.read_text()
-        fm = yaml.safe_load(raw[4 : raw.index("\n---\n", 4)]) or {}
+        path = skill_md.relative_to(REPO_ROOT)
+        frontmatter = FRONTMATTER.match(skill_md.read_text(encoding="utf-8"))
+        if not frontmatter:
+            raise ValueError(f"{path}: missing or unterminated YAML frontmatter")
+        try:
+            metadata = yaml.safe_load(frontmatter[1])
+        except yaml.YAMLError as error:
+            raise ValueError(f"{path}: invalid YAML frontmatter: {error}") from error
+        description = (
+            metadata.get("description") if isinstance(metadata, dict) else None
+        )
+        if not isinstance(description, str) or not description.strip():
+            raise ValueError(f"{path}: description must be a non-empty string")
         plugin = skill_md.parents[2].name
-        skills[f"{plugin}:{skill_md.parent.name}"] = squash(fm.get("description") or "")
+        skills[f"{plugin}:{skill_md.parent.name}"] = squash(description)
     return skills
 
 
 def main() -> int:
-    expected = expected_skills()
-    if not expected:
+    if len(sys.argv) != 2:
+        print("Usage: check-codex-skill-prompt.py <prompt-input.json>", file=sys.stderr)
+        return 2
+    prompt_path = Path(sys.argv[1])
+    try:
+        expected = expected_skills()
+        if not expected:
+            raise ValueError(
+                "no expected skills found under plugins/*/skills/*/SKILL.md"
+            )
+        prompt = json.loads(prompt_path.read_text(encoding="utf-8"))
+        lines = skill_prompt_lines(prompt)
+    except json.JSONDecodeError as error:
         print(
-            "  ✗ no expected skills found under plugins/*/skills/*/SKILL.md",
-            file=sys.stderr,
+            f"  ✗ invalid Codex prompt JSON in {prompt_path}: {error}", file=sys.stderr
         )
         return 1
-
-    prompt = json.loads(Path(sys.argv[1]).read_text())
-    try:
-        lines = skill_prompt_lines(prompt)
-    except ValueError as error:
+    except (OSError, ValueError) as error:
         print(f"  ✗ {error}", file=sys.stderr)
         return 1
 
     rendered = {}
+    failures = []
     for line in lines:
         match = SKILL_LINE.match(line)
         if match:
-            rendered[f"{match[1]}:{match[2]}"] = squash(match[3])
+            key = f"{match[1]}:{match[2]}"
+            if key in rendered:
+                failures.append(f"{key}: duplicate entry in the Codex skills prompt")
+                continue
+            description = match[3]
+            if description.endswith(")"):
+                description = description.rsplit(" (file: ", 1)[0]
+            rendered[key] = squash(description)
 
-    failures = []
     for key, want in expected.items():
         got = rendered.get(key)
         if got is None:
