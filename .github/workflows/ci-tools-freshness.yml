@@ -14,6 +14,7 @@ permissions:
 jobs:
   freshness:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     concurrency:
       group: ci-tools-alert
       queue: max
@@ -36,13 +37,29 @@ jobs:
           if (( now < cutoff + GRACE_HOURS * 3600 )); then
             cutoff=$(( cutoff - 86400 ))
           fi
-          stale=0
-          for pkg in $(jq -r '.dependencies | keys[]' ci-tools/package.json); do
-            locked="$(jq -r --arg p "$pkg" '.dependencies[$p]' ci-tools/package.json)"
-            metadata="$(npm view "$pkg" dist-tags.latest time --json)"
-            latest="$(jq -er '."dist-tags.latest" | select(test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))' <<< "$metadata")"
+          locked_packages="$(jq -er '
+            .packages as $packages
+            | $packages[""].dependencies | keys[] as $name
+            | $packages["node_modules/\($name)"].version as $version
+            | if $version | type == "string" and test("^[0-9]+\\.[0-9]+\\.[0-9]+$") then
+                [$name, $version] | @tsv
+              else error("missing or invalid locked version for \($name)")
+              end
+          ' ci-tools/package-lock.json)"
+          check_failed=0
+          while IFS=$'\t' read -r pkg locked; do
+            if ! metadata="$(npm view "$pkg" dist-tags.latest time --json --fetch-retries=1 --fetch-timeout=15000)" ||
+               ! latest="$(jq -r '."dist-tags.latest" | strings | select(test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))' <<< "$metadata")"; then
+              echo "::error::Could not read npm metadata for $pkg."
+              check_failed=1
+              continue
+            fi
+            if [[ -z "$latest" ]]; then
+              echo "::warning::npm has no stable latest tag for $pkg."
+              continue
+            fi
             # Ignore prereleases and use the newest release available by the cutoff.
-            eligible="$(jq -r --arg locked "$locked" --arg latest "$latest" --argjson cutoff "$cutoff" '
+            if ! eligible="$(jq -r --arg locked "$locked" --arg latest "$latest" --argjson cutoff "$cutoff" '
               def version: split(".") | map(tonumber);
               ($locked | version) as $locked_version | ($latest | version) as $latest_version
               | .time | to_entries
@@ -51,7 +68,11 @@ jobs:
                     | select($version > $locked_version and $version <= $latest_version)
                     | select((.value | sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601) <= $cutoff))
               | max_by(.key | version).key // empty
-            ' <<< "$metadata")"
+            ' <<< "$metadata")"; then
+              echo "::error::Could not read npm release times for $pkg."
+              check_failed=1
+              continue
+            fi
             title="CLI update stuck: ${pkg#@}"
             legacy_title="CI fails on CLI updates: ${pkg#@}"
             issue="$(gh api --paginate --slurp "repos/$GH_REPO/issues?state=open&per_page=100" \
@@ -71,7 +92,6 @@ jobs:
             if [[ -z "$eligible" ]]; then
               continue
             fi
-            stale=1
             marker="\`$pkg@$eligible\`"
             body="$marker was available by Dependabot's scheduled check, but \`main\` still locks \`$locked\`. The update may have stalled before PR creation, in CI, or at merge. Dependabot runs: https://github.com/$GH_REPO/network/updates. Run: $RUN_URL"
             if [[ -n "$number" ]]; then
@@ -87,5 +107,5 @@ jobs:
             else
               gh issue create --title "$title" --body "$body"
             fi
-          done
-          echo "stale=$stale" | tee -a "${GITHUB_OUTPUT:-/dev/null}"
+          done <<< "$locked_packages"
+          exit "$check_failed"

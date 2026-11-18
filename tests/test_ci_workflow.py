@@ -248,6 +248,60 @@ def test_freshness_runs_after_dependabot_and_shares_the_alert_queue():
     ) >= int(check["env"]["GRACE_HOURS"]) * 60
 
 
+def _run_freshness(tmp_path, now, packages, metadata, issues, comments=""):
+    workflow = yaml.load(
+        (WORKFLOWS / "ci-tools-freshness.yml").read_text(), Loader=yaml.BaseLoader
+    )
+    step = workflow["jobs"]["freshness"]["steps"][-1]
+    (tmp_path / "ci-tools").mkdir()
+    (tmp_path / "ci-tools/package-lock.json").write_text(
+        json.dumps(
+            {
+                "packages": {
+                    "": {"dependencies": packages},
+                    **{
+                        f"node_modules/{name}": {"version": version}
+                        for name, version in packages.items()
+                    },
+                }
+            }
+        )
+    )
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "npm").write_text(
+        '#!/bin/bash\njq -er --arg pkg "$2" \'.[$pkg] // empty\' <<< "$METADATA"\n'
+    )
+    (bin_dir / "date").write_text(
+        '#!/bin/bash\nif [[ "$2" == +%s ]]; then printf "%s\\n" "$NOW"; '
+        'else /usr/bin/date -u -d "2026-11-18 $3" +%s; fi\n'
+    )
+    (bin_dir / "gh").write_text(
+        '#!/bin/bash\nif [[ "$1" == api && "$*" == */comments* ]]; then\n'
+        '  printf "%s\\n" "$COMMENTS"\nelif [[ "$1" == api ]]; then\n'
+        '  printf "%s\\n" "$ISSUES"\nelse\n  printf "%s\\n" "$@"\nfi\n'
+    )
+    for tool in ("npm", "gh", "date"):
+        (bin_dir / tool).chmod(0o755)
+    return subprocess.run(
+        ["bash", "-e", "-o", "pipefail", "-c", step["run"]],
+        cwd=tmp_path,
+        env={
+            "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
+            "GH_REPO": "allenai/asta-plugins",
+            "RUN_URL": "https://github.com/allenai/asta-plugins/actions/runs/123",
+            "DEPENDABOT_CHECK_UTC": step["env"]["DEPENDABOT_CHECK_UTC"],
+            "GRACE_HOURS": step["env"]["GRACE_HOURS"],
+            "NOW": str(int(now.timestamp())),
+            "METADATA": json.dumps(metadata),
+            "ISSUES": json.dumps(issues),
+            "COMMENTS": comments,
+        },
+        capture_output=True,
+        text=True,
+    )
+
+
 @pytest.mark.parametrize(
     (
         "latest",
@@ -283,14 +337,6 @@ def test_freshness_runs_after_dependabot_and_shares_the_alert_queue():
 def test_freshness_alerts_once_when_main_lags_a_release(
     tmp_path, latest, hours_ago, issue, reported_in, other_releases, run_hour, expected
 ):
-    workflow = yaml.load(
-        (WORKFLOWS / "ci-tools-freshness.yml").read_text(), Loader=yaml.BaseLoader
-    )
-    step = workflow["jobs"]["freshness"]["steps"][-1]
-    (tmp_path / "ci-tools").mkdir()
-    (tmp_path / "ci-tools/package.json").write_text(
-        json.dumps({"dependencies": {"@openai/codex": "0.170.0"}})
-    )
     now = datetime(2026, 11, 18, run_hour, 17, tzinfo=UTC)
     times = {
         version: (now - timedelta(hours=age)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
@@ -311,38 +357,15 @@ def test_freshness_alerts_once_when_main_lags_a_release(
                 }
             ]
         )
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    (bin_dir / "npm").write_text('#!/bin/bash\nprintf "%s\\n" "$METADATA"\n')
-    (bin_dir / "date").write_text(
-        '#!/bin/bash\nif [[ "$2" == +%s ]]; then printf "%s\\n" "$NOW"; '
-        'else /usr/bin/date -u -d "2026-11-18 $3" +%s; fi\n'
+    result = _run_freshness(
+        tmp_path,
+        now,
+        {"@openai/codex": "0.170.0"},
+        {"@openai/codex": {"dist-tags.latest": latest, "time": times}},
+        issues,
+        f"{marker} was available" if reported_in == "comment" else "",
     )
-    (bin_dir / "gh").write_text(
-        '#!/bin/bash\nif [[ "$1" == api && "$*" == */comments* ]]; then\n'
-        '  printf "%s\\n" "$COMMENTS"\nelif [[ "$1" == api ]]; then\n'
-        '  printf "%s\\n" "$ISSUES"\nelse\n  printf "%s\\n" "$@"\nfi\n'
-    )
-    for tool in ("npm", "gh", "date"):
-        (bin_dir / tool).chmod(0o755)
-    result = subprocess.run(
-        ["bash", "-e", "-o", "pipefail", "-c", step["run"]],
-        cwd=tmp_path,
-        env={
-            "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
-            "GH_REPO": "allenai/asta-plugins",
-            "RUN_URL": "https://github.com/allenai/asta-plugins/actions/runs/123",
-            "DEPENDABOT_CHECK_UTC": step["env"]["DEPENDABOT_CHECK_UTC"],
-            "GRACE_HOURS": step["env"]["GRACE_HOURS"],
-            "NOW": str(int(now.timestamp())),
-            "METADATA": json.dumps({"dist-tags.latest": latest, "time": times}),
-            "ISSUES": json.dumps(issues),
-            "COMMENTS": f"{marker} was available" if reported_in == "comment" else "",
-        },
-        capture_output=True,
-        check=True,
-        text=True,
-    )
+    result.check_returncode()
     lines = result.stdout.splitlines()
     if issue == "legacy":
         assert lines[:5] == ["issue", "edit", "3", "--title", title]
@@ -350,9 +373,53 @@ def test_freshness_alerts_once_when_main_lags_a_release(
     if expected:
         assert lines[: 1 + len(expected)] == ["issue", *expected]
     else:
-        assert len(lines) == 1
-    stale = bool(reported_in or expected[:1] in (["create"], ["comment"]))
-    assert lines[-1] == f"stale={int(stale)}"
+        assert not lines
     if expected[:1] in (["create"], ["comment"]):
         assert f"{marker} was available" in result.stdout
         assert "still locks `0.170.0`" in result.stdout
+
+
+@pytest.mark.parametrize(
+    ("claude_metadata", "code", "annotation"),
+    [
+        (None, 1, "::error::Could not read npm metadata"),
+        ("{invalid json", 1, "::error::Could not read npm metadata"),
+        (
+            {"dist-tags.latest": "2.1.327"},
+            1,
+            "::error::Could not read npm release times",
+        ),
+        (
+            {"dist-tags.latest": "2.1.327-beta.1"},
+            0,
+            "::warning::npm has no stable latest tag",
+        ),
+        ({"time": {}}, 0, "::warning::npm has no stable latest tag"),
+    ],
+)
+def test_freshness_checks_codex_even_when_claude_metadata_is_unavailable(
+    tmp_path, claude_metadata, code, annotation
+):
+    claude = "@anthropic-ai/claude-code"
+    codex = "@openai/codex"
+    result = _run_freshness(
+        tmp_path,
+        datetime(2026, 11, 18, 12, 17, tzinfo=UTC),
+        {claude: "2.1.325", codex: "0.170.0"},
+        {
+            claude: claude_metadata,
+            codex: {
+                "dist-tags.latest": "0.171.0",
+                "time": {"0.171.0": "2026-11-18T07:00:00.000Z"},
+            },
+        },
+        [[{"title": "CLI update stuck: anthropic-ai/claude-code", "number": 3}]],
+    )
+    assert result.returncode == code
+    assert result.stdout.splitlines()[:5] == [
+        f"{annotation} for {claude}.",
+        "issue",
+        "create",
+        "--title",
+        "CLI update stuck: openai/codex",
+    ]
