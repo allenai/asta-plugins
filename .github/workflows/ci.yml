@@ -75,17 +75,58 @@ jobs:
   tests-ok:
     # One required check that keeps its name when the Python matrix changes; it
     # also gates the install and model-visible skill-description checks.
-    needs: [test, plugin-install]
+    # The dev container smoke counts only on PRs that touch the image.
+    needs: [test, plugin-install, devcontainer-scope, devcontainer-smoke]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - run: |
-          echo "test: $TEST_RESULT, plugin-install: $INSTALL_RESULT"
-          test "$TEST_RESULT" = success && test "$INSTALL_RESULT" = success
+          echo "test: $TEST_RESULT, plugin-install: $INSTALL_RESULT, devcontainer: $SCOPE_RESULT/$SMOKE_RESULT"
+          test "$TEST_RESULT" = success && test "$INSTALL_RESULT" = success || exit 1
+          case "$SCOPE_RESULT/$SMOKE_RESULT" in
+            skipped/skipped|success/skipped|success/success) ;;
+            *) exit 1 ;;
+          esac
         env:
           TEST_RESULT: ${{ needs.test.result }}
           INSTALL_RESULT: ${{ needs.plugin-install.result }}
+          SCOPE_RESULT: ${{ needs.devcontainer-scope.result }}
+          SMOKE_RESULT: ${{ needs.devcontainer-smoke.result }}
+
+  devcontainer-scope:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      changed: ${{ steps.scope.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: scope
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if git diff --quiet "$BASE_SHA" HEAD -- \
+            Dockerfile docker image/skills-cli scripts/base-image-context.sh src/asta \
+            plugins/asta-tools/skills/workspace/assets/devcontainer.json \
+            plugins/asta-tools/skills/workspace/assets/paper-preview.sh \
+            tests/dom tests/fixtures/devcontainer-smoke \
+            .github/workflows/ci.yml .github/workflows/devcontainer-smoke.yml .github/workflows/docker.yml
+          then changed=false; else changed=true; fi
+          echo "changed=$changed" | tee -a "$GITHUB_OUTPUT"
+
+  devcontainer-smoke:
+    needs: devcontainer-scope
+    if: needs.devcontainer-scope.outputs.changed == 'true'
+    permissions:
+      contents: read
+      packages: read
+    uses: ./.github/workflows/devcontainer-smoke.yml
 
   docker:
     runs-on: ${{ inputs.build-runner || 'ubuntu-latest' }}

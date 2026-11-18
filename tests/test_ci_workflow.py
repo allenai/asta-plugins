@@ -28,7 +28,10 @@ def test_tests_ok_needs_every_per_python_job_and_plugin_install():
         if "python-version" in job.get("strategy", {}).get("matrix", {})
     }
     gate = JOBS["tests-ok"]
-    assert per_python and per_python | {"plugin-install"} <= _needs(gate)
+    assert per_python and per_python | {
+        "plugin-install",
+        "devcontainer-smoke",
+    } <= _needs(gate)
     assert gate["if"] == "always()"
     env = gate["steps"][-1]["env"]
     assert env["TEST_RESULT"] == "${{ needs.test.result }}"
@@ -52,13 +55,68 @@ def test_claude_selective_install_runs_in_ci():
     assert test_step["env"]["ASTA_TEST_CLAUDE_PLUGIN_DEPS"] == "1"
 
 
+DEVCONTAINER_PATHS = [
+    "Dockerfile",
+    "image/skills-cli/package-lock.json",
+    "src/asta/cli.py",
+    "tests/fixtures/devcontainer-smoke/check-post-create.py",
+    ".github/workflows/devcontainer-smoke.yml",
+]
+
+
+def test_devcontainer_smoke_gates_tests_ok_on_image_prs():
+    smoke = yaml.load(
+        (WORKFLOWS / "devcontainer-smoke.yml").read_text(), Loader=yaml.BaseLoader
+    )
+    # One trigger for PRs: a second pull_request run would not gate auto-merge.
+    assert "pull_request" not in smoke["on"]
+    scope = JOBS["devcontainer-scope"]
+    assert scope["if"] == "github.event_name == 'pull_request'"
+    job = JOBS["devcontainer-smoke"]
+    assert job["uses"] == "./.github/workflows/devcontainer-smoke.yml"
+    assert job["if"] == "needs.devcontainer-scope.outputs.changed == 'true'"
+    run = scope["steps"][-1]["run"]
+    for path in DEVCONTAINER_PATHS:
+        assert any(path == p or path.startswith(p + "/") for p in run.split()), path
+
+
+@pytest.mark.parametrize(
+    ("scope", "smoke", "ok"),
+    [
+        ("skipped", "skipped", True),
+        ("success", "skipped", True),
+        ("success", "success", True),
+        ("success", "failure", False),
+        ("success", "cancelled", False),
+        ("failure", "skipped", False),
+    ],
+)
+def test_tests_ok_requires_the_devcontainer_smoke_when_it_runs(scope, smoke, ok):
+    step = JOBS["tests-ok"]["steps"][-1]
+    env = {
+        **os.environ,
+        "TEST_RESULT": "success",
+        "INSTALL_RESULT": "success",
+        "SCOPE_RESULT": scope,
+        "SMOKE_RESULT": smoke,
+    }
+    result = subprocess.run(["bash", "-c", step["run"]], env=env, capture_output=True)
+    assert (result.returncode == 0) is ok
+
+
 @pytest.mark.parametrize("test_result", ["success", "failure", "skipped"])
 @pytest.mark.parametrize("install_result", ["success", "failure", "cancelled"])
 def test_tests_ok_passes_only_when_both_succeed(test_result, install_result):
     step = JOBS["tests-ok"]["steps"][-1]
     run = subprocess.run(
         ["bash", "-c", step["run"]],
-        env=dict(os.environ, TEST_RESULT=test_result, INSTALL_RESULT=install_result),
+        env=dict(
+            os.environ,
+            TEST_RESULT=test_result,
+            INSTALL_RESULT=install_result,
+            SCOPE_RESULT="skipped",
+            SMOKE_RESULT="skipped",
+        ),
         capture_output=True,
     )
     assert (run.returncode == 0) == (test_result == install_result == "success")
@@ -112,7 +170,7 @@ def test_dependabot_checks_for_cli_updates_every_day_without_a_cooldown():
     assert entry["cooldown"]["default-days"] == 0
 
 
-def test_auto_merge_is_limited_to_dependabot_ci_tools_updates():
+def test_auto_merge_is_limited_to_dependabot_ci_tools_and_skills_cli_updates():
     workflow = yaml.load(
         (WORKFLOWS / "ci-tools-auto-merge.yml").read_text(), Loader=yaml.BaseLoader
     )
@@ -126,7 +184,15 @@ def test_auto_merge_is_limited_to_dependabot_ci_tools_updates():
     meta, merge = job["steps"]
     action, ref = meta["uses"].split("@")
     assert action == "dependabot/fetch-metadata" and len(ref) == 40
-    assert merge["if"] == "steps.meta.outputs.directory == '/ci-tools'"
+    assert merge["if"] == (
+        'contains(fromJSON(\'["/ci-tools", "/image/skills-cli"]\'),'
+        " steps.meta.outputs.directory)"
+    )
+    config = yaml.safe_load((ROOT / ".github/dependabot.yml").read_text())
+    assert {u["directory"] for u in config["updates"]} == {
+        "/ci-tools",
+        "/image/skills-cli",
+    }
     assert merge["run"].startswith("gh pr merge --auto")
     assert '--match-head-commit "$HEAD_SHA"' in merge["run"]
     assert merge["env"]["HEAD_SHA"] == "${{ github.event.pull_request.head.sha }}"
