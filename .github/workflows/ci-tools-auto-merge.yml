@@ -1,7 +1,9 @@
 name: CI tools auto-merge
 
 # Merge Dependabot's agent-CLI lockfile updates once the required checks pass.
-on: pull_request
+on:
+  pull_request:
+    branches: [main]
 
 permissions:
   contents: write
@@ -13,9 +15,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - id: meta
-        uses: dependabot/fetch-metadata@v2
+        uses: dependabot/fetch-metadata@21025c705c08248db411dc16f3619e6b5f9ea21a # v2.5.0
 
-      - if: steps.meta.outputs.directory == '/.github/ci-tools'
+      # fetch-metadata reads the directory from the Git-safe branch name.
+      - if: steps.meta.outputs.directory == '/dot-github/ci-tools'
         run: gh pr merge --auto --squash "$PR_URL"
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}

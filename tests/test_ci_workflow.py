@@ -56,12 +56,33 @@ def test_tests_ok_passes_only_when_both_succeed(test_result, install_result):
     assert (run.returncode == 0) == (test_result == install_result == "success")
 
 
-def test_ci_installs_agent_clis_from_the_lockfile():
-    for job in ("test", "plugin-install"):
-        runs = [step.get("run", "") for step in JOBS[job]["steps"]]
-        assert "bash scripts/install-ci-clis.sh" in runs
+@pytest.mark.parametrize("job", ["test", "plugin-install"])
+def test_ci_installs_agent_clis_from_the_lockfile(job):
+    steps = JOBS[job]["steps"]
+    node = next(
+        step for step in steps if step.get("uses", "").startswith("actions/setup-node@")
+    )
+    install = next(
+        step for step in steps if step.get("run") == "bash scripts/install-ci-clis.sh"
+    )
+    assert node["with"]["node-version"] == "22"
+    assert steps.index(node) < steps.index(install)
     script = (ROOT / "scripts/install-ci-clis.sh").read_text()
-    assert "npm ci" in script and "npm install" not in script
+    assert (
+        "npm ci" in script and "--engine-strict" in script and "npm view" not in script
+    )
+
+
+def test_only_plugin_install_resolves_the_plugins_cli_version():
+    (job,) = (
+        name
+        for name, job in JOBS.items()
+        if any(
+            "npm view plugins@latest version" in step.get("run", "")
+            for step in job["steps"]
+        )
+    )
+    assert job == "plugin-install"
 
 
 def test_agent_clis_are_locked_to_exact_versions():
@@ -82,10 +103,59 @@ def test_dependabot_updates_agent_clis_daily():
 
 
 def test_auto_merge_is_limited_to_dependabot_ci_tools_updates():
-    job = yaml.load(
+    workflow = yaml.load(
         (WORKFLOWS / "ci-tools-auto-merge.yml").read_text(), Loader=yaml.BaseLoader
-    )["jobs"]["enable-auto-merge"]
+    )
+    assert workflow["on"]["pull_request"]["branches"] == ["main"]
+    job = workflow["jobs"]["enable-auto-merge"]
     assert job["if"] == "github.event.pull_request.user.login == 'dependabot[bot]'"
-    merge = job["steps"][-1]
-    assert merge["if"] == "steps.meta.outputs.directory == '/.github/ci-tools'"
+    meta, merge = job["steps"]
+    action, ref = meta["uses"].split("@")
+    assert action == "dependabot/fetch-metadata" and len(ref) == 40
+    assert merge["if"] == "steps.meta.outputs.directory == '/dot-github/ci-tools'"
     assert merge["run"].startswith("gh pr merge --auto")
+
+
+@pytest.mark.parametrize("matching_issue", [False, True])
+def test_failed_update_creates_one_open_issue_per_branch(tmp_path, matching_issue):
+    workflow = yaml.load(
+        (WORKFLOWS / "ci-tools-alert.yml").read_text(), Loader=yaml.BaseLoader
+    )
+    job = workflow["jobs"]["alert"]
+    assert (
+        job["concurrency"]["group"]
+        == "ci-tools-alert-${{ github.event.workflow_run.head_branch }}"
+    )
+
+    branch = "dependabot/npm_and_yarn/dot-github/ci-tools/openai/codex-0.171.0"
+    title = "CI failed on agent CLI update openai/codex-0.171.0"
+    issues = [
+        [
+            {"title": title, "number": 1, "pull_request": {}},
+            {"title": "Other", "number": 2},
+        ]
+    ]
+    if matching_issue:
+        issues.append([{"title": title, "number": 3}])
+    gh = tmp_path / "gh"
+    gh.write_text(
+        '#!/bin/bash\nif [[ "$1" == api ]]; then\n'
+        '  printf "%s\\n" "$ISSUES"\nelse\n  printf "%s\\n" "$@"\nfi\n'
+    )
+    gh.chmod(0o755)
+    result = subprocess.run(
+        ["bash", "-e", "-o", "pipefail", "-c", job["steps"][0]["run"]],
+        env={
+            "PATH": f"{tmp_path}{os.pathsep}{os.defpath}",
+            "GH_REPO": "allenai/asta-plugins",
+            "BRANCH": branch,
+            "RUN_URL": "https://github.com/allenai/asta-plugins/actions/runs/123",
+            "SHA": "abc123",
+            "ISSUES": json.dumps(issues),
+        },
+        capture_output=True,
+        check=True,
+        text=True,
+    )
+    expected = ["comment", "3"] if matching_issue else ["create", "--title", title]
+    assert result.stdout.splitlines()[: 1 + len(expected)] == ["issue", *expected]
