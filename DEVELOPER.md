@@ -104,7 +104,9 @@ only workflow that manages the `CLI update stuck: <cli>` issue. It opens an
 issue, updates the body of the Actions-created alert while the update is overdue,
 and closes it once `main` has caught up. Each run recomputes which updates are
 overdue from npm and the lockfile. This catches updates stalled before PR
-creation, in CI, or at merge.
+creation, in CI, or at merge. If npm cannot provide release data with a stable
+`latest` tag, the check leaves that package's issue untouched, checks the
+remaining packages, and reports a failed run.
 
 GitHub suppresses `push`
 workflows for merges performed with Actions' built-in token. The required checks

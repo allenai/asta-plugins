@@ -331,18 +331,16 @@ def test_freshness_checks_codex_even_when_writing_the_claude_alert_fails(
 
 
 @pytest.mark.parametrize(
-    ("claude_metadata", "code", "annotation"),
+    ("claude_metadata", "annotation"),
     [
-        (None, 1, "::error::Could not read npm metadata"),
-        ("{invalid json", 1, "::error::Could not read npm metadata"),
+        (None, "::error::Could not read npm metadata"),
+        ("{invalid json", "::error::Could not read npm metadata"),
         (
             {"dist-tags.latest": "2.1.327"},
-            1,
             "::error::Could not read npm release times",
         ),
         (
             {"dist-tags.latest": "2.1.327", "time": {}},
-            1,
             "::error::Could not read npm release times",
         ),
         (
@@ -350,24 +348,21 @@ def test_freshness_checks_codex_even_when_writing_the_claude_alert_fails(
                 "dist-tags.latest": "2.1.327",
                 "time": {"2.1.325": "2026-11-17T07:00:00.000Z"},
             },
-            1,
             "::error::Could not read npm release times",
         ),
         (
             {"dist-tags.latest": "2.1.327", "time": {"2.1.327": "invalid"}},
-            1,
             "::error::Could not read npm release times",
         ),
         (
             {"dist-tags.latest": "2.1.327-beta.1"},
-            0,
-            "::warning::npm has no stable latest tag",
+            "::error::npm has no stable latest tag",
         ),
-        ({"time": {}}, 0, "::warning::npm has no stable latest tag"),
+        ({"time": {}}, "::error::npm has no stable latest tag"),
     ],
 )
 def test_freshness_checks_codex_even_when_claude_metadata_is_unavailable(
-    tmp_path, claude_metadata, code, annotation
+    tmp_path, claude_metadata, annotation
 ):
     claude = "@anthropic-ai/claude-code"
     codex = "@openai/codex"
@@ -392,7 +387,7 @@ def test_freshness_checks_codex_even_when_claude_metadata_is_unavailable(
             ]
         ],
     )
-    assert result.returncode == code
+    assert result.returncode == 1
     lines = result.stdout.splitlines()
     assert lines.count("issue") == 1
     assert lines[:5] == [

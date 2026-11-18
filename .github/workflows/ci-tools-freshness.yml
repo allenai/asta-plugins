@@ -59,7 +59,8 @@ jobs:
               continue
             fi
             if [[ -z "$latest" ]]; then
-              echo "::warning::npm has no stable latest tag for $pkg."
+              echo "::error::npm has no stable latest tag for $pkg."
+              check_failed=1
               continue
             fi
             # Ignore prereleases and use the newest release available by the cutoff.
