@@ -273,6 +273,24 @@ def test_freshness_owns_one_issue_per_cli(
             "::error::Could not read npm release times",
         ),
         (
+            {"dist-tags.latest": "2.1.327", "time": {}},
+            1,
+            "::error::Could not read npm release times",
+        ),
+        (
+            {
+                "dist-tags.latest": "2.1.327",
+                "time": {"2.1.325": "2026-11-17T07:00:00.000Z"},
+            },
+            1,
+            "::error::Could not read npm release times",
+        ),
+        (
+            {"dist-tags.latest": "2.1.327", "time": {"2.1.327": "invalid"}},
+            1,
+            "::error::Could not read npm release times",
+        ),
+        (
             {"dist-tags.latest": "2.1.327-beta.1"},
             0,
             "::warning::npm has no stable latest tag",
@@ -299,7 +317,9 @@ def test_freshness_checks_codex_even_when_claude_metadata_is_unavailable(
         [[{"title": "CLI update stuck: anthropic-ai/claude-code", "number": 3}]],
     )
     assert result.returncode == code
-    assert result.stdout.splitlines()[:5] == [
+    lines = result.stdout.splitlines()
+    assert lines.count("issue") == 1
+    assert lines[:5] == [
         f"{annotation} for {claude}.",
         "issue",
         "create",

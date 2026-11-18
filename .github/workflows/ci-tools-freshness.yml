@@ -62,7 +62,11 @@ jobs:
             if ! eligible="$(jq -r --arg locked "$locked" --arg latest "$latest" --argjson cutoff "$cutoff" '
               def version: split(".") | map(tonumber);
               ($locked | version) as $locked_version | ($latest | version) as $latest_version
-              | .time | to_entries
+              | .time
+              | if $latest_version > $locked_version and .[$latest] == null then
+                  error("missing publication time for \($latest)")
+                else to_entries
+                end
               | map(select(.key | test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))
                     | (.key | version) as $version
                     | select($version > $locked_version and $version <= $latest_version)
