@@ -30,7 +30,7 @@ def skills_message(text=SKILLS_BLOCK):
     return message("developer", text)
 
 
-def run_check(tmp_path, target, prompt, skill_source):
+def run_check(tmp_path, target, prompt, skill_source, *, extra_plugins=()):
     checker = tmp_path / "scripts" / CHECKER.name
     checker.parent.mkdir()
     shutil.copyfile(CHECKER, checker)
@@ -38,7 +38,9 @@ def run_check(tmp_path, target, prompt, skill_source):
     marketplace = tmp_path / ".claude-plugin" / "marketplace.json"
     marketplace.parent.mkdir()
     marketplace.write_text(
-        json.dumps({"plugins": [{"name": "asta-flows", "source": source}]})
+        json.dumps(
+            {"plugins": [{"name": "asta-flows", "source": source}, *extra_plugins]}
+        )
     )
     if skill_source is not None:
         skill = tmp_path / source / "skills" / "run-workflow" / "SKILL.md"
@@ -112,7 +114,7 @@ def check_result(result, error):
             SKILL_SOURCE,
             "expected one Codex skills instructions block, found 2",
         ),
-        ([skills_message()], None, "no expected skills found"),
+        ([skills_message()], None, "asta-flows: no SKILL.md files found"),
         (
             [skills_message(SKILLS_BLOCK.replace("r0/", "/tmp/checkout)/"))],
             "---\r\nname: run-workflow\r\ndescription: >\r\n  Full\r\n  description\r\n---",
@@ -206,6 +208,19 @@ def test_check_codex_skill_prompt(tmp_path, prompt, skill_source, error):
     check_result(run_check(tmp_path, "codex", prompt, skill_source), error)
 
 
+def test_check_rejects_empty_plugin_with_other_skills(tmp_path):
+    source = "./plugins/asta-dev"
+    (tmp_path / source / "skills").mkdir(parents=True)
+    result = run_check(
+        tmp_path,
+        "codex",
+        [skills_message()],
+        SKILL_SOURCE,
+        extra_plugins=({"name": "asta-dev", "source": source},),
+    )
+    check_result(result, "asta-dev: no SKILL.md files found")
+
+
 @pytest.mark.parametrize(
     ("entry", "role", "error"),
     [
@@ -265,6 +280,7 @@ def test_capture_claude_main_request(tmp_path, monkeypatch):
 import http.client
 import json
 import os
+import socket
 import sys
 from urllib.parse import urlsplit
 
@@ -275,6 +291,16 @@ connection.endheaders()
 response = connection.getresponse()
 assert response.status == 411
 assert json.load(response)["error"]["message"] == "Content-Length is required"
+
+def post_incomplete(end_body):
+    connection.request("POST", "/v1/messages", "{}", {"Content-Length": "3"})
+    if end_body:
+        connection.sock.shutdown(socket.SHUT_WR)
+    response = connection.getresponse()
+    return response.status, json.load(response)["error"]["message"]
+
+assert post_incomplete(end_body=True) == (400, "Incomplete Messages request")
+assert post_incomplete(end_body=False) == (408, "Timed out reading Messages request")
 
 def post(payload):
     connection.request("POST", "/v1/messages", json.dumps(payload))
@@ -299,7 +325,7 @@ assert b"event: message_stop" in content
     claude.chmod(0o755)
     monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}{os.environ['PATH']}")
     result = subprocess.run(
-        [sys.executable, CAPTURE, tmp_path], capture_output=True, text=True, timeout=10
+        [sys.executable, CAPTURE, tmp_path], capture_output=True, text=True, timeout=20
     )
     assert result.returncode == 0, result.stderr
     assert json.loads(result.stdout)["tools"] == [{"name": "Read"}]

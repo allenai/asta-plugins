@@ -82,6 +82,8 @@ def capture(home: Path) -> bytes:
     request = None
 
     class Handler(BaseHTTPRequestHandler):
+        timeout = 5
+
         def do_POST(self):
             nonlocal request
             if urlsplit(self.path).path != "/v1/messages":
@@ -96,7 +98,19 @@ def capture(home: Path) -> bytes:
                 self.request_error(400, "Invalid Content-Length")
                 return
             try:
-                body = self.rfile.read(int(length))
+                body_length = int(length)
+                body = self.rfile.read(body_length)
+            except (OverflowError, ValueError):
+                self.request_error(400, "Invalid Content-Length")
+                return
+            except TimeoutError:
+                self.request_error(408, "Timed out reading Messages request")
+                return
+            if len(body) != body_length:
+                self.request_error(400, "Incomplete Messages request")
+                return
+
+            try:
                 payload = json.loads(body)
                 if not isinstance(payload, dict) or not isinstance(
                     payload.get("model"), str

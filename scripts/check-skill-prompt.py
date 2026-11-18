@@ -124,7 +124,11 @@ def expected_skills(source: Path) -> dict[str, str]:
         location = plugin["source"]
         if not isinstance(location, str):
             raise ValueError(f"{name}: expected a local plugin source in {MARKETPLACE}")
-        for skill_md in sorted((source / location).glob("skills/*/SKILL.md")):
+        skills_dir = Path(location) / "skills"
+        skill_files = sorted((source / skills_dir).glob("*/SKILL.md"))
+        if not skill_files:
+            raise ValueError(f"{name}: no SKILL.md files found under {skills_dir}")
+        for skill_md in skill_files:
             skills[f"{name}:{skill_md.parent.name}"] = skill_description(
                 source, skill_md
             )
