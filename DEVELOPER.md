@@ -98,11 +98,14 @@ failure stays in Dependabot's own run without opening a PR. So stalls are caught
 outcome, not by watching each step: a daily freshness check
 (`ci-tools-freshness.yml`, 4 hours after Dependabot's check) looks for a stable
 release that was available by Dependabot's last check but is newer than the version
-`main` locks. It is the only workflow that writes the `CLI update stuck: <cli>`
-issue: it opens it, rewrites its body with the current state while the update is
-overdue, and closes it once `main` has caught up. It keeps no state of its own, so
-each run's result follows from npm and the lockfile alone. This catches updates
-stalled before PR creation, in CI, or at merge.
+`main` locks. If Dependabot starts late or CI and auto-merge take more than four
+hours, an issue can open while the update is still in flight. The check is the
+only workflow that manages the `CLI update stuck: <cli>` issue. It opens an
+issue, updates the body of the Actions-created alert while the update is overdue,
+and closes it once `main` has caught up. Each run recomputes which updates are
+overdue from npm and the lockfile. This catches updates stalled before PR
+creation, in CI, or at merge.
+
 GitHub suppresses `push`
 workflows for merges performed with Actions' built-in token. The required checks
 run before the merge. Release tags still use the release commit with its own

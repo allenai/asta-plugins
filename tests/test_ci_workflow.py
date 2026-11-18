@@ -142,9 +142,6 @@ def test_freshness_runs_after_dependabot_and_is_the_only_issue_writer():
     dependabot_minute, dependabot_hour = entry["schedule"]["cronjob"].split()[:2]
     minute, hour = schedule["cron"].split()[:2]
     assert schedule["cron"].split()[2:] == ["*", "*", "*"]
-    assert (int(hour) - int(dependabot_hour)) * 60 + int(minute) - int(
-        dependabot_minute
-    ) >= 2 * 60
     job = workflow["jobs"]["freshness"]
     assert job["concurrency"] == {"group": "ci-tools-freshness"}
     assert not (WORKFLOWS / "ci-tools-alert.yml").exists()
@@ -154,16 +151,19 @@ def test_freshness_runs_after_dependabot_and_is_the_only_issue_writer():
         check["env"]["DEPENDABOT_CHECK_UTC"]
         == f"{dependabot_hour.zfill(2)}:{dependabot_minute}"
     )
-    assert (int(hour) - int(dependabot_hour)) * 60 + int(minute) - int(
-        dependabot_minute
-    ) >= int(check["env"]["GRACE_HOURS"]) * 60
+    freshness_minutes = int(hour) * 60 + int(minute)
+    dependabot_minutes = int(dependabot_hour) * 60 + int(dependabot_minute)
+    gap = (freshness_minutes - dependabot_minutes) % (24 * 60)
+    assert gap >= int(check["env"]["GRACE_HOURS"]) * 60
 
 
-def _run_freshness(tmp_path, now, packages, metadata, issues):
+def _run_freshness(tmp_path, now, packages, metadata, issues, *, fail_first_change=""):
     workflow = yaml.load(
         (WORKFLOWS / "ci-tools-freshness.yml").read_text(), Loader=yaml.BaseLoader
     )
     step = workflow["jobs"]["freshness"]["steps"][-1]
+    hour, minute = map(int, step["env"]["DEPENDABOT_CHECK_UTC"].split(":"))
+    cutoff = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
     (tmp_path / "ci-tools").mkdir()
     (tmp_path / "ci-tools/package-lock.json").write_text(
         json.dumps(
@@ -185,11 +185,19 @@ def _run_freshness(tmp_path, now, packages, metadata, issues):
     )
     (bin_dir / "date").write_text(
         '#!/bin/bash\nif [[ "$2" == +%s ]]; then printf "%s\\n" "$NOW"; '
-        'else /usr/bin/date -u -d "2026-11-18 $3" +%s; fi\n'
+        'elif [[ "$2" == -d && "$3" == "$DEPENDABOT_CHECK_UTC" ]]; then '
+        'printf "%s\\n" "$CUTOFF"; else exit 2; fi\n'
     )
     (bin_dir / "gh").write_text(
         '#!/bin/bash\nif [[ "$1" == api ]]; then\n'
-        '  printf "%s\\n" "$ISSUES"\nelse\n  printf "%s\\n" "$@"\nfi\n'
+        '  printf "%s\\n" "$ISSUES"\n'
+        "else\n"
+        '  printf "%s\\n" "$@"\n'
+        '  if [[ "$2" == "$FAIL_FIRST_CHANGE" && ! -e gh-mutation-failed ]]; then\n'
+        "    touch gh-mutation-failed\n"
+        "    exit 1\n"
+        "  fi\n"
+        "fi\n"
     )
     for tool in ("npm", "gh", "date"):
         (bin_dir / tool).chmod(0o755)
@@ -203,8 +211,10 @@ def _run_freshness(tmp_path, now, packages, metadata, issues):
             "DEPENDABOT_CHECK_UTC": step["env"]["DEPENDABOT_CHECK_UTC"],
             "GRACE_HOURS": step["env"]["GRACE_HOURS"],
             "NOW": str(int(now.timestamp())),
+            "CUTOFF": str(int(cutoff.timestamp())),
             "METADATA": json.dumps(metadata),
             "ISSUES": json.dumps(issues),
+            "FAIL_FIRST_CHANGE": fail_first_change,
         },
         capture_output=True,
         text=True,
@@ -241,9 +251,15 @@ def test_freshness_owns_one_issue_per_cli(
         for version, age in {latest: hours_ago, **other_releases}.items()
     }
     title = "CLI update stuck: openai/codex"
-    issues = [[{"title": title, "number": 1, "pull_request": {}}]]
+    bot = {"login": "github-actions[bot]"}
+    issues = [
+        [
+            {"title": title, "number": 1, "user": bot, "pull_request": {}},
+            {"title": title, "number": 2, "user": {"login": "contributor"}},
+        ]
+    ]
     if issue:
-        issues.append([{"title": title, "number": 3}])
+        issues.append([{"title": title, "number": 3, "user": bot}])
     result = _run_freshness(
         tmp_path,
         now,
@@ -260,6 +276,58 @@ def test_freshness_owns_one_issue_per_cli(
     if expected[:1] in (["create"], ["edit"]):
         assert "`@openai/codex@0.171.0` was available" in result.stdout
         assert "still locks `0.170.0`" in result.stdout
+
+
+@pytest.mark.parametrize("action", ["create", "edit", "close"])
+def test_freshness_checks_codex_even_when_writing_the_claude_alert_fails(
+    tmp_path, action
+):
+    claude = "@anthropic-ai/claude-code"
+    codex = "@openai/codex"
+    claude_latest = "2.1.325" if action == "close" else "2.1.327"
+    published = "2026-11-18T07:00:00.000Z"
+    issues = (
+        []
+        if action == "create"
+        else [
+            [
+                {
+                    "title": "CLI update stuck: anthropic-ai/claude-code",
+                    "number": 3,
+                    "user": {"login": "github-actions[bot]"},
+                }
+            ]
+        ]
+    )
+    result = _run_freshness(
+        tmp_path,
+        datetime(2026, 11, 18, 12, 17, tzinfo=UTC),
+        {claude: "2.1.325", codex: "0.170.0"},
+        {
+            claude: {
+                "dist-tags.latest": claude_latest,
+                "time": {claude_latest: published},
+            },
+            codex: {
+                "dist-tags.latest": "0.171.0",
+                "time": {"0.171.0": published},
+            },
+        },
+        issues,
+        fail_first_change=action,
+    )
+    assert result.returncode == 1
+    lines = result.stdout.splitlines()
+    assert lines[:2] == ["issue", action]
+    error = lines.index(
+        f"::error::Could not {action} the CLI update issue for {claude}."
+    )
+    assert lines[error + 1 : error + 5] == [
+        "issue",
+        "create",
+        "--title",
+        "CLI update stuck: openai/codex",
+    ]
 
 
 @pytest.mark.parametrize(
@@ -314,7 +382,15 @@ def test_freshness_checks_codex_even_when_claude_metadata_is_unavailable(
                 "time": {"0.171.0": "2026-11-18T07:00:00.000Z"},
             },
         },
-        [[{"title": "CLI update stuck: anthropic-ai/claude-code", "number": 3}]],
+        [
+            [
+                {
+                    "title": "CLI update stuck: anthropic-ai/claude-code",
+                    "number": 3,
+                    "user": {"login": "github-actions[bot]"},
+                }
+            ]
+        ],
     )
     assert result.returncode == code
     lines = result.stdout.splitlines()
