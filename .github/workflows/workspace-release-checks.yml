@@ -10,7 +10,6 @@ jobs:
   plugins:
     permissions:
       contents: read
-      packages: read
     strategy:
       fail-fast: false
       matrix:

@@ -8,10 +8,7 @@ on:
         type: boolean
         default: false
 
-permissions:
-  contents: read
-  packages: read
-
+# Callers grant token permissions. Pulling published images needs packages: read.
 jobs:
   smoke:
     runs-on: ${{ matrix.runner }}

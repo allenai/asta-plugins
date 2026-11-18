@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Dependabot's weekly updates to the `skills` CLI in the dev container auto-merge after required CI passes, including the dev container smoke tests.
 - CI's locked Claude Code, Codex and `plugins` versions move to `ci-tools`, where Dependabot's npm updater can open PRs. A daily check is the only alert for stalled updates: it opens, updates and closes one GitHub issue per CLI, including when Dependabot fails before opening a PR. The separate CI-failure alert workflow is removed.
 - The Claude Code and Codex plugin install checks fail when a skill from `asta-tools`, `asta-assistant`, or `asta-dev` is missing from the model's prompt or its description changes during rendering.
 - Require `asta-documents` 0.4.2 or newer for `asta documents`.

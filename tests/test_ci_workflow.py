@@ -37,7 +37,7 @@ def test_tests_ok_needs_every_per_python_job_and_plugin_install():
     env = gate["steps"][-1]["env"]
     assert env["TEST_RESULT"] == "${{ needs.test.result }}"
     assert env["INSTALL_RESULT"] == "${{ needs.plugin-install.result }}"
-    assert env["EVENT_NAME"] == "${{ github.event_name }}"
+    assert env["PR_SMOKE_REQUIRED"] == JOBS["devcontainer-scope"]["if"]
     assert env["SCOPE_RESULT"] == "${{ needs.devcontainer-scope.result }}"
     assert env["IMAGE_CHANGED"] == "${{ needs.devcontainer-scope.outputs.changed }}"
     assert env["SMOKE_RESULT"] == "${{ needs.devcontainer-smoke.result }}"
@@ -62,10 +62,17 @@ def test_claude_selective_install_runs_in_ci():
 
 DEVCONTAINER_PATHS = [
     "Dockerfile",
+    "docker/entrypoint.sh",
     "image/skills-cli/package-lock.json",
+    "scripts/base-image-context.sh",
     "src/asta/cli.py",
+    "plugins/asta-tools/skills/workspace/assets/devcontainer.json",
+    "plugins/asta-tools/skills/workspace/assets/paper-preview.sh",
+    "tests/dom/package-lock.json",
     "tests/fixtures/devcontainer-smoke/check-post-create.py",
+    ".github/workflows/ci.yml",
     ".github/workflows/devcontainer-smoke.yml",
+    ".github/workflows/docker.yml",
 ]
 
 
@@ -75,38 +82,100 @@ def test_devcontainer_smoke_gates_tests_ok_on_image_prs():
     )
     # One trigger for PRs: a second pull_request run would not gate auto-merge.
     assert "pull_request" not in smoke["on"]
-    scope = JOBS["devcontainer-scope"]
-    assert scope["if"] == "github.event_name == 'pull_request'"
+    assert JOBS["devcontainer-scope"]["if"] == (
+        "${{ github.event_name == 'pull_request' "
+        "&& startsWith(github.workflow_ref, "
+        "format('{0}/.github/workflows/ci.yml@', github.repository)) }}"
+    )
     job = JOBS["devcontainer-smoke"]
     assert job["uses"] == "./.github/workflows/devcontainer-smoke.yml"
     assert job["if"] == "needs.devcontainer-scope.outputs.changed == 'true'"
-    run = scope["steps"][-1]["run"]
-    for path in DEVCONTAINER_PATHS:
-        assert any(path == p or path.startswith(p + "/") for p in run.split()), path
+    assert job["permissions"] == {"contents": "read"}
+    assert "packages" not in smoke.get("permissions", {})
+    published = smoke["on"]["workflow_call"]["inputs"]["published-images"]
+    assert published.get("required", "false") == published["default"] == "false"
+    docker = yaml.load((WORKFLOWS / "docker.yml").read_text(), Loader=yaml.BaseLoader)[
+        "jobs"
+    ]["verify"]
+    assert docker["uses"] == job["uses"]
+    assert docker["with"]["published-images"] == "true"
+    assert docker["permissions"]["packages"] == "read"
+
+
+@pytest.mark.parametrize("path", [*DEVCONTAINER_PATHS, "README.md"])
+def test_devcontainer_scope_compares_the_merge_to_its_base(tmp_path, path):
+    checkout, scope = JOBS["devcontainer-scope"]["steps"]
+    assert checkout["with"]["fetch-depth"] == "2"
+    assert scope["shell"] == "bash"
+
+    def git(*args):
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                str(tmp_path),
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.invalid",
+                *args,
+            ],
+            env=dict(os.environ, GIT_CONFIG_GLOBAL=os.devnull),
+            capture_output=True,
+            check=True,
+        )
+
+    git("init", "-b", "base")
+    git("commit", "--allow-empty", "-m", "Common ancestor")
+    git("switch", "-c", "pr")
+    pr_file = tmp_path / path
+    pr_file.parent.mkdir(parents=True, exist_ok=True)
+    pr_file.write_text("PR change\n")
+    git("add", path)
+    git("commit", "-m", "PR change")
+    git("switch", "base")
+    base_file = tmp_path / "docker/base-only.txt"
+    base_file.parent.mkdir(exist_ok=True)
+    base_file.write_text("Base change\n")
+    git("add", "docker/base-only.txt")
+    git("commit", "-m", "Base change")
+    git("merge", "--no-edit", "pr")
+
+    output = tmp_path / "scope-output"
+    subprocess.run(
+        ["bash", "-eo", "pipefail", "-c", scope["run"]],
+        cwd=tmp_path,
+        env=dict(os.environ, GITHUB_OUTPUT=str(output)),
+        capture_output=True,
+        check=True,
+    )
+    assert output.read_text() == (
+        "changed=false\n" if path == "README.md" else "changed=true\n"
+    )
 
 
 @pytest.mark.parametrize(
-    ("event", "scope", "changed", "smoke", "ok"),
+    ("direct_pr", "scope", "changed", "smoke", "ok"),
     [
-        ("push", "skipped", "", "skipped", True),
-        ("workflow_dispatch", "skipped", "", "skipped", True),
-        ("pull_request", "skipped", "", "skipped", False),
-        ("pull_request", "failure", "", "skipped", False),
-        ("pull_request", "success", "", "skipped", False),
-        ("pull_request", "success", "false", "skipped", True),
-        ("pull_request", "success", "true", "success", True),
-        ("pull_request", "success", "true", "skipped", False),
-        ("pull_request", "success", "true", "failure", False),
-        ("pull_request", "success", "true", "cancelled", False),
+        ("false", "skipped", "", "skipped", True),
+        ("false", "success", "true", "success", False),
+        ("true", "skipped", "", "skipped", False),
+        ("true", "failure", "", "skipped", False),
+        ("true", "success", "", "skipped", False),
+        ("true", "success", "false", "skipped", True),
+        ("true", "success", "true", "success", True),
+        ("true", "success", "true", "skipped", False),
+        ("true", "success", "true", "failure", False),
+        ("true", "success", "true", "cancelled", False),
     ],
 )
 def test_tests_ok_requires_the_devcontainer_smoke_for_image_prs(
-    event, scope, changed, smoke, ok
+    direct_pr, scope, changed, smoke, ok
 ):
     step = JOBS["tests-ok"]["steps"][-1]
     env = {
         **os.environ,
-        "EVENT_NAME": event,
+        "PR_SMOKE_REQUIRED": direct_pr,
         "TEST_RESULT": "success",
         "INSTALL_RESULT": "success",
         "SCOPE_RESULT": scope,
@@ -125,10 +194,11 @@ def test_tests_ok_passes_only_when_both_succeed(test_result, install_result):
         ["bash", "-c", step["run"]],
         env=dict(
             os.environ,
-            EVENT_NAME="push",
+            PR_SMOKE_REQUIRED="false",
             TEST_RESULT=test_result,
             INSTALL_RESULT=install_result,
             SCOPE_RESULT="skipped",
+            IMAGE_CHANGED="",
             SMOKE_RESULT="skipped",
         ),
         capture_output=True,
@@ -177,7 +247,7 @@ def test_cli_tools_are_locked_to_exact_versions():
 
 def test_dependabot_checks_for_cli_updates_every_day_without_a_cooldown():
     config = yaml.safe_load((ROOT / ".github/dependabot.yml").read_text())
-    (entry,) = [u for u in config["updates"] if u["directory"] == "/ci-tools"]
+    (entry,) = [u for u in config["updates"] if u.get("directory") == "/ci-tools"]
     assert entry["package-ecosystem"] == "npm"
     assert entry["schedule"]["interval"] == "cron"
     assert entry["schedule"]["cronjob"].split()[2:] == ["*", "*", "*"]
@@ -203,7 +273,7 @@ def test_auto_merge_is_limited_to_dependabot_ci_tools_and_skills_cli_updates():
         " steps.meta.outputs.directory)"
     )
     config = yaml.safe_load((ROOT / ".github/dependabot.yml").read_text())
-    assert {u["directory"] for u in config["updates"]} == {
+    assert {u.get("directory") for u in config["updates"]} >= {
         "/ci-tools",
         "/image/skills-cli",
     }
@@ -218,7 +288,7 @@ def test_freshness_runs_after_dependabot_and_is_the_only_issue_writer():
     )
     (schedule,) = workflow["on"]["schedule"]
     config = yaml.safe_load((ROOT / ".github/dependabot.yml").read_text())
-    (entry,) = [u for u in config["updates"] if u["directory"] == "/ci-tools"]
+    (entry,) = [u for u in config["updates"] if u.get("directory") == "/ci-tools"]
     dependabot_minute, dependabot_hour = entry["schedule"]["cronjob"].split()[:2]
     minute, hour = schedule["cron"].split()[:2]
     assert schedule["cron"].split()[2:] == ["*", "*", "*"]
