@@ -1,5 +1,8 @@
 name: Claude plugin compatibility
 
+# Weekly check against the latest Claude Code. A pass on a newer release
+# refreshes one pin-bump PR for .github/claude-code-version; a failure keeps
+# the pin and opens one issue per failing version and check set.
 on:
   schedule:
     - cron: "0 8 * * 1"
@@ -9,15 +12,28 @@ permissions:
   contents: read
 
 jobs:
-  selective-install:
+  canary:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.cli.outputs.version }}
+      selective: ${{ steps.selective.outcome }}
+      prompt: ${{ steps.prompt.outcome }}
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
       - name: Install latest Claude Code CLI
+        id: cli
         run: |
           curl -fsSL https://claude.ai/install.sh | bash
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          version="$("$HOME/.local/bin/claude" --version | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n1)"
+          test -n "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Tested Claude Code $version" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Install uv
         uses: astral-sh/setup-uv@v4
@@ -26,6 +42,97 @@ jobs:
         run: uv python install 3.12
 
       - name: Run selective-install checks
+        id: selective
+        continue-on-error: true
         env:
           ASTA_TEST_CLAUDE_PLUGIN_DEPS: "1"
         run: uv run --python 3.12 --extra test pytest tests/test_plugin_dependencies.py -q
+
+      - name: Check model-visible skill descriptions
+        id: prompt
+        continue-on-error: true
+        run: bash scripts/verify-plugin-install.sh claude-code
+
+      - name: Fail if any check failed
+        if: steps.selective.outcome != 'success' || steps.prompt.outcome != 'success'
+        run: exit 1
+
+  bump-pin:
+    needs: canary
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Update the pin when the tested release is newer
+        id: pin
+        env:
+          VERSION: ${{ needs.canary.outputs.version }}
+        run: |
+          current="$(cat .github/claude-code-version)"
+          newest="$(printf '%s\n%s\n' "$current" "$VERSION" | sort -V | tail -n1)"
+          if [ "$VERSION" = "$current" ] || [ "$newest" != "$VERSION" ]; then
+            echo "Pin $current is current; tested $VERSION" >> "$GITHUB_STEP_SUMMARY"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "$VERSION" > .github/claude-code-version
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # PRs opened with GITHUB_TOKEN do not trigger CI. A repo-scoped GitHub App
+      # (vars.PIN_BUMP_APP_ID, secrets.PIN_BUMP_APP_PRIVATE_KEY) makes them do so.
+      - name: Mint GitHub App token
+        id: app
+        if: steps.pin.outputs.changed == 'true' && vars.PIN_BUMP_APP_ID != ''
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.PIN_BUMP_APP_ID }}
+          private-key: ${{ secrets.PIN_BUMP_APP_PRIVATE_KEY }}
+
+      - name: Open or update the pin-bump PR
+        if: steps.pin.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ steps.app.outputs.token || github.token }}
+          branch: automation/claude-code-pin
+          add-paths: .github/claude-code-version
+          commit-message: "Bump Claude Code test pin to ${{ needs.canary.outputs.version }}"
+          title: "Bump Claude Code test pin to ${{ needs.canary.outputs.version }}"
+          body: |
+            The weekly Claude Code canary passed on ${{ needs.canary.outputs.version }}: selective install and model-visible skill descriptions.
+
+            Canary run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+  alert:
+    needs: canary
+    if: always() && needs.canary.result == 'failure'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Open one issue per failing version and check set
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.canary.outputs.version || 'unknown' }}
+          SELECTIVE: ${{ needs.canary.outputs.selective }}
+          PROMPT: ${{ needs.canary.outputs.prompt }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          failed=()
+          [ "$SELECTIVE" = success ] || failed+=("selective install")
+          [ "$PROMPT" = success ] || failed+=("skill descriptions")
+          checks="${failed[0]}${failed[1]:+, ${failed[1]}}"
+          title="Claude Code $VERSION canary failed: $checks"
+          if gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "\"$title\" in:title" \
+              --json title --jq '.[].title' | grep -Fxq "$title"; then
+            echo "Already reported: $title"
+            exit 0
+          fi
+          body="The weekly Claude Code canary failed; .github/claude-code-version is unchanged.
+
+          - Version: $VERSION
+          - Failing checks: $checks
+          - Run: $RUN_URL"
+          gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body "$body"
