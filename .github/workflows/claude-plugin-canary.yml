@@ -20,15 +20,23 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.cli.outputs.version }}
-      setup: ${{ steps.setup.outcome }}
+      setup-failure: >-
+        ${{ steps.checkout.outcome == 'failure' && 'checkout'
+            || steps.node.outcome == 'failure' && 'Node.js setup'
+            || steps.cli.outcome == 'failure' && 'Claude Code install'
+            || steps.uv.outcome == 'failure' && 'uv setup'
+            || steps.python.outcome == 'failure' && 'Python setup' || '' }}
       selective: ${{ steps.selective.outcome }}
+      native: ${{ steps.native.outcome }}
       prompt: ${{ steps.prompt.outcome }}
     steps:
       - uses: actions/checkout@v4
+        id: checkout
         with:
           persist-credentials: false
 
       - uses: actions/setup-node@v4
+        id: node
         with:
           node-version: "20"
 
@@ -44,9 +52,10 @@ jobs:
 
       - name: Install uv
         uses: astral-sh/setup-uv@v4
+        id: uv
 
       - name: Set up Python 3.12
-        id: setup
+        id: python
         run: uv python install 3.12
 
       - name: Run selective-install checks
@@ -56,13 +65,18 @@ jobs:
           ASTA_TEST_CLAUDE_PLUGIN_DEPS: "1"
         run: uv run --python 3.12 --extra test pytest tests/test_plugin_dependencies.py -q
 
+      - name: Verify native installation of every plugin
+        id: native
+        continue-on-error: true
+        run: uv run --python 3.12 --extra test pytest tests/test_skills.py::TestClaudePluginInstall -q
+
       - name: Check model-visible skill descriptions
         id: prompt
         continue-on-error: true
         run: bash scripts/verify-plugin-install.sh claude-code
 
       - name: Fail if any check failed
-        if: steps.selective.outcome != 'success' || steps.prompt.outcome != 'success'
+        if: steps.selective.outcome != 'success' || steps.native.outcome != 'success' || steps.prompt.outcome != 'success'
         run: exit 1
 
   bump-pin:
@@ -76,7 +90,7 @@ jobs:
       contents: read
       pull-requests: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: main
           persist-credentials: false
@@ -101,7 +115,7 @@ jobs:
           # An older rerun must also preserve a newer bump awaiting review.
           pending_sha="$(gh api --method GET "repos/$GITHUB_REPOSITORY/pulls" \
             -f state=open -f base=main -f "head=${GITHUB_REPOSITORY_OWNER}:automation/claude-code-pin" \
-            --jq '.[0].head.sha // empty')"
+            --jq 'if length > 1 then error("Multiple open PRs use automation/claude-code-pin.") else .[0].head.sha // empty end')"
           if [ -n "$pending_sha" ]; then
             pending="$(gh api --method GET "repos/$GITHUB_REPOSITORY/contents/.github/claude-code-version" \
               -f "ref=$pending_sha" --jq .content | base64 --decode)"
@@ -133,7 +147,7 @@ jobs:
       - name: Mint GitHub App token
         id: app
         if: steps.pin.outputs.changed == 'true'
-        uses: actions/create-github-app-token@v2
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
         with:
           app-id: ${{ vars.PIN_BUMP_APP_ID }}
           private-key: ${{ secrets.PIN_BUMP_APP_PRIVATE_KEY }}
@@ -142,7 +156,7 @@ jobs:
 
       - name: Open or update the pin-bump PR
         if: steps.pin.outputs.changed == 'true'
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@22a9089034f40e5a961c8808d113e2c98fb63676 # v7.0.11
         with:
           token: ${{ steps.app.outputs.token }}
           base: main
@@ -151,7 +165,7 @@ jobs:
           commit-message: "Bump Claude Code test pin to ${{ needs.canary.outputs.version }}"
           title: "Bump Claude Code test pin to ${{ needs.canary.outputs.version }}"
           body: |
-            The weekly Claude Code canary passed on ${{ needs.canary.outputs.version }}: selective install and model-visible skill descriptions.
+            The weekly Claude Code canary passed on ${{ needs.canary.outputs.version }}: selective install, native plugin installation, and model-visible skill descriptions.
 
             Canary run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
@@ -169,14 +183,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.canary.outputs.version || 'unknown' }}
-          SETUP: ${{ needs.canary.outputs.setup }}
+          SETUP_FAILURE: ${{ needs.canary.outputs.setup-failure }}
           SELECTIVE: ${{ needs.canary.outputs.selective }}
+          NATIVE: ${{ needs.canary.outputs.native }}
           PROMPT: ${{ needs.canary.outputs.prompt }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           failed=()
-          [ "$SETUP" = success ] || failed+=("setup")
+          [ -z "$SETUP_FAILURE" ] || failed+=("$SETUP_FAILURE")
           [ "$SELECTIVE" != failure ] || failed+=("selective install")
+          [ "$NATIVE" != failure ] || failed+=("native plugin installation")
           [ "$PROMPT" != failure ] || failed+=("skill descriptions")
           if [ "${#failed[@]}" -gt 0 ]; then
             failures="$(printf '%s, ' "${failed[@]}")"

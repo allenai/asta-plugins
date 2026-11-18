@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+version="$(<.github/claude-code-version)"
+if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo '::error::Expected a numeric major.minor.patch version in .github/claude-code-version.' >&2
+  exit 1
+fi
+
+curl -fsSL https://claude.ai/install.sh | bash -s "$version"
+echo "$HOME/.local/bin" >> "$GITHUB_PATH"
