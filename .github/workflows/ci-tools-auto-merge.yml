@@ -1,6 +1,7 @@
 name: CI tools auto-merge
 
-# The main ruleset must require tests-ok, which includes plugin-install.
+# The main ruleset must require tests-ok, which includes plugin-install and,
+# for image changes such as /image/skills-cli, the dev container smoke.
 on:
   pull_request:
     branches: [main]
@@ -21,7 +22,7 @@ jobs:
         uses: dependabot/fetch-metadata@21025c705c08248db411dc16f3619e6b5f9ea21a # v2.5.0
 
       # fetch-metadata reads the directory from the Git-safe branch name.
-      - if: steps.meta.outputs.directory == '/ci-tools'
+      - if: contains(fromJSON('["/ci-tools", "/image/skills-cli"]'), steps.meta.outputs.directory)
         run: gh pr merge --auto --squash --match-head-commit "$HEAD_SHA" "$PR_URL"
         env:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}

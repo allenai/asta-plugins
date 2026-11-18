@@ -1,29 +1,14 @@
 name: Dev container smoke
 
 on:
-  pull_request:
-    paths:
-      - Dockerfile
-      - docker/**
-      - image/skills-cli/**
-      - scripts/base-image-context.sh
-      - src/asta/**
-      - plugins/asta-tools/skills/workspace/assets/devcontainer.json
-      - plugins/asta-tools/skills/workspace/assets/paper-preview.sh
-      - tests/dom/**
-      - tests/fixtures/devcontainer-smoke/**
-      - .github/workflows/devcontainer-smoke.yml
-      - .github/workflows/docker.yml
+  # PRs run this from CI so the required tests-ok check waits for it.
   workflow_call:
     inputs:
       published-images:
         type: boolean
         default: false
 
-permissions:
-  contents: read
-  packages: read
-
+# Callers grant token permissions. Pulling published images needs packages: read.
 jobs:
   smoke:
     runs-on: ${{ matrix.runner }}

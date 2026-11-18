@@ -78,17 +78,71 @@ jobs:
   tests-ok:
     # One required check that keeps its name when the Python matrix changes; it
     # also gates the install and model-visible skill-description checks.
-    needs: [test, plugin-install]
+    # The dev container smoke counts only on PRs that touch the image.
+    needs: [test, plugin-install, devcontainer-scope, devcontainer-smoke]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - run: |
-          echo "test: $TEST_RESULT, plugin-install: $INSTALL_RESULT"
-          test "$TEST_RESULT" = success && test "$INSTALL_RESULT" = success
+          set -euo pipefail
+          echo "test: $TEST_RESULT, plugin-install: $INSTALL_RESULT, devcontainer: $SCOPE_RESULT/$IMAGE_CHANGED/$SMOKE_RESULT"
+          test "$TEST_RESULT" = success
+          test "$INSTALL_RESULT" = success
+          if [ "$PR_SMOKE_REQUIRED" = true ]; then
+            case "$SCOPE_RESULT/$IMAGE_CHANGED/$SMOKE_RESULT" in
+              success/true/success|success/false/skipped) ;;
+              *) exit 1 ;;
+            esac
+          else
+            test "$SCOPE_RESULT/$SMOKE_RESULT" = skipped/skipped
+          fi
         env:
+          PR_SMOKE_REQUIRED: >-
+            ${{ github.event_name == 'pull_request'
+            && startsWith(github.workflow_ref, format('{0}/.github/workflows/ci.yml@', github.repository)) }}
           TEST_RESULT: ${{ needs.test.result }}
           INSTALL_RESULT: ${{ needs.plugin-install.result }}
+          SCOPE_RESULT: ${{ needs.devcontainer-scope.result }}
+          IMAGE_CHANGED: ${{ needs.devcontainer-scope.outputs.changed }}
+          SMOKE_RESULT: ${{ needs.devcontainer-smoke.result }}
+
+  devcontainer-scope:
+    # Reusable workflows inherit their caller's event and workflow ref.
+    if: >-
+      ${{ github.event_name == 'pull_request'
+      && startsWith(github.workflow_ref, format('{0}/.github/workflows/ci.yml@', github.repository)) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      changed: ${{ steps.scope.outputs.changed }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - id: scope
+        shell: bash
+        run: |
+          changed_paths=$(git diff --name-only HEAD^1 HEAD -- \
+            Dockerfile .dockerignore Dockerfile.dockerignore \
+            docker image/skills-cli scripts/base-image-context.sh src/asta \
+            plugins/asta-tools/skills/workspace/assets/devcontainer.json \
+            plugins/asta-tools/skills/workspace/assets/paper-preview.sh \
+            tests/dom tests/fixtures/devcontainer-smoke \
+            .github/workflows/ci.yml .github/workflows/devcontainer-smoke.yml .github/workflows/docker.yml)
+          changed=false
+          if [ -n "$changed_paths" ]; then changed=true; fi
+          echo "changed=$changed" | tee -a "$GITHUB_OUTPUT"
+
+  devcontainer-smoke:
+    needs: devcontainer-scope
+    if: needs.devcontainer-scope.outputs.changed == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/devcontainer-smoke.yml
 
   docker:
     runs-on: ${{ inputs.build-runner || 'ubuntu-latest' }}

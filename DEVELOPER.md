@@ -92,6 +92,11 @@ Auto-merge relies on the `main` ruleset requiring `tests-ok`, which covers the
 Python tests and both model-visible skill checks. Major releases follow the same
 auto-merge path as other releases. An update that fails CI stays open, unmerged.
 
+Dependabot also checks the dev container's [`skills` lockfile](image/skills-cli/package-lock.json)
+weekly. These updates use the same auto-merge workflow. For pull requests that
+touch the image, `tests-ok` also waits for the dev container smoke matrix.
+The merged lockfile is picked up by the normal image release process.
+
 The lockfile lives in `ci-tools/`, not `.github/`: GitHub rejects Dependabot npm
 PRs that change files under `.github/` (dependabot/dependabot-core#15237), and that
 failure stays in Dependabot's own run without opening a PR. So stalls are caught by
