@@ -92,8 +92,8 @@ Auto-merge relies on the `main` ruleset requiring `tests-ok`, which covers the
 Python tests and both model-visible skill checks. Major releases follow the same
 auto-merge path as other releases. A failed or timed-out update opens one GitHub
 issue per CLI, and later failing releases of that CLI add their run links to it.
-The daily freshness check closes the issue when `main` locks the npm `latest`
-version.
+The daily freshness check closes the issue when `main` has caught up with the
+reported releases and no other release has passed the grace window.
 
 The lockfile lives in `ci-tools/`, not `.github/`: GitHub rejects Dependabot npm
 PRs that change files under `.github/` (dependabot/dependabot-core#15237), and that

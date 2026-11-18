@@ -162,7 +162,7 @@ def test_alerts_are_limited_to_completed_ci_tools_updates():
         ("timed_out", "both", ["comment", "3"]),
     ],
 )
-@pytest.mark.parametrize("version", ["0.171.0", "1.0.0-alpha.1"])
+@pytest.mark.parametrize("version", ["0.171.0", "1.0.0-alpha.1", "1.2.3-1"])
 def test_update_failures_share_one_issue_per_cli(
     tmp_path, conclusion, matching_issue, expected, version
 ):
@@ -377,6 +377,61 @@ def test_freshness_alerts_once_when_main_lags_a_release(
     if expected[:1] in (["create"], ["comment"]):
         assert f"{marker} was available" in result.stdout
         assert "still locks `0.170.0`" in result.stdout
+
+
+@pytest.mark.parametrize(
+    ("prefix", "reported_version", "should_close"),
+    [
+        (None, None, True),
+        (None, "0.172.0", False),
+        ("ci-tools", "0.171.0-1", True),
+        ("ci-tools", "0.172.0-1", False),
+        ("dot-github/ci-tools", "0.172.0", False),
+    ],
+)
+def test_freshness_closes_only_when_main_covers_reported_releases(
+    tmp_path, prefix, reported_version, should_close
+):
+    pkg = "@openai/codex"
+    if prefix:
+        branch = f"dependabot/npm_and_yarn/{prefix}/openai/codex-{reported_version}"
+        comment = f"CI result: `failure` at `abc123` on Dependabot branch `{branch}`."
+    elif reported_version:
+        comment = (
+            f"`{pkg}@{reported_version}` was available by Dependabot's scheduled check."
+        )
+    else:
+        comment = "The current latest is `@openai/codex@0.172.0`."
+
+    result = _run_freshness(
+        tmp_path,
+        datetime(2026, 11, 18, 12, 17, tzinfo=UTC),
+        {pkg: "0.171.0"},
+        {
+            pkg: {
+                "dist-tags.latest": "0.172.0",
+                "time": {
+                    "0.171.0": "2026-11-17T07:00:00.000Z",
+                    "0.172.0": "2026-11-18T10:00:00.000Z",
+                },
+            }
+        },
+        [
+            [
+                {
+                    "title": "CLI update stuck: openai/codex",
+                    "number": 3,
+                    "body": f"`{pkg}@0.171.0` was available by Dependabot's scheduled check.",
+                }
+            ]
+        ],
+        comment,
+    )
+    result.check_returncode()
+    if should_close:
+        assert result.stdout.splitlines()[:3] == ["issue", "close", "3"]
+    else:
+        assert not result.stdout
 
 
 @pytest.mark.parametrize(

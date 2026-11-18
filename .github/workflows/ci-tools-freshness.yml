@@ -83,29 +83,40 @@ jobs:
             if [[ -n "$number" && "$(jq -r '.title' <<< "$issue")" == "$legacy_title" ]]; then
               gh issue edit "$number" --title "$title"
             fi
-            if [[ "$locked" == "$latest" ]]; then
-              if [[ -n "$number" ]]; then
-                gh issue close "$number" --comment "\`main\` locks the latest \`$pkg\` release, \`$latest\`. Run: $RUN_URL"
-              fi
-              continue
+            reports=""
+            if [[ -n "$number" ]]; then
+              issue_body="$(jq -r '.body // empty' <<< "$issue")"
+              comments="$(gh api --paginate "repos/$GH_REPO/issues/$number/comments" --jq '.[].body')"
+              reports="$issue_body"$'\n'"$comments"
             fi
             if [[ -z "$eligible" ]]; then
+              if [[ -n "$number" ]]; then
+                # Read both alert formats, including CI reports from before the lockfile move.
+                recovered="$(jq -Rrs --arg pkg "$pkg" --arg cli "${pkg#@}" --arg locked "$locked" --arg latest "$latest" '
+                  def version: split(".") | map(tonumber);
+                  [split("\n")[]
+                   | if startswith("`" + $pkg + "@") and contains("` was available by Dependabot") then
+                       split("`")[1] | ltrimstr($pkg + "@")
+                     elif startswith("CI result: `") then
+                       (split(" on Dependabot branch `")[1] // "") | split("`")[0]
+                       | (split("/ci-tools/")[1] // "")
+                       | select(startswith($cli + "-")) | ltrimstr($cli + "-")
+                     else empty end
+                   | capture("^(?<core>[0-9]+\\.[0-9]+\\.[0-9]+)([-+].*)?$").core]
+                  | ($locked | version) >= ((max_by(version) // $latest) | version)
+                ' <<< "$reports")"
+                if [[ "$recovered" == true ]]; then
+                  gh issue close "$number" --comment "\`main\` locks \`$pkg@$locked\` and has caught up with the reported updates. Run: $RUN_URL"
+                fi
+              fi
               continue
             fi
             marker="\`$pkg@$eligible\`"
             body="$marker was available by Dependabot's scheduled check, but \`main\` still locks \`$locked\`. The update may have stalled before PR creation, in CI, or at merge. Dependabot runs: https://github.com/$GH_REPO/network/updates. Run: $RUN_URL"
-            if [[ -n "$number" ]]; then
-              issue_body="$(jq -r '.body // empty' <<< "$issue")"
-              if [[ "$issue_body" == *"$marker"* ]]; then
-                continue
-              fi
-              comments="$(gh api --paginate "repos/$GH_REPO/issues/$number/comments" --jq '.[].body')"
-              if [[ "$comments" == *"$marker"* ]]; then
-                continue
-              fi
-              gh issue comment "$number" --body "$body"
-            else
+            if [[ -z "$number" ]]; then
               gh issue create --title "$title" --body "$body"
+            elif [[ "$reports" != *"$marker"* ]]; then
+              gh issue comment "$number" --body "$body"
             fi
           done <<< "$locked_packages"
           exit "$check_failed"

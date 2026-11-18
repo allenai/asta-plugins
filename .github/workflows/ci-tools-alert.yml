@@ -34,7 +34,12 @@ jobs:
           SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           update="${BRANCH##*/ci-tools/}"
-          cli="${update%-[0-9]*}"
+          version_suffix='-[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
+          if [[ ! "$update" =~ $version_suffix ]]; then
+            echo "::error::Could not identify the CLI version in $BRANCH."
+            exit 1
+          fi
+          cli="${update%"${BASH_REMATCH[0]}"}"
           title="CLI update stuck: $cli"
           legacy_title="CI fails on CLI updates: $cli"
           issue="$(gh api --paginate --slurp "repos/$GH_REPO/issues?state=open&per_page=100" \
