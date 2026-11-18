@@ -99,8 +99,15 @@ jobs:
         id: pin
         env:
           GH_TOKEN: ${{ github.token }}
+          TESTED_SHA: ${{ github.sha }}
           VERSION: ${{ needs.canary.outputs.version }}
         run: |
+          main_sha="$(git rev-parse HEAD)"
+          if [ "$TESTED_SHA" != "$main_sha" ]; then
+            echo "Skipping the pin update: the canary tested $TESTED_SHA and main is now $main_sha." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
           current="$(cat .github/claude-code-version)"
           if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ || ! "$current" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo '::error::Expected numeric major.minor.patch versions for the canary and pin.'
@@ -201,7 +208,7 @@ jobs:
             failures="unexpected canary failure"
           fi
           title="Claude Code $VERSION canary failed: $failures"
-          titles="$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues?state=open&per_page=100" \
+          titles="$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues?state=all&per_page=100" \
             --jq '.[] | select(has("pull_request") | not) | .title')"
           if grep -Fxq -- "$title" <<< "$titles"; then
             echo "Already reported: $title"

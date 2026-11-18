@@ -8,4 +8,10 @@ if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
 fi
 
 curl -fsSL https://claude.ai/install.sh | bash -s "$version"
+installed="$("$HOME/.local/bin/claude" --version)"
+installed="${installed%% *}"
+if [[ "$installed" != "$version" ]]; then
+  printf '::error::Requested Claude Code %s, but the installed version is %s.\n' "$version" "$installed" >&2
+  exit 1
+fi
 echo "$HOME/.local/bin" >> "$GITHUB_PATH"
