@@ -8,8 +8,10 @@ import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
-JOBS = yaml.load(
-    (ROOT / ".github/workflows/ci.yml").read_text(), Loader=yaml.BaseLoader
+WORKFLOWS = ROOT / ".github/workflows"
+JOBS = yaml.load((WORKFLOWS / "ci.yml").read_text(), Loader=yaml.BaseLoader)["jobs"]
+PIN_JOBS = yaml.load(
+    (WORKFLOWS / "cli-pin-maintenance.yml").read_text(), Loader=yaml.BaseLoader
 )["jobs"]
 
 
@@ -75,17 +77,14 @@ def test_cli_version_parser_requires_a_stable_release(
         assert version in result.stderr
 
 
-@pytest.mark.parametrize("cli", ["claude", "codex"])
 @pytest.mark.parametrize("remote_sha", ["a" * 40, "b" * 40, ""])
-def test_canary_checks_remote_main_immediately_before_publishing(
-    tmp_path, cli, remote_sha
+def test_pin_maintenance_checks_remote_main_immediately_before_publishing(
+    tmp_path, remote_sha
 ):
-    workflow = yaml.load(
-        (ROOT / f".github/workflows/{cli}-plugin-canary.yml").read_text(),
-        Loader=yaml.BaseLoader,
-    )
-    freshness, publish = workflow["jobs"]["bump-pin"]["steps"][-2:]
-    assert freshness["id"] == "freshness"
+    steps = PIN_JOBS["bump-pin"]["steps"]
+    freshness = next(step for step in steps if step.get("id") == "freshness")
+    publish = next(step for step in steps if step.get("id") == "publish")
+    assert steps.index(publish) == steps.index(freshness) + 1
     assert publish["if"] == "steps.freshness.outputs.current == 'true'"
     output = tmp_path / "output"
     summary = tmp_path / "summary"
@@ -118,3 +117,88 @@ def test_canary_checks_remote_main_immediately_before_publishing(
     else:
         assert result.returncode != 0
         assert output.read_text() == ""
+
+
+@pytest.mark.parametrize(
+    ("cli_name", "bump_result", "setup_failure", "failed_checks", "failure"),
+    [
+        ("Claude Code", "failure", "", "", "pin bump"),
+        ("Codex", "failure", "", "", "pin bump"),
+        ("Claude Code", "skipped", "uv setup", "", "uv setup"),
+        (
+            "Claude Code",
+            "skipped",
+            "",
+            "selective install, skill descriptions, ",
+            "selective install, skill descriptions",
+        ),
+        (
+            "Codex",
+            "skipped",
+            "",
+            "plugin install and skill descriptions",
+            "plugin install and skill descriptions",
+        ),
+        ("Codex", "skipped", "", "", "unexpected canary failure"),
+    ],
+)
+def test_pin_maintenance_alert_reports_the_failed_job(
+    cli_name, bump_result, setup_failure, failed_checks, failure
+):
+    alert = PIN_JOBS["alert"]
+    assert alert["needs"] == "bump-pin"
+    assert "needs.bump-pin.result == 'failure'" in alert["if"]
+    assert "inputs.canary-result == 'failure'" in alert["if"]
+    run = run_alert(cli_name, bump_result, setup_failure, failed_checks)
+    assert run.returncode == 0, run.stderr
+    assert f"Created: {cli_name} 1.2.3 canary failed: {failure}" in run.stdout
+    assert f"- Failure: {failure}" in run.stdout
+    assert "- Run: https://github.com/owner/repo/actions/runs/123" in run.stdout
+    assert ("compatibility checks passed" in run.stdout) == (bump_result == "failure")
+
+
+def test_pin_maintenance_deduplicates_pin_bump_alerts():
+    title = "Codex 1.2.3 canary failed: pin bump"
+    run = run_alert("Codex", "failure", "", "", prior_issue_title=title)
+    assert run.returncode == 0, run.stderr
+    assert run.stdout == f"Already reported: {title}\n"
+
+
+def run_alert(
+    cli_name, bump_result, setup_failure, failed_checks, prior_issue_title=""
+):
+    gh_stub = r"""gh() {
+      if [ "$1" = api ]; then
+        [[ "$*" == *'issues?state=all&per_page=100'* ]] || return 1
+        printf '%s\n' "$PRIOR_ISSUE_TITLE"
+      elif [ "$1 $2" = 'issue create' ]; then
+        [[ "$3 $4 $5 $7 $8" == '--repo owner/repo --title --body-file -' ]] || return 1
+        printf 'Created: %s\n' "$6"
+        cat
+      else
+        return 1
+      fi
+    }
+    """
+    return subprocess.run(
+        [
+            "bash",
+            "-eo",
+            "pipefail",
+            "-c",
+            gh_stub + PIN_JOBS["alert"]["steps"][0]["run"],
+        ],
+        env={
+            "PATH": os.environ["PATH"],
+            "GITHUB_REPOSITORY": "owner/repo",
+            "CLI_NAME": cli_name,
+            "VERSION": "1.2.3",
+            "SETUP_FAILURE": setup_failure,
+            "FAILED_CHECKS": failed_checks,
+            "BUMP_RESULT": bump_result,
+            "RUN_URL": "https://github.com/owner/repo/actions/runs/123",
+            "PRIOR_ISSUE_TITLE": prior_issue_title,
+        },
+        capture_output=True,
+        text=True,
+    )
