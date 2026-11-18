@@ -4,9 +4,11 @@ updates:
     directory: /image/skills-cli
     schedule:
       interval: weekly
-  # Agent CLIs CI runs. Daily, one PR per CLI so a broken release doesn't hold
-  # the other back; ci-tools-auto-merge.yml merges them once required checks pass.
+  # Use cron for weekend coverage and skip the release-age delay for CI tools.
   - package-ecosystem: npm
     directory: /.github/ci-tools
     schedule:
-      interval: daily
+      interval: cron
+      cronjob: "17 8 * * *"
+    cooldown:
+      default-days: 0

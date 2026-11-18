@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -44,6 +45,12 @@ def test_workflows_disable_claude_code_background_updates():
         assert job["env"]["DISABLE_AUTOUPDATER"] == "1"
 
 
+def test_claude_selective_install_runs_in_ci():
+    steps = JOBS["test"]["steps"]
+    (test_step,) = (step for step in steps if step.get("run") == "make test-plugins")
+    assert test_step["env"]["ASTA_TEST_CLAUDE_PLUGIN_DEPS"] == "1"
+
+
 @pytest.mark.parametrize("test_result", ["success", "failure", "skipped"])
 @pytest.mark.parametrize("install_result", ["success", "failure", "cancelled"])
 def test_tests_ok_passes_only_when_both_succeed(test_result, install_result):
@@ -57,8 +64,12 @@ def test_tests_ok_passes_only_when_both_succeed(test_result, install_result):
 
 
 @pytest.mark.parametrize("job", ["test", "plugin-install"])
-def test_ci_installs_agent_clis_from_the_lockfile(job):
-    steps = JOBS[job]["steps"]
+def test_ci_installs_cli_tools_from_the_lockfile_with_read_only_access(job):
+    job = JOBS[job]
+    steps = job["steps"]
+    checkout = next(
+        step for step in steps if step.get("uses", "").startswith("actions/checkout@")
+    )
     node = next(
         step for step in steps if step.get("uses", "").startswith("actions/setup-node@")
     )
@@ -67,39 +78,37 @@ def test_ci_installs_agent_clis_from_the_lockfile(job):
     )
     assert node["with"]["node-version"] == "22"
     assert steps.index(node) < steps.index(install)
+    assert job["permissions"] == {"contents": "read"}
+    assert checkout["with"]["persist-credentials"] == "false"
     script = (ROOT / "scripts/install-ci-clis.sh").read_text()
     assert (
         "npm ci" in script and "--engine-strict" in script and "npm view" not in script
     )
 
 
-def test_only_plugin_install_resolves_the_plugins_cli_version():
-    (job,) = (
-        name
-        for name, job in JOBS.items()
-        if any(
-            "npm view plugins@latest version" in step.get("run", "")
-            for step in job["steps"]
-        )
+def test_plugin_install_uses_the_locked_plugins_binary():
+    assert JOBS["plugin-install"]["env"]["PLUGINS_CLI_BIN"] == (
+        "${{ github.workspace }}/.github/ci-tools/node_modules/.bin/plugins"
     )
-    assert job == "plugin-install"
 
 
-def test_agent_clis_are_locked_to_exact_versions():
+def test_cli_tools_are_locked_to_exact_versions():
     manifest = json.loads((CI_TOOLS / "package.json").read_text())
     lock = json.loads((CI_TOOLS / "package-lock.json").read_text())
     deps = manifest["dependencies"]
-    assert set(deps) == {"@anthropic-ai/claude-code", "@openai/codex"}
+    assert set(deps) == {"@anthropic-ai/claude-code", "@openai/codex", "plugins"}
     for name, version in deps.items():
-        assert version[0].isdigit(), f"{name} must be an exact version"
+        assert re.fullmatch(r"\d+\.\d+\.\d+", version), f"{name} must be pinned"
         assert lock["packages"][f"node_modules/{name}"]["version"] == version
 
 
-def test_dependabot_updates_agent_clis_daily():
+def test_dependabot_checks_for_cli_updates_every_day_without_a_cooldown():
     config = yaml.safe_load((ROOT / ".github/dependabot.yml").read_text())
     (entry,) = [u for u in config["updates"] if u["directory"] == "/.github/ci-tools"]
     assert entry["package-ecosystem"] == "npm"
-    assert entry["schedule"]["interval"] == "daily"
+    assert entry["schedule"]["interval"] == "cron"
+    assert entry["schedule"]["cronjob"].split()[2:] == ["*", "*", "*"]
+    assert entry["cooldown"]["default-days"] == 0
 
 
 def test_auto_merge_is_limited_to_dependabot_ci_tools_updates():
@@ -108,16 +117,42 @@ def test_auto_merge_is_limited_to_dependabot_ci_tools_updates():
     )
     assert workflow["on"]["pull_request"]["branches"] == ["main"]
     job = workflow["jobs"]["enable-auto-merge"]
-    assert job["if"] == "github.event.pull_request.user.login == 'dependabot[bot]'"
+    assert job["if"].split(" && ") == [
+        "github.actor == 'dependabot[bot]'",
+        "github.event.pull_request.user.login == 'dependabot[bot]'",
+        "github.event.pull_request.head.repo.full_name == github.repository",
+    ]
     meta, merge = job["steps"]
     action, ref = meta["uses"].split("@")
     assert action == "dependabot/fetch-metadata" and len(ref) == 40
     assert merge["if"] == "steps.meta.outputs.directory == '/dot-github/ci-tools'"
     assert merge["run"].startswith("gh pr merge --auto")
+    assert '--match-head-commit "$HEAD_SHA"' in merge["run"]
+    assert merge["env"]["HEAD_SHA"] == "${{ github.event.pull_request.head.sha }}"
+
+
+def test_alerts_are_limited_to_failed_or_timed_out_ci_tools_updates():
+    workflow = yaml.load(
+        (WORKFLOWS / "ci-tools-alert.yml").read_text(), Loader=yaml.BaseLoader
+    )
+    job = workflow["jobs"]["alert"]
+    condition = job["if"].removeprefix("${{ ").removesuffix(" }}")
+    assert re.split(r"\s+&&\s+", condition) == [
+        'contains(fromJSON(\'["failure","timed_out"]\'), '
+        "github.event.workflow_run.conclusion)",
+        "github.event.workflow_run.event == 'pull_request'",
+        "github.event.workflow_run.actor.login == 'dependabot[bot]'",
+        "github.event.workflow_run.head_repository.full_name == github.repository",
+        "startsWith(github.event.workflow_run.head_branch, "
+        "'dependabot/npm_and_yarn/dot-github/ci-tools/')",
+    ]
 
 
 @pytest.mark.parametrize("matching_issue", [False, True])
-def test_failed_update_creates_one_open_issue_per_branch(tmp_path, matching_issue):
+@pytest.mark.parametrize("conclusion", ["failure", "timed_out"])
+def test_failed_update_creates_one_open_issue_per_branch(
+    tmp_path, matching_issue, conclusion
+):
     workflow = yaml.load(
         (WORKFLOWS / "ci-tools-alert.yml").read_text(), Loader=yaml.BaseLoader
     )
@@ -128,7 +163,7 @@ def test_failed_update_creates_one_open_issue_per_branch(tmp_path, matching_issu
     )
 
     branch = "dependabot/npm_and_yarn/dot-github/ci-tools/openai/codex-0.171.0"
-    title = "CI failed on agent CLI update openai/codex-0.171.0"
+    title = "CI failed on CLI update openai/codex-0.171.0"
     issues = [
         [
             {"title": title, "number": 1, "pull_request": {}},
@@ -149,6 +184,7 @@ def test_failed_update_creates_one_open_issue_per_branch(tmp_path, matching_issu
             "PATH": f"{tmp_path}{os.pathsep}{os.defpath}",
             "GH_REPO": "allenai/asta-plugins",
             "BRANCH": branch,
+            "CONCLUSION": conclusion,
             "RUN_URL": "https://github.com/allenai/asta-plugins/actions/runs/123",
             "SHA": "abc123",
             "ISSUES": json.dumps(issues),
@@ -159,3 +195,4 @@ def test_failed_update_creates_one_open_issue_per_branch(tmp_path, matching_issu
     )
     expected = ["comment", "3"] if matching_issue else ["create", "--title", title]
     assert result.stdout.splitlines()[: 1 + len(expected)] == ["issue", *expected]
+    assert f"CI result: `{conclusion}`" in result.stdout

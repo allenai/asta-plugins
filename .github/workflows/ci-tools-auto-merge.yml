@@ -1,6 +1,6 @@
 name: CI tools auto-merge
 
-# Merge Dependabot's agent-CLI lockfile updates once the required checks pass.
+# The main ruleset must require tests-ok, which includes plugin-install.
 on:
   pull_request:
     branches: [main]
@@ -11,7 +11,10 @@ permissions:
 
 jobs:
   enable-auto-merge:
-    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    if: >-
+      github.actor == 'dependabot[bot]'
+      && github.event.pull_request.user.login == 'dependabot[bot]'
+      && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
       - id: meta
@@ -19,7 +22,8 @@ jobs:
 
       # fetch-metadata reads the directory from the Git-safe branch name.
       - if: steps.meta.outputs.directory == '/dot-github/ci-tools'
-        run: gh pr merge --auto --squash "$PR_URL"
+        run: gh pr merge --auto --squash --match-head-commit "$HEAD_SHA" "$PR_URL"
         env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PR_URL: ${{ github.event.pull_request.html_url }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

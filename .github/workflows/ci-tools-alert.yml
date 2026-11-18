@@ -1,7 +1,6 @@
 name: CI tools update alert
 
-# A failing agent-CLI update stays unmerged; open one issue per failing update
-# so the break reaches the repo's watchers instead of sitting in a red PR.
+# Open one issue per failing CLI update to notify repository issue watchers.
 on:
   workflow_run:
     workflows: [CI]
@@ -13,9 +12,10 @@ permissions:
 jobs:
   alert:
     if: >-
-      ${{ github.event.workflow_run.conclusion == 'failure'
+      ${{ contains(fromJSON('["failure","timed_out"]'), github.event.workflow_run.conclusion)
           && github.event.workflow_run.event == 'pull_request'
           && github.event.workflow_run.actor.login == 'dependabot[bot]'
+          && github.event.workflow_run.head_repository.full_name == github.repository
           && startsWith(github.event.workflow_run.head_branch, 'dependabot/npm_and_yarn/dot-github/ci-tools/') }}
     runs-on: ubuntu-latest
     concurrency:
@@ -26,11 +26,12 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           BRANCH: ${{ github.event.workflow_run.head_branch }}
+          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
           RUN_URL: ${{ github.event.workflow_run.html_url }}
           SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
-          title="CI failed on agent CLI update ${BRANCH##*/ci-tools/}"
-          body="CI failed at $SHA on Dependabot branch \`$BRANCH\`; the update stays unmerged until it passes. Run: $RUN_URL"
+          title="CI failed on CLI update ${BRANCH##*/ci-tools/}"
+          body="CI result: \`$CONCLUSION\` at \`$SHA\` on Dependabot branch \`$BRANCH\`. The update stays unmerged until it passes. Run: $RUN_URL"
           number="$(gh api --paginate --slurp "repos/$GH_REPO/issues?state=open&per_page=100" \
             | jq -r --arg t "$title" '[.[][] | select(.title == $t and (has("pull_request") | not))][0].number // empty')"
           if [[ -n "$number" ]]; then
