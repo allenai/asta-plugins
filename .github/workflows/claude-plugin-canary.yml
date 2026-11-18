@@ -11,15 +11,22 @@ on:
 permissions:
   contents: read
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   canary:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.cli.outputs.version }}
+      setup: ${{ steps.setup.outcome }}
       selective: ${{ steps.selective.outcome }}
       prompt: ${{ steps.prompt.outcome }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@v4
         with:
@@ -39,6 +46,7 @@ jobs:
         uses: astral-sh/setup-uv@v4
 
       - name: Set up Python 3.12
+        id: setup
         run: uv python install 3.12
 
       - name: Run selective-install checks
@@ -59,43 +67,85 @@ jobs:
 
   bump-pin:
     needs: canary
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    concurrency:
+      group: claude-code-pin-bump
+      queue: max
     permissions:
-      contents: write
-      pull-requests: write
+      contents: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
 
       - name: Update the pin when the tested release is newer
         id: pin
         env:
+          GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.canary.outputs.version }}
         run: |
           current="$(cat .github/claude-code-version)"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ || ! "$current" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo '::error::Expected numeric major.minor.patch versions for the canary and pin.'
+            exit 1
+          fi
           newest="$(printf '%s\n%s\n' "$current" "$VERSION" | sort -V | tail -n1)"
           if [ "$VERSION" = "$current" ] || [ "$newest" != "$VERSION" ]; then
-            echo "Pin $current is current; tested $VERSION" >> "$GITHUB_STEP_SUMMARY"
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "$VERSION" > .github/claude-code-version
-            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Main already pins $current (tested $VERSION)." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
           fi
 
-      # PRs opened with GITHUB_TOKEN do not trigger CI. A repo-scoped GitHub App
-      # (vars.PIN_BUMP_APP_ID, secrets.PIN_BUMP_APP_PRIVATE_KEY) makes them do so.
+          # An older rerun must also preserve a newer bump awaiting review.
+          pending_sha="$(gh api --method GET "repos/$GITHUB_REPOSITORY/pulls" \
+            -f state=open -f base=main -f "head=${GITHUB_REPOSITORY_OWNER}:automation/claude-code-pin" \
+            --jq '.[0].head.sha // empty')"
+          if [ -n "$pending_sha" ]; then
+            pending="$(gh api --method GET "repos/$GITHUB_REPOSITORY/contents/.github/claude-code-version" \
+              -f "ref=$pending_sha" --jq .content | base64 --decode)"
+            if [[ ! "$pending" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo '::error::Expected a numeric major.minor.patch version in the pending pin PR.'
+              exit 1
+            fi
+            newest="$(printf '%s\n%s\n' "$pending" "$VERSION" | sort -V | tail -n1)"
+            if [ "$VERSION" = "$pending" ] || [ "$newest" != "$VERSION" ]; then
+              echo "An open PR already proposes $pending (tested $VERSION)." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+          fi
+
+          echo "$VERSION" > .github/claude-code-version
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Require GitHub App credentials for automatic PR CI
+        if: steps.pin.outputs.changed == 'true'
+        env:
+          PIN_BUMP_APP_ID: ${{ vars.PIN_BUMP_APP_ID }}
+          PIN_BUMP_APP_PRIVATE_KEY: ${{ secrets.PIN_BUMP_APP_PRIVATE_KEY }}
+        run: |
+          if [ -z "$PIN_BUMP_APP_ID" ] || [ -z "$PIN_BUMP_APP_PRIVATE_KEY" ]; then
+            echo '::error::Set the PIN_BUMP_APP_ID repository variable and PIN_BUMP_APP_PRIVATE_KEY secret for a GitHub App with Contents and Pull requests write access to this repository.'
+            exit 1
+          fi
+
       - name: Mint GitHub App token
         id: app
-        if: steps.pin.outputs.changed == 'true' && vars.PIN_BUMP_APP_ID != ''
-        uses: actions/create-github-app-token@v1
+        if: steps.pin.outputs.changed == 'true'
+        uses: actions/create-github-app-token@v2
         with:
           app-id: ${{ vars.PIN_BUMP_APP_ID }}
           private-key: ${{ secrets.PIN_BUMP_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
 
       - name: Open or update the pin-bump PR
         if: steps.pin.outputs.changed == 'true'
         uses: peter-evans/create-pull-request@v7
         with:
-          token: ${{ steps.app.outputs.token || github.token }}
+          token: ${{ steps.app.outputs.token }}
+          base: main
           branch: automation/claude-code-pin
           add-paths: .github/claude-code-version
           commit-message: "Bump Claude Code test pin to ${{ needs.canary.outputs.version }}"
@@ -107,8 +157,11 @@ jobs:
 
   alert:
     needs: canary
-    if: always() && needs.canary.result == 'failure'
+    if: always() && github.ref == 'refs/heads/main' && needs.canary.result == 'failure'
     runs-on: ubuntu-latest
+    concurrency:
+      group: claude-code-canary-alert
+      queue: max
     permissions:
       issues: write
     steps:
@@ -116,23 +169,32 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.canary.outputs.version || 'unknown' }}
+          SETUP: ${{ needs.canary.outputs.setup }}
           SELECTIVE: ${{ needs.canary.outputs.selective }}
           PROMPT: ${{ needs.canary.outputs.prompt }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           failed=()
-          [ "$SELECTIVE" = success ] || failed+=("selective install")
-          [ "$PROMPT" = success ] || failed+=("skill descriptions")
-          checks="${failed[0]}${failed[1]:+, ${failed[1]}}"
-          title="Claude Code $VERSION canary failed: $checks"
-          if gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "\"$title\" in:title" \
-              --json title --jq '.[].title' | grep -Fxq "$title"; then
+          [ "$SETUP" = success ] || failed+=("setup")
+          [ "$SELECTIVE" != failure ] || failed+=("selective install")
+          [ "$PROMPT" != failure ] || failed+=("skill descriptions")
+          if [ "${#failed[@]}" -gt 0 ]; then
+            failures="$(printf '%s, ' "${failed[@]}")"
+            failures="${failures%, }"
+          else
+            failures="unexpected canary failure"
+          fi
+          title="Claude Code $VERSION canary failed: $failures"
+          titles="$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues?state=open&per_page=100" \
+            --jq '.[] | select(has("pull_request") | not) | .title')"
+          if grep -Fxq -- "$title" <<< "$titles"; then
             echo "Already reported: $title"
             exit 0
           fi
-          body="The weekly Claude Code canary failed; .github/claude-code-version is unchanged.
+          gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body-file - <<EOF
+          The Claude Code canary failed and kept the current test pin.
 
           - Version: $VERSION
-          - Failing checks: $checks
-          - Run: $RUN_URL"
-          gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body "$body"
+          - Failure: $failures
+          - Run: $RUN_URL
+          EOF
