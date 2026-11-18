@@ -21,7 +21,7 @@ jobs:
         uses: dependabot/fetch-metadata@21025c705c08248db411dc16f3619e6b5f9ea21a # v2.5.0
 
       # fetch-metadata reads the directory from the Git-safe branch name.
-      - if: steps.meta.outputs.directory == '/dot-github/ci-tools'
+      - if: steps.meta.outputs.directory == '/ci-tools'
         run: gh pr merge --auto --squash --match-head-commit "$HEAD_SHA" "$PR_URL"
         env:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}

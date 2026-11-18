@@ -82,7 +82,7 @@ make format    # auto-fix formatting
 ### CI tool updates
 
 CI installs Claude Code, Codex, and `plugins` from the
-[npm lockfile](.github/ci-tools/package-lock.json) and records the installed
+[npm lockfile](ci-tools/package-lock.json) and records the installed
 versions in the run summary. Dependabot checks for releases every day, including
 weekends, and opens a separate PR for each update. The schedule skips the
 release-age delay to test new releases within about a day. CI runs those PRs with
@@ -90,9 +90,25 @@ read-only repository permissions in the jobs that execute the CLI tools.
 
 Auto-merge relies on the `main` ruleset requiring `tests-ok`, which covers the
 Python tests and both model-visible skill checks. Major releases follow the same
-auto-merge path as other releases. A failed or timed-out update opens one GitHub
-issue per CLI, and later failing releases of that CLI add their run links to it.
-The next update of that CLI to pass CI closes the issue. GitHub suppresses `push`
+auto-merge path as other releases. An update that fails CI stays open, unmerged.
+
+The lockfile lives in `ci-tools/`, not `.github/`: GitHub rejects Dependabot npm
+PRs that change files under `.github/` (dependabot/dependabot-core#15237), and that
+failure stays in Dependabot's own run without opening a PR. So stalls are caught by
+outcome, not by watching each step: a daily freshness check
+(`ci-tools-freshness.yml`, 4 hours after Dependabot's check) looks for a stable
+release that was available by Dependabot's last check but is newer than the version
+`main` locks. If Dependabot starts late or CI and auto-merge take more than four
+hours, an issue can open while the update is still in flight. The check is the
+only workflow that manages the `CLI update stuck: <cli>` issue. It opens an
+issue, updates the body of the Actions-created alert while the update is overdue,
+and closes it once `main` has caught up. Each run recomputes which updates are
+overdue from npm and the lockfile. This catches updates stalled before PR
+creation, in CI, or at merge. If npm cannot provide release data with a stable
+`latest` tag, the check leaves that package's issue untouched, checks the
+remaining packages, and reports a failed run.
+
+GitHub suppresses `push`
 workflows for merges performed with Actions' built-in token. The required checks
 run before the merge. Release tags still use the release commit with its own
 successful main-push Docker build.

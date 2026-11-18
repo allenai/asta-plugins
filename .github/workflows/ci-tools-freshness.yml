@@ -1,0 +1,106 @@
+name: CI tools freshness
+
+# The only owner of the per-CLI "CLI update stuck" issue. Each run recomputes
+# the state from npm and the lockfile on main: it opens or rewrites the issue
+# while an update is overdue and closes it once main has caught up.
+on:
+  schedule:
+    - cron: "17 12 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  freshness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    concurrency:
+      group: ci-tools-freshness
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/heads/main
+          persist-credentials: false
+      - shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          DEPENDABOT_CHECK_UTC: "08:17"
+          GRACE_HOURS: "4"
+        run: |
+          now="$(date -u +%s)"
+          cutoff="$(date -u -d "$DEPENDABOT_CHECK_UTC" +%s)"
+          # A manual run before today's CI window has finished uses yesterday's check.
+          if (( now < cutoff + GRACE_HOURS * 3600 )); then
+            cutoff=$(( cutoff - 86400 ))
+          fi
+          locked_packages="$(jq -er '
+            .packages as $packages
+            | $packages[""].dependencies | keys[] as $name
+            | $packages["node_modules/\($name)"].version as $version
+            | if $version | type == "string" and test("^[0-9]+\\.[0-9]+\\.[0-9]+$") then
+                [$name, $version] | @tsv
+              else error("missing or invalid locked version for \($name)")
+              end
+          ' ci-tools/package-lock.json)"
+          if ! open_issues="$(gh api --paginate --slurp "repos/$GH_REPO/issues?state=open&per_page=100")"; then
+            echo "::error::Could not list open issues."
+            exit 1
+          fi
+          check_failed=0
+          while IFS=$'\t' read -r pkg locked; do
+            if ! metadata="$(npm view "$pkg" dist-tags.latest time --json --fetch-retries=1 --fetch-timeout=15000)" ||
+               ! latest="$(jq -r '."dist-tags.latest" | strings | select(test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))' <<< "$metadata")"; then
+              echo "::error::Could not read npm metadata for $pkg."
+              check_failed=1
+              continue
+            fi
+            if [[ -z "$latest" ]]; then
+              echo "::error::npm has no stable latest tag for $pkg."
+              check_failed=1
+              continue
+            fi
+            # Ignore prereleases and use the newest release available by the cutoff.
+            if ! eligible="$(jq -r --arg locked "$locked" --arg latest "$latest" --argjson cutoff "$cutoff" '
+              def version: split(".") | map(tonumber);
+              ($locked | version) as $locked_version | ($latest | version) as $latest_version
+              | .time
+              | if $latest_version > $locked_version and .[$latest] == null then
+                  error("missing publication time for \($latest)")
+                else to_entries
+                end
+              | map(select(.key | test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))
+                    | (.key | version) as $version
+                    | select($version > $locked_version and $version <= $latest_version)
+                    | select((.value | sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601) <= $cutoff))
+              | max_by(.key | version).key // empty
+            ' <<< "$metadata")"; then
+              echo "::error::Could not read npm release times for $pkg."
+              check_failed=1
+              continue
+            fi
+            title="CLI update stuck: ${pkg#@}"
+            number="$(jq -r --arg title "$title" '
+              first(.[][] | select(.title == $title and .user.login == "github-actions[bot]"
+                and (has("pull_request") | not)) | .number) // empty
+            ' <<< "$open_issues")"
+            if [[ -z "$eligible" ]]; then
+              [[ -n "$number" ]] || continue
+              issue_change=(close "$number" --comment "\`main\` locks \`$pkg@$locked\`, so no release older than Dependabot's last check is waiting. Run: $RUN_URL")
+            else
+              body="\`$pkg@$eligible\` was available by Dependabot's scheduled check, but \`main\` still locks \`$locked\`. The update may have stalled before PR creation, in CI, or at merge. Open update PRs: https://github.com/$GH_REPO/pulls?q=is%3Apr+is%3Aopen+author%3Aapp%2Fdependabot. Dependabot runs: https://github.com/$GH_REPO/network/updates. Last checked: $RUN_URL"
+              if [[ -z "$number" ]]; then
+                issue_change=(create --title "$title" --body "$body")
+              else
+                issue_change=(edit "$number" --body "$body")
+              fi
+            fi
+            if ! gh issue "${issue_change[@]}"; then
+              echo "::error::Could not ${issue_change[0]} the CLI update issue for $pkg."
+              check_failed=1
+            fi
+          done <<< "$locked_packages"
+          exit "$check_failed"

@@ -6,7 +6,7 @@ updates:
       interval: weekly
   # Use cron for weekend coverage and skip the release-age delay for CI tools.
   - package-ecosystem: npm
-    directory: /.github/ci-tools
+    directory: /ci-tools
     schedule:
       interval: cron
       cronjob: "17 8 * * *"

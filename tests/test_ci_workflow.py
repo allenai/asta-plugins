@@ -4,6 +4,7 @@ import json
 import os
 import re
 import subprocess
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -11,7 +12,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOWS = ROOT / ".github/workflows"
-CI_TOOLS = ROOT / ".github/ci-tools"
+CI_TOOLS = ROOT / "ci-tools"
 JOBS = yaml.load((WORKFLOWS / "ci.yml").read_text(), Loader=yaml.BaseLoader)["jobs"]
 
 
@@ -88,7 +89,7 @@ def test_ci_installs_cli_tools_from_the_lockfile_with_read_only_access(job):
 
 def test_plugin_install_uses_the_locked_plugins_binary():
     assert JOBS["plugin-install"]["env"]["PLUGINS_CLI_BIN"] == (
-        "${{ github.workspace }}/.github/ci-tools/node_modules/.bin/plugins"
+        "${{ github.workspace }}/ci-tools/node_modules/.bin/plugins"
     )
 
 
@@ -104,7 +105,7 @@ def test_cli_tools_are_locked_to_exact_versions():
 
 def test_dependabot_checks_for_cli_updates_every_day_without_a_cooldown():
     config = yaml.safe_load((ROOT / ".github/dependabot.yml").read_text())
-    (entry,) = [u for u in config["updates"] if u["directory"] == "/.github/ci-tools"]
+    (entry,) = [u for u in config["updates"] if u["directory"] == "/ci-tools"]
     assert entry["package-ecosystem"] == "npm"
     assert entry["schedule"]["interval"] == "cron"
     assert entry["schedule"]["cronjob"].split()[2:] == ["*", "*", "*"]
@@ -125,85 +126,274 @@ def test_auto_merge_is_limited_to_dependabot_ci_tools_updates():
     meta, merge = job["steps"]
     action, ref = meta["uses"].split("@")
     assert action == "dependabot/fetch-metadata" and len(ref) == 40
-    assert merge["if"] == "steps.meta.outputs.directory == '/dot-github/ci-tools'"
+    assert merge["if"] == "steps.meta.outputs.directory == '/ci-tools'"
     assert merge["run"].startswith("gh pr merge --auto")
     assert '--match-head-commit "$HEAD_SHA"' in merge["run"]
     assert merge["env"]["HEAD_SHA"] == "${{ github.event.pull_request.head.sha }}"
 
 
-def test_alerts_are_limited_to_completed_ci_tools_updates():
+def test_freshness_runs_after_dependabot_and_is_the_only_issue_writer():
     workflow = yaml.load(
-        (WORKFLOWS / "ci-tools-alert.yml").read_text(), Loader=yaml.BaseLoader
+        (WORKFLOWS / "ci-tools-freshness.yml").read_text(), Loader=yaml.BaseLoader
     )
-    job = workflow["jobs"]["alert"]
-    condition = job["if"].removeprefix("${{ ").removesuffix(" }}")
-    assert re.split(r"\s+&&\s+", condition) == [
-        'contains(fromJSON(\'["failure","timed_out","success"]\'), '
-        "github.event.workflow_run.conclusion)",
-        "github.event.workflow_run.event == 'pull_request'",
-        "github.event.workflow_run.actor.login == 'dependabot[bot]'",
-        "github.event.workflow_run.head_repository.full_name == github.repository",
-        "startsWith(github.event.workflow_run.head_branch, "
-        "'dependabot/npm_and_yarn/dot-github/ci-tools/')",
+    (schedule,) = workflow["on"]["schedule"]
+    config = yaml.safe_load((ROOT / ".github/dependabot.yml").read_text())
+    (entry,) = [u for u in config["updates"] if u["directory"] == "/ci-tools"]
+    dependabot_minute, dependabot_hour = entry["schedule"]["cronjob"].split()[:2]
+    minute, hour = schedule["cron"].split()[:2]
+    assert schedule["cron"].split()[2:] == ["*", "*", "*"]
+    job = workflow["jobs"]["freshness"]
+    assert job["concurrency"] == {"group": "ci-tools-freshness"}
+    assert not (WORKFLOWS / "ci-tools-alert.yml").exists()
+    checkout, check = job["steps"]
+    assert checkout["with"]["ref"] == "refs/heads/main"
+    assert (
+        check["env"]["DEPENDABOT_CHECK_UTC"]
+        == f"{dependabot_hour.zfill(2)}:{dependabot_minute}"
+    )
+    freshness_minutes = int(hour) * 60 + int(minute)
+    dependabot_minutes = int(dependabot_hour) * 60 + int(dependabot_minute)
+    gap = (freshness_minutes - dependabot_minutes) % (24 * 60)
+    assert gap >= int(check["env"]["GRACE_HOURS"]) * 60
+
+
+def _run_freshness(tmp_path, now, packages, metadata, issues, *, fail_first_change=""):
+    workflow = yaml.load(
+        (WORKFLOWS / "ci-tools-freshness.yml").read_text(), Loader=yaml.BaseLoader
+    )
+    step = workflow["jobs"]["freshness"]["steps"][-1]
+    hour, minute = map(int, step["env"]["DEPENDABOT_CHECK_UTC"].split(":"))
+    cutoff = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    (tmp_path / "ci-tools").mkdir()
+    (tmp_path / "ci-tools/package-lock.json").write_text(
+        json.dumps(
+            {
+                "packages": {
+                    "": {"dependencies": packages},
+                    **{
+                        f"node_modules/{name}": {"version": version}
+                        for name, version in packages.items()
+                    },
+                }
+            }
+        )
+    )
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "npm").write_text(
+        '#!/bin/bash\njq -er --arg pkg "$2" \'.[$pkg] // empty\' <<< "$METADATA"\n'
+    )
+    (bin_dir / "date").write_text(
+        '#!/bin/bash\nif [[ "$2" == +%s ]]; then printf "%s\\n" "$NOW"; '
+        'elif [[ "$2" == -d && "$3" == "$DEPENDABOT_CHECK_UTC" ]]; then '
+        'printf "%s\\n" "$CUTOFF"; else exit 2; fi\n'
+    )
+    (bin_dir / "gh").write_text(
+        '#!/bin/bash\nif [[ "$1" == api ]]; then\n'
+        '  printf "%s\\n" "$ISSUES"\n'
+        "else\n"
+        '  printf "%s\\n" "$@"\n'
+        '  if [[ "$2" == "$FAIL_FIRST_CHANGE" && ! -e gh-mutation-failed ]]; then\n'
+        "    touch gh-mutation-failed\n"
+        "    exit 1\n"
+        "  fi\n"
+        "fi\n"
+    )
+    for tool in ("npm", "gh", "date"):
+        (bin_dir / tool).chmod(0o755)
+    return subprocess.run(
+        ["bash", "-e", "-o", "pipefail", "-c", step["run"]],
+        cwd=tmp_path,
+        env={
+            "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
+            "GH_REPO": "allenai/asta-plugins",
+            "RUN_URL": "https://github.com/allenai/asta-plugins/actions/runs/123",
+            "DEPENDABOT_CHECK_UTC": step["env"]["DEPENDABOT_CHECK_UTC"],
+            "GRACE_HOURS": step["env"]["GRACE_HOURS"],
+            "NOW": str(int(now.timestamp())),
+            "CUTOFF": str(int(cutoff.timestamp())),
+            "METADATA": json.dumps(metadata),
+            "ISSUES": json.dumps(issues),
+            "FAIL_FIRST_CHANGE": fail_first_change,
+        },
+        capture_output=True,
+        text=True,
+    )
+
+
+@pytest.mark.parametrize(
+    ("latest", "hours_ago", "issue", "other_releases", "run_hour", "expected"),
+    [
+        ("0.170.0", 100, True, {}, 12, ["close", "3"]),
+        ("0.170.0", 100, False, {}, 12, []),
+        # A newer release still inside the grace window does not keep it open.
+        ("0.172.0", 2, True, {}, 12, ["close", "3"]),
+        ("0.171.0", 2, False, {"0.171.0-alpha.1": 30}, 12, []),
+        ("0.171.0", 4, False, {}, 10, []),
+        (
+            "0.171.0",
+            4,
+            False,
+            {},
+            12,
+            ["create", "--title", "CLI update stuck: openai/codex"],
+        ),
+        ("0.171.0", 30, True, {}, 12, ["edit", "3", "--body"]),
+        ("0.172.0", 2, True, {"0.171.0": 30}, 12, ["edit", "3", "--body"]),
+    ],
+)
+def test_freshness_owns_one_issue_per_cli(
+    tmp_path, latest, hours_ago, issue, other_releases, run_hour, expected
+):
+    now = datetime(2026, 11, 18, run_hour, 17, tzinfo=UTC)
+    times = {
+        version: (now - timedelta(hours=age)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        for version, age in {latest: hours_ago, **other_releases}.items()
+    }
+    title = "CLI update stuck: openai/codex"
+    bot = {"login": "github-actions[bot]"}
+    issues = [
+        [
+            {"title": title, "number": 1, "user": bot, "pull_request": {}},
+            {"title": title, "number": 2, "user": {"login": "contributor"}},
+        ]
+    ]
+    if issue:
+        issues.append([{"title": title, "number": 3, "user": bot}])
+    result = _run_freshness(
+        tmp_path,
+        now,
+        {"@openai/codex": "0.170.0"},
+        {"@openai/codex": {"dist-tags.latest": latest, "time": times}},
+        issues,
+    )
+    result.check_returncode()
+    lines = result.stdout.splitlines()
+    if expected:
+        assert lines[: 1 + len(expected)] == ["issue", *expected]
+    else:
+        assert not lines
+    if expected[:1] in (["create"], ["edit"]):
+        assert "`@openai/codex@0.171.0` was available" in result.stdout
+        assert "still locks `0.170.0`" in result.stdout
+
+
+@pytest.mark.parametrize("action", ["create", "edit", "close"])
+def test_freshness_checks_codex_even_when_writing_the_claude_alert_fails(
+    tmp_path, action
+):
+    claude = "@anthropic-ai/claude-code"
+    codex = "@openai/codex"
+    claude_latest = "2.1.325" if action == "close" else "2.1.327"
+    published = "2026-11-18T07:00:00.000Z"
+    issues = (
+        []
+        if action == "create"
+        else [
+            [
+                {
+                    "title": "CLI update stuck: anthropic-ai/claude-code",
+                    "number": 3,
+                    "user": {"login": "github-actions[bot]"},
+                }
+            ]
+        ]
+    )
+    result = _run_freshness(
+        tmp_path,
+        datetime(2026, 11, 18, 12, 17, tzinfo=UTC),
+        {claude: "2.1.325", codex: "0.170.0"},
+        {
+            claude: {
+                "dist-tags.latest": claude_latest,
+                "time": {claude_latest: published},
+            },
+            codex: {
+                "dist-tags.latest": "0.171.0",
+                "time": {"0.171.0": published},
+            },
+        },
+        issues,
+        fail_first_change=action,
+    )
+    assert result.returncode == 1
+    lines = result.stdout.splitlines()
+    assert lines[:2] == ["issue", action]
+    error = lines.index(
+        f"::error::Could not {action} the CLI update issue for {claude}."
+    )
+    assert lines[error + 1 : error + 5] == [
+        "issue",
+        "create",
+        "--title",
+        "CLI update stuck: openai/codex",
     ]
 
 
 @pytest.mark.parametrize(
-    ("conclusion", "matching_issue", "expected"),
+    ("claude_metadata", "annotation"),
     [
+        (None, "::error::Could not read npm metadata"),
+        ("{invalid json", "::error::Could not read npm metadata"),
         (
-            "failure",
-            False,
-            ["create", "--title", "CI fails on CLI updates: openai/codex"],
+            {"dist-tags.latest": "2.1.327"},
+            "::error::Could not read npm release times",
         ),
-        ("timed_out", True, ["comment", "3"]),
-        ("success", True, ["close", "3"]),
-        ("success", False, []),
+        (
+            {"dist-tags.latest": "2.1.327", "time": {}},
+            "::error::Could not read npm release times",
+        ),
+        (
+            {
+                "dist-tags.latest": "2.1.327",
+                "time": {"2.1.325": "2026-11-17T07:00:00.000Z"},
+            },
+            "::error::Could not read npm release times",
+        ),
+        (
+            {"dist-tags.latest": "2.1.327", "time": {"2.1.327": "invalid"}},
+            "::error::Could not read npm release times",
+        ),
+        (
+            {"dist-tags.latest": "2.1.327-beta.1"},
+            "::error::npm has no stable latest tag",
+        ),
+        ({"time": {}}, "::error::npm has no stable latest tag"),
     ],
 )
-@pytest.mark.parametrize("version", ["0.171.0", "1.0.0-alpha.1"])
-def test_update_failures_share_one_issue_per_cli(
-    tmp_path, conclusion, matching_issue, expected, version
+def test_freshness_checks_codex_even_when_claude_metadata_is_unavailable(
+    tmp_path, claude_metadata, annotation
 ):
-    workflow = yaml.load(
-        (WORKFLOWS / "ci-tools-alert.yml").read_text(), Loader=yaml.BaseLoader
-    )
-    job = workflow["jobs"]["alert"]
-    assert job["concurrency"] == {"group": "ci-tools-alert", "queue": "max"}
-
-    # Any release of the CLI finds the issue an earlier release opened.
-    branch = f"dependabot/npm_and_yarn/dot-github/ci-tools/openai/codex-{version}"
-    title = "CI fails on CLI updates: openai/codex"
-    issues = [
-        [
-            {"title": title, "number": 1, "pull_request": {}},
-            {"title": "CI fails on CLI updates: anthropic-ai/claude-code", "number": 2},
-        ]
-    ]
-    if matching_issue:
-        issues.append([{"title": title, "number": 3}])
-    gh = tmp_path / "gh"
-    gh.write_text(
-        '#!/bin/bash\nif [[ "$1" == api ]]; then\n'
-        '  printf "%s\\n" "$ISSUES"\nelse\n  printf "%s\\n" "$@"\nfi\n'
-    )
-    gh.chmod(0o755)
-    result = subprocess.run(
-        ["bash", "-e", "-o", "pipefail", "-c", job["steps"][0]["run"]],
-        env={
-            "PATH": f"{tmp_path}{os.pathsep}{os.defpath}",
-            "GH_REPO": "allenai/asta-plugins",
-            "BRANCH": branch,
-            "CONCLUSION": conclusion,
-            "RUN_URL": "https://github.com/allenai/asta-plugins/actions/runs/123",
-            "SHA": "abc123",
-            "ISSUES": json.dumps(issues),
+    claude = "@anthropic-ai/claude-code"
+    codex = "@openai/codex"
+    result = _run_freshness(
+        tmp_path,
+        datetime(2026, 11, 18, 12, 17, tzinfo=UTC),
+        {claude: "2.1.325", codex: "0.170.0"},
+        {
+            claude: claude_metadata,
+            codex: {
+                "dist-tags.latest": "0.171.0",
+                "time": {"0.171.0": "2026-11-18T07:00:00.000Z"},
+            },
         },
-        capture_output=True,
-        check=True,
-        text=True,
+        [
+            [
+                {
+                    "title": "CLI update stuck: anthropic-ai/claude-code",
+                    "number": 3,
+                    "user": {"login": "github-actions[bot]"},
+                }
+            ]
+        ],
     )
+    assert result.returncode == 1
     lines = result.stdout.splitlines()
-    assert lines[: 1 + len(expected)] == (["issue", *expected] if expected else [])
-    if conclusion != "success":
-        assert f"CI result: `{conclusion}`" in result.stdout
+    assert lines.count("issue") == 1
+    assert lines[:5] == [
+        f"{annotation} for {claude}.",
+        "issue",
+        "create",
+        "--title",
+        "CLI update stuck: openai/codex",
+    ]

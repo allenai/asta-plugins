@@ -111,7 +111,7 @@ jobs:
       contents: read
     env:
       DISABLE_AUTOUPDATER: "1"
-      PLUGINS_CLI_BIN: ${{ github.workspace }}/.github/ci-tools/node_modules/.bin/plugins
+      PLUGINS_CLI_BIN: ${{ github.workspace }}/ci-tools/node_modules/.bin/plugins
     steps:
       - uses: actions/checkout@v4
         with:
