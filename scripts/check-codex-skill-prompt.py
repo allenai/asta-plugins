@@ -21,6 +21,9 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[1]
 FRONTMATTER = re.compile(r"\A---\n(.*?)^---[ \t]*$", re.MULTILINE | re.DOTALL)
 SKILL_LINE = re.compile(r"^- ([a-z0-9-]+):([a-z0-9-]+): (.*)$")
+SKILL_ENTRY = re.compile(
+    r"(?:(?P<description>.*) )?\(file: (?P<path>(?:/|r[0-9]+/).*)\)"
+)
 
 
 def skill_prompt_lines(prompt: object) -> list[str]:
@@ -117,16 +120,20 @@ def main() -> int:
             if key in rendered:
                 failures.append(f"{key}: duplicate entry in the Codex skills prompt")
                 continue
-            description = match[3]
-            if description.endswith(")"):
-                description = description.rsplit(" (file: ", 1)[0]
-            rendered[key] = squash(description)
+            rendered[key] = match[3]
 
     for key, want in expected.items():
-        got = rendered.get(key)
-        if got is None:
+        entry = rendered.get(key)
+        if entry is None:
             failures.append(f"{key}: not in the Codex skills prompt")
-        elif not got:
+            continue
+        skill = key.split(":", 1)[1]
+        match = SKILL_ENTRY.fullmatch(entry)
+        if not match or not match["path"].endswith(f"/{skill}/SKILL.md"):
+            failures.append(f"{key}: missing or invalid SKILL.md path suffix")
+            continue
+        got = squash(match["description"] or "")
+        if not got:
             failures.append(f"{key}: empty description in the Codex skills prompt")
         elif got != want:
             failures.append(

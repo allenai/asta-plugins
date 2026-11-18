@@ -57,6 +57,11 @@ def skills_message(text=SKILLS_BLOCK):
             "expected 'Full description'\n    rendered 'Full…'",
         ),
         (
+            [skills_message(SKILLS_BLOCK.replace("Full description ", ""))],
+            SKILL_SOURCE,
+            "asta-flows:run-workflow: empty description in the Codex skills prompt",
+        ),
+        (
             [
                 skills_message(
                     SKILLS_BLOCK.replace(SKILL_ENTRY, f"{SKILL_ENTRY}\n{SKILL_ENTRY}")
@@ -84,11 +89,31 @@ def skills_message(text=SKILLS_BLOCK):
         (
             [
                 skills_message(
-                    SKILLS_BLOCK.replace("Full description", "Read (file: config)")
+                    SKILLS_BLOCK.replace(
+                        "Full description", "Read (file: /docs/examples/SKILL.md)"
+                    )
                 )
             ],
-            SKILL_SOURCE.replace("Full description", "'Read (file: config)'"),
+            SKILL_SOURCE.replace(
+                "Full description", "'Read (file: /docs/examples/SKILL.md)'"
+            ),
             None,
+        ),
+        (
+            [
+                skills_message(
+                    SKILLS_BLOCK.replace(
+                        "(file: r0/run-workflow/SKILL.md)", "(file: /docs/config)"
+                    )
+                )
+            ],
+            SKILL_SOURCE,
+            "asta-flows:run-workflow: missing or invalid SKILL.md path suffix",
+        ),
+        (
+            [skills_message(SKILLS_BLOCK.replace("r0/run-workflow/", "r0/other/"))],
+            SKILL_SOURCE,
+            "asta-flows:run-workflow: missing or invalid SKILL.md path suffix",
         ),
         (
             [skills_message()],
@@ -128,12 +153,15 @@ def skills_message(text=SKILLS_BLOCK):
         "masked-by-agents-md",
         "replaced",
         "shortened",
+        "empty-description",
         "duplicate-entry",
         "missing-block",
         "duplicate-block",
         "empty-inventory",
         "folded-crlf-frontmatter-and-path-with-parenthesis",
         "file-marker-in-description",
+        "missing-file-suffix-with-file-marker-in-description",
+        "file-suffix-points-to-other-skill",
         "missing-frontmatter",
         "invalid-yaml",
         "non-string-description",
