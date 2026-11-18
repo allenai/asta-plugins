@@ -59,12 +59,15 @@ or pushing anything.
    signing prompt on their machine stalls the setup). Once its checks pass,
    send only: "Your workspace is ready for a look: <preview link>. Merge
    <PR link> to publish it, and tell me; I'll then finish the setup." With a
-   paper, add "Its paper's PDF: <PDF link>." Nothing else: not what was built,
+   paper, add "Its paper's PDF: <PDF link>." If you set it up under another
+   account, add its [access line](repo-setup-delegated.md#4-try-once-to-make-the-requester-admin).
+   Nothing else: not what was built,
    what's private, what the setup will finish, or what comes next. The
    owner merges it, since an agent merging its own PR is often refused; merge
    it yourself only if they ask you to. Without Pages there is no preview and
    no check: send "Merge <PR link> to add the workspace, and tell me." once
-   `make check` passes, and in step 7 link the repo in place of the site.
+   `make check` passes (plus any access line), and in step 7 link the repo in
+   place of the site.
 5. With protections on, apply both rulesets from `assets/rulesets/`
    (`gh api repos/{owner}/{repo}/rulesets -X POST --input <file>`) only now
    that `docs.yml` is on the default branch. Without Pages, apply only
@@ -73,7 +76,6 @@ or pushing anything.
    `--enable-squash-merge`, each only if its setting is on.
 7. Send only this, filled in, as your whole reply: "Your workspace is set up:
    <site link>. It uses Asta's managed settings, shown in <Settings link>."
-   If you set it up under another account, add "You're its admin."
    If they asked for Overleaf, add "Next, Overleaf: send me your
    Overleaf project's link." No list of what was turned on, and no notes on
    how you did it. If a setting isn't on, say instead in one line which
