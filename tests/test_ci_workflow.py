@@ -1,4 +1,4 @@
-"""CI's per-Python test jobs roll up into one check whose name never changes."""
+"""Checks for CI and CLI canary workflows."""
 
 import os
 import subprocess
@@ -43,3 +43,78 @@ def test_tests_ok_passes_only_on_success(result):
         capture_output=True,
     )
     assert (run.returncode == 0) == (result == "success")
+
+
+@pytest.mark.parametrize(
+    ("cli", "format_version"),
+    [("claude-code", "{} (Claude Code)"), ("codex", "codex-cli {}")],
+)
+@pytest.mark.parametrize(
+    ("version", "stable"),
+    [("1.2.3", True), ("1.2.3-rc.1", False), ("1.2.3+build.1", False)],
+)
+def test_cli_version_parser_requires_a_stable_release(
+    cli, format_version, version, stable
+):
+    result = subprocess.run(
+        [
+            "bash",
+            ROOT / "scripts/parse-cli-version.sh",
+            cli,
+            format_version.format(version),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if stable:
+        assert result.returncode == 0, result.stderr
+        assert result.stdout == f"{version}\n"
+    else:
+        assert result.returncode != 0
+        assert result.stdout == ""
+        assert version in result.stderr
+
+
+@pytest.mark.parametrize("cli", ["claude", "codex"])
+@pytest.mark.parametrize("remote_sha", ["a" * 40, "b" * 40, ""])
+def test_canary_checks_remote_main_immediately_before_publishing(
+    tmp_path, cli, remote_sha
+):
+    workflow = yaml.load(
+        (ROOT / f".github/workflows/{cli}-plugin-canary.yml").read_text(),
+        Loader=yaml.BaseLoader,
+    )
+    freshness, publish = workflow["jobs"]["bump-pin"]["steps"][-2:]
+    assert freshness["id"] == "freshness"
+    assert publish["if"] == "steps.freshness.outputs.current == 'true'"
+    output = tmp_path / "output"
+    summary = tmp_path / "summary"
+    output.touch()
+    tested_sha = "a" * 40
+    gh_stub = r"""gh() {
+      [[ "$1" == api && "$*" == *repos/owner/repo/git/ref/heads/main* && -n "$REMOTE_SHA" ]] || return 1
+      printf '%s\n' "$REMOTE_SHA"
+    }
+    """
+    result = subprocess.run(
+        ["bash", "-eo", "pipefail", "-c", gh_stub + freshness["run"]],
+        env={
+            "PATH": os.environ["PATH"],
+            "GITHUB_REPOSITORY": "owner/repo",
+            "TESTED_SHA": tested_sha,
+            "REMOTE_SHA": remote_sha,
+            "GITHUB_OUTPUT": str(output),
+            "GITHUB_STEP_SUMMARY": str(summary),
+        },
+        capture_output=True,
+    )
+    if remote_sha == tested_sha:
+        assert result.returncode == 0, result.stderr
+        assert output.read_text() == "current=true\n"
+    elif remote_sha:
+        assert result.returncode == 0, result.stderr
+        assert output.read_text() == ""
+        assert "Skipping publication" in summary.read_text()
+    else:
+        assert result.returncode != 0
+        assert output.read_text() == ""

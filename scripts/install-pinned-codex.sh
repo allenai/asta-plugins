@@ -8,7 +8,8 @@ if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
 fi
 
 npm install -g "@openai/codex@$version"
-installed="$(codex --version | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n1)"
+reported="$(codex --version)"
+installed="$(bash scripts/parse-cli-version.sh codex "$reported")"
 if [[ "$installed" != "$version" ]]; then
   printf '::error::Requested Codex %s, but the installed version is %s.\n' "$version" "$installed" >&2
   exit 1

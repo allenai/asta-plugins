@@ -45,8 +45,8 @@ jobs:
         run: |
           curl -fsSL https://claude.ai/install.sh | bash
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          version="$("$HOME/.local/bin/claude" --version | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n1)"
-          test -n "$version"
+          reported="$("$HOME/.local/bin/claude" --version)"
+          version="$(bash scripts/parse-cli-version.sh claude-code "$reported")"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Tested Claude Code $version" >> "$GITHUB_STEP_SUMMARY"
 
@@ -161,8 +161,23 @@ jobs:
           permission-contents: write
           permission-pull-requests: write
 
-      - name: Open or update the pin-bump PR
+      - name: Verify main still matches the tested commit
+        id: freshness
         if: steps.pin.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TESTED_SHA: ${{ github.sha }}
+        run: |
+          main_sha="$(gh api -H 'Cache-Control: no-cache' "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)"
+          test -n "$main_sha"
+          if [ "$TESTED_SHA" != "$main_sha" ]; then
+            echo "Skipping publication: the canary tested $TESTED_SHA and main is now $main_sha." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          echo "current=true" >> "$GITHUB_OUTPUT"
+
+      - name: Open or update the pin-bump PR
+        if: steps.freshness.outputs.current == 'true'
         uses: peter-evans/create-pull-request@22a9089034f40e5a961c8808d113e2c98fb63676 # v7.0.11
         with:
           token: ${{ steps.app.outputs.token }}
