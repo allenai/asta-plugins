@@ -90,19 +90,20 @@ read-only repository permissions in the jobs that execute the CLI tools.
 
 Auto-merge relies on the `main` ruleset requiring `tests-ok`, which covers the
 Python tests and both model-visible skill checks. Major releases follow the same
-auto-merge path as other releases. A failed or timed-out update opens one GitHub
-issue per CLI, and later failing releases of that CLI add their run links to it.
-The daily freshness check closes the issue when `main` has caught up with the
-reported releases and no other release has passed the grace window.
+auto-merge path as other releases. An update that fails CI stays open, unmerged.
 
 The lockfile lives in `ci-tools/`, not `.github/`: GitHub rejects Dependabot npm
 PRs that change files under `.github/` (dependabot/dependabot-core#15237), and that
-failure stays in Dependabot's own run without opening a PR for CI to fail on. So a
-daily freshness check (`ci-tools-freshness.yml`, 4 hours after Dependabot's check)
-looks for a newer stable release available by Dependabot's scheduled check. It
-reports the newest eligible release once on the same per-CLI issue as the CI alert.
-This catches updates stalled before PR creation, in CI, or at merge, even if
-another release arrives before the freshness check. GitHub suppresses `push`
+failure stays in Dependabot's own run without opening a PR. So stalls are caught by
+outcome, not by watching each step: a daily freshness check
+(`ci-tools-freshness.yml`, 4 hours after Dependabot's check) looks for a stable
+release that was available by Dependabot's last check but is newer than the version
+`main` locks. It is the only workflow that writes the `CLI update stuck: <cli>`
+issue: it opens it, rewrites its body with the current state while the update is
+overdue, and closes it once `main` has caught up. It keeps no state of its own, so
+each run's result follows from npm and the lockfile alone. This catches updates
+stalled before PR creation, in CI, or at merge.
+GitHub suppresses `push`
 workflows for merges performed with Actions' built-in token. The required checks
 run before the merge. Release tags still use the release commit with its own
 successful main-push Docker build.
