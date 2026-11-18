@@ -12,9 +12,6 @@ on:
   pull_request:
     branches: [main]
 
-env:
-  CLAUDE_CODE_TEST_VERSION: "2.1.283"
-
 jobs:
   code-quality:
     # x86 for every build-runner: these checks read source, so the machine
@@ -54,7 +51,8 @@ jobs:
 
       - name: Install Claude Code CLI
         run: |
-          curl -fsSL https://claude.ai/install.sh | bash -s "$CLAUDE_CODE_TEST_VERSION"
+          # The weekly canary opens PRs that bump this shared pin.
+          curl -fsSL https://claude.ai/install.sh | bash -s "$(cat .github/claude-code-version)"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Install uv
@@ -101,9 +99,6 @@ jobs:
     # Verify `npx plugins add` installs the plugins into Claude Code and Codex.
     # No API auth required. Also verify both model-visible skill lists.
     runs-on: ${{ inputs.build-runner || 'ubuntu-latest' }}
-    env:
-      # The older integration-test pin drops skill descriptions at its default budget.
-      CLAUDE_CODE_TEST_VERSION: "2.1.325"
     steps:
       - uses: actions/checkout@v4
 
@@ -113,7 +108,8 @@ jobs:
 
       - name: Install Claude Code CLI
         run: |
-          curl -fsSL https://claude.ai/install.sh | bash -s "$CLAUDE_CODE_TEST_VERSION"
+          # The weekly canary opens PRs that bump this shared pin.
+          curl -fsSL https://claude.ai/install.sh | bash -s "$(cat .github/claude-code-version)"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Install Codex CLI
