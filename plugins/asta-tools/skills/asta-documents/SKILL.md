@@ -11,7 +11,7 @@ This skill provides complete document management functionality for tracking rese
 
 **What it does:** Track document metadata (URLs, summaries, tags) in a local index. Think of it as a smart bookmark manager with powerful search capabilities.
 
-**Default Index Location:** `.asta/documents/index.yaml` (relative to current working directory). The `--index-path` flag is optional when using the default location; it's only needed for custom index locations or remote indexes.
+**Default Index Location:** `.asta/documents/index.yaml` (relative to current working directory). For an index anywhere else, pass the folder that holds its `index.yaml` with `--root <dir>`, before the subcommand: `asta documents --root <dir> list`.
 
 ## Automatic Indexing of .asta Documents
 
@@ -42,7 +42,7 @@ asta documents add "file://${REPORT_PATH}" \
 ## Quick Command Reference
 
 Add `--json` flag to any command for machine-readable output.
-Uses `.asta/documents/index.yaml` by default (add `--index-path <file>` for custom locations).
+Uses `.asta/documents/index.yaml` by default (add `--root <dir>` before the subcommand for an index in another folder).
 
 ```bash
 # List documents
@@ -119,8 +119,8 @@ When you encounter an `asta://` URL, follow these steps:
 
 1. **Parse the URL** to extract the encoded index URL and document UUID
 2. **URL-decode** the index URL
-3. **Download the remote index** to a local temporary file
-4. **Access documents** using the `--index-path` parameter
+3. **Download the remote index** as `index.yaml` in a temporary folder
+4. **Access documents** with `--root` set to that folder, before the subcommand
 
 **Example:**
 
@@ -135,39 +135,40 @@ UUID=$(echo "$ASTA_URL" | sed 's|.*/||')
 # 2. URL-decode the index URL
 INDEX_URL=$(python3 -c "import urllib.parse; print(urllib.parse.unquote('$ENCODED_INDEX_URL'))")
 
-# 3. Download the remote index
-curl -s -o /tmp/remote-index.yaml "$INDEX_URL"
+# 3. Download the remote index into a folder of its own
+mkdir -p /tmp/remote-index
+curl -fLsS -o /tmp/remote-index/index.yaml "$INDEX_URL"
 
-# 4. Get document metadata using --index-path
-asta documents get "$UUID" --index-path /tmp/remote-index.yaml
+# 4. Get document metadata (--root comes before the subcommand)
+asta documents --root /tmp/remote-index get "$UUID"
 
-# 5. Fetch document content
-asta documents fetch "$UUID" --index-path /tmp/remote-index.yaml -o /tmp/document.pdf
+# 5. Fetch the document's file as stored (a PDF stays a PDF)
+asta documents --root /tmp/remote-index fetch "$UUID" -o /tmp/document.pdf
 ```
 
 **Common Operations with Remote Indexes:**
 
 ```bash
 # After downloading and decoding the index URL (see examples above)
-# Assume TEMP_INDEX points to the downloaded index file
+# Assume INDEX_DIR is the folder holding the downloaded index.yaml
 
 # Search remote index
-asta documents search --summary="query" --index-path "$TEMP_INDEX"
+asta documents --root "$INDEX_DIR" search --summary="query"
 
 # List all documents in remote index
-asta documents list --index-path "$TEMP_INDEX"
+asta documents --root "$INDEX_DIR" list
 
 # Get metadata for specific document
-asta documents get "$UUID" --index-path "$TEMP_INDEX"
+asta documents --root "$INDEX_DIR" get "$UUID"
 
 # Search and fetch from remote index
-asta documents search --summary="transformers" --index-path "$TEMP_INDEX" --show-scores
-asta documents fetch "$UUID" --index-path "$TEMP_INDEX" -o result.pdf
+asta documents --root "$INDEX_DIR" search --summary="transformers" --show-scores
+asta documents --root "$INDEX_DIR" fetch "$UUID" -o result.pdf
 ```
 
 **Important Notes:**
 
-- The `--index-path` parameter works with all read commands (list, search, get, fetch)
+- `--root` works with all read commands (list, search, get, fetch), and goes before the subcommand
 - Remote indexes accessed this way are read-only (no add/update/remove operations)
 - Downloaded indexes can be cached locally to avoid repeated downloads
 - The index URL portion is URL-encoded and must be decoded before use
@@ -188,19 +189,20 @@ UUID=$(echo "$ASTA_URL" | sed 's|.*/||')
 INDEX_URL=$(python3 -c "import urllib.parse; print(urllib.parse.unquote('$ENCODED_INDEX_URL'))")
 # Result: https://ai.example.org/papers/index.yaml
 
-# Step 3: Download index to temp location
-TEMP_INDEX="/tmp/asta-index-$(date +%s).yaml"
-curl -s -o "$TEMP_INDEX" "$INDEX_URL"
+# Step 3: Download the index into a temporary folder, as index.yaml
+INDEX_DIR="/tmp/asta-index-$(date +%s)"
+mkdir -p "$INDEX_DIR"
+curl -fLsS -o "$INDEX_DIR/index.yaml" "$INDEX_URL"
 
 # Step 4: Verify download succeeded
-if [ ! -f "$TEMP_INDEX" ]; then
+if [ ! -s "$INDEX_DIR/index.yaml" ]; then
     echo "Failed to download index from $INDEX_URL"
     exit 1
 fi
 
 # Step 5: Access the document
-asta documents get "$UUID" --index-path "$TEMP_INDEX"
-asta documents fetch "$UUID" --index-path "$TEMP_INDEX" -o /tmp/paper.pdf
+asta documents --root "$INDEX_DIR" get "$UUID"
+asta documents --root "$INDEX_DIR" fetch "$UUID" -o /tmp/paper.pdf
 
 # Step 6: Read the content
 # Read(/tmp/paper.pdf)
@@ -208,7 +210,7 @@ asta documents fetch "$UUID" --index-path "$TEMP_INDEX" -o /tmp/paper.pdf
 
 ## Fetch Document Content
 
-The index stores metadata only. The content of a document is retrievable via its URL. The `fetch` command retrieves the content and caches it locally for future use.
+The index stores metadata only. The content of a document is retrievable via its URL. The `fetch` command retrieves the file as stored and caches it locally for future use. It doesn't extract text: a PDF comes back as a PDF. For its text, use the `pdf-extraction` skill on the fetched file.
 
 **Fetch to file (with automatic caching):**
 ```bash
