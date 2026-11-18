@@ -70,7 +70,9 @@ or pushing anything.
 
    The requester or an authorized maintainer merges the PR. Merge it yourself
    only if the requester explicitly asks you to and your policies allow it.
-   Continue at step 5 after the PR merges.
+   Continue at step 5 after the PR merges. For a delegated follow-up,
+   [verify the original setup PR](repo-setup-delegated.md#resume-the-original-setup)
+   before continuing.
 5. With protections on, apply both rulesets from `assets/rulesets/`
    (`gh api repos/{owner}/{repo}/rulesets -X POST --input <file>`) only now
    that `docs.yml` is on the default branch. Without Pages, apply only

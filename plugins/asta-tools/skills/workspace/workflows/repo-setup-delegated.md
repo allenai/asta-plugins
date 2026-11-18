@@ -40,18 +40,19 @@ and report an unknown owner, failed lookup or unexpected type.
 Create the repo private with a README, so the default branch exists
 (`gh repo create <owner>/<name> --private --add-readme`), or make an existing
 empty repo private. Push nothing yet. Read
-`gh api repos/<owner>/<name> -q '{full_name, private}'` and verify the exact
-target and `private: true`; stop on a mismatch or failed read.
+`gh api repos/<owner>/<name> -q '{id, full_name, private, default_branch}'`
+and verify the exact target and `private: true`; stop on a mismatch or failed
+read.
 
 ## 4. Check and try to grant admin access
 
 1. [Read the requester's access](#read-access-and-choose-one-line). If the
    permission read failed or was unexpected, recheck that the exact target repo
    is still accessible and private as in section 3. Stop if that recheck fails.
-   Skip the grant if admin is confirmed, access is unconfirmed, or an
-   invitation is pending.
-2. For verified `none`, `read`, or `write` with no known pending invitation, try
-   the grant once:
+2. Try the grant once only for verified `none`, `read`, or `write` access and
+   only after the invitation lookup successfully checks every page and finds
+   no match. If either check is inconclusive, continue setup without a grant.
+   To grant admin, run
    `gh api --include -X PUT repos/<owner>/<name>/collaborators/<login> -f permission=admin`.
    - `201`: record the pending invitation alongside the permission you read.
    - A tool refusal or an HTTP rejection such as `403` or `422`: keep the
@@ -81,19 +82,30 @@ following lines.
 - "After you've reviewed it, merge the PR or ask an authorized maintainer to
   merge it. Tell me once it has merged so I can finish the setup."
 
-Leave the PR open for the requester's review. On a follow-up, check the setup
-PR's state. If it has merged and setup is still pending, finish steps 5–7 of
-[Apply](repo-setup.md#2-apply).
+Leave the PR open for the requester's review.
 
-On an explicit request for admin access, recheck the requester identity, the
-existing private organization repo, and its setup PR. Repeat the access and
-grant steps in section 4 on that repo and resume from the existing PR.
-If the requester also explicitly asks you to merge a PR they've reviewed,
-follow Apply step 4's authorization and checks. If the PR stays open, give
-its link, one access line, and the same request to report the merge. Include
-the preview and paper PDF when available to the requester. If the PR has
-merged, use the final reply in Apply step 7 for a setup you just finished,
-or send one access line if setup was already complete.
+### Resume the original setup
+
+On a follow-up, use the repository and PR number from the original setup
+handoff. If that handoff is unavailable, ask for the original setup PR link
+and verify the PR adds the scaffold for that workspace before resuming.
+Recheck the exact private repository as in section 3. Read the original PR
+with `gh api repos/<owner>/<name>/pulls/<number>` and confirm its number and
+that `base.repo.id` and `base.ref` match the repository's ID and current default
+branch. Stop and report a failed read or mismatch before changing anything.
+
+On an explicit request for admin access, also reverify the requester identity
+and organization owner as in sections 1–2, then repeat section 4 on that repo.
+If the requester also explicitly asks you to merge the open PR they've reviewed,
+follow Apply step 4's authorization and checks. Repeat the repository and PR
+checks after any merge attempt.
+
+Finish [Apply](repo-setup.md#2-apply) steps 5–7 only if `merged: true` for the
+verified setup PR and setup is still pending. If setup is already complete and
+they asked for access, send one access line. If the PR is open, give its link,
+one access line, and the same request to report the merge. Include the preview
+and paper PDF when available to the requester. If the PR is closed without a
+merge, report that the setup PR was closed before setup finished.
 
 ### Read access and choose one line
 
@@ -102,10 +114,10 @@ for the verified requester. Use `.permission` for the effective access (`admin`,
 `write`, `read`, or `none`). [`role_name`](https://docs.github.com/en/rest/collaborators/collaborators#get-repository-permissions-for-a-user)
 can describe a custom role. A failed or unexpected permission read leaves
 access unconfirmed. Unless admin is confirmed, also read
-`gh api --paginate repos/<owner>/<name>/invitations` and look for a pending
-invitation whose `invitee.login` matches the verified requester. A failed list
-leaves invitation status unknown. A `201` grant in the current step also
-confirms an invitation.
+`gh api --paginate --slurp repos/<owner>/<name>/invitations` and look for a
+pending invitation whose `invitee.login` matches the verified requester across
+all pages. A failed or incomplete list leaves invitation status unknown. A
+`201` grant in the current step also confirms an invitation.
 
 Use the first matching line.
 
