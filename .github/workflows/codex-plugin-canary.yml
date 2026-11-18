@@ -1,0 +1,194 @@
+name: Codex plugin compatibility
+
+# Weekly check against the latest Codex CLI. A pass on a newer release
+# refreshes one pin-bump PR for .github/codex-version; a failure keeps the pin
+# and opens one issue per failing version and check set.
+on:
+  schedule:
+    - cron: "0 8 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  canary:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.cli.outputs.version }}
+      setup-failure: >-
+        ${{ steps.checkout.outcome == 'failure' && 'checkout'
+            || steps.node.outcome == 'failure' && 'Node.js setup'
+            || steps.cli.outcome == 'failure' && 'Codex install'
+            || steps.uv.outcome == 'failure' && 'uv setup' || '' }}
+      install: ${{ steps.install.outcome }}
+    steps:
+      - uses: actions/checkout@v4
+        id: checkout
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        id: node
+        with:
+          node-version: "20"
+
+      - name: Install latest Codex CLI
+        id: cli
+        run: |
+          npm install -g @openai/codex@latest
+          version="$(codex --version | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n1)"
+          test -n "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Tested Codex $version" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        id: uv
+
+      - name: Verify plugin install and model-visible skill descriptions
+        id: install
+        run: bash scripts/verify-plugin-install.sh codex
+
+  bump-pin:
+    needs: canary
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: codex-pin-bump
+      queue: max
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Update the pin when the tested release is newer
+        id: pin
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TESTED_SHA: ${{ github.sha }}
+          VERSION: ${{ needs.canary.outputs.version }}
+        run: |
+          main_sha="$(git rev-parse HEAD)"
+          if [ "$TESTED_SHA" != "$main_sha" ]; then
+            echo "Skipping the pin update: the canary tested $TESTED_SHA and main is now $main_sha." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          current="$(cat .github/codex-version)"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ || ! "$current" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo '::error::Expected numeric major.minor.patch versions for the canary and pin.'
+            exit 1
+          fi
+          newest="$(printf '%s\n%s\n' "$current" "$VERSION" | sort -V | tail -n1)"
+          if [ "$VERSION" = "$current" ] || [ "$newest" != "$VERSION" ]; then
+            echo "Main already pins $current (tested $VERSION)." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          # An older rerun must also preserve a newer bump awaiting review.
+          pending_sha="$(gh api --method GET "repos/$GITHUB_REPOSITORY/pulls" \
+            -f state=open -f base=main -f "head=${GITHUB_REPOSITORY_OWNER}:automation/codex-pin" \
+            --jq 'if length > 1 then error("Multiple open PRs use automation/codex-pin.") else .[0].head.sha // empty end')"
+          if [ -n "$pending_sha" ]; then
+            pending="$(gh api --method GET "repos/$GITHUB_REPOSITORY/contents/.github/codex-version" \
+              -f "ref=$pending_sha" --jq .content | base64 --decode)"
+            if [[ ! "$pending" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo '::error::Expected a numeric major.minor.patch version in the pending pin PR.'
+              exit 1
+            fi
+            newest="$(printf '%s\n%s\n' "$pending" "$VERSION" | sort -V | tail -n1)"
+            if [ "$VERSION" = "$pending" ] || [ "$newest" != "$VERSION" ]; then
+              echo "An open PR already proposes $pending (tested $VERSION)." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+          fi
+
+          echo "$VERSION" > .github/codex-version
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Require GitHub App credentials for automatic PR CI
+        if: steps.pin.outputs.changed == 'true'
+        env:
+          PIN_BUMP_APP_ID: ${{ vars.PIN_BUMP_APP_ID }}
+          PIN_BUMP_APP_PRIVATE_KEY: ${{ secrets.PIN_BUMP_APP_PRIVATE_KEY }}
+        run: |
+          if [ -z "$PIN_BUMP_APP_ID" ] || [ -z "$PIN_BUMP_APP_PRIVATE_KEY" ]; then
+            echo '::error::Set the PIN_BUMP_APP_ID repository variable and PIN_BUMP_APP_PRIVATE_KEY secret for a GitHub App with Contents and Pull requests write access to this repository.'
+            exit 1
+          fi
+
+      - name: Mint GitHub App token
+        id: app
+        if: steps.pin.outputs.changed == 'true'
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
+        with:
+          app-id: ${{ vars.PIN_BUMP_APP_ID }}
+          private-key: ${{ secrets.PIN_BUMP_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Open or update the pin-bump PR
+        if: steps.pin.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@22a9089034f40e5a961c8808d113e2c98fb63676 # v7.0.11
+        with:
+          token: ${{ steps.app.outputs.token }}
+          base: main
+          branch: automation/codex-pin
+          add-paths: .github/codex-version
+          commit-message: "Bump Codex test pin to ${{ needs.canary.outputs.version }}"
+          title: "Bump Codex test pin to ${{ needs.canary.outputs.version }}"
+          body: |
+            The weekly Codex canary passed on ${{ needs.canary.outputs.version }}: plugin installation and model-visible skill descriptions.
+
+            Canary run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+  alert:
+    needs: canary
+    if: always() && github.ref == 'refs/heads/main' && needs.canary.result == 'failure'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: codex-canary-alert
+      queue: max
+    permissions:
+      issues: write
+    steps:
+      - name: Open one issue per failing version and check set
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.canary.outputs.version || 'unknown' }}
+          SETUP_FAILURE: ${{ needs.canary.outputs.setup-failure }}
+          INSTALL: ${{ needs.canary.outputs.install }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          failed=()
+          [ -z "$SETUP_FAILURE" ] || failed+=("$SETUP_FAILURE")
+          [ "$INSTALL" != failure ] || failed+=("plugin install and skill descriptions")
+          if [ "${#failed[@]}" -gt 0 ]; then
+            failures="$(printf '%s, ' "${failed[@]}")"
+            failures="${failures%, }"
+          else
+            failures="unexpected canary failure"
+          fi
+          title="Codex $VERSION canary failed: $failures"
+          titles="$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues?state=all&per_page=100" \
+            --jq '.[] | select(has("pull_request") | not) | .title')"
+          if grep -Fxq -- "$title" <<< "$titles"; then
+            echo "Already reported: $title"
+            exit 0
+          fi
+          gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body-file - <<EOF
+          The Codex canary failed and kept the current test pin.
+
+          - Version: $VERSION
+          - Failure: $failures
+          - Run: $RUN_URL
+          EOF
