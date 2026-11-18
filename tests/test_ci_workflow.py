@@ -111,7 +111,7 @@ def test_dependabot_checks_for_cli_updates_every_day_without_a_cooldown():
     assert entry["cooldown"]["default-days"] == 0
 
 
-def test_auto_merge_is_limited_to_non_major_dependabot_ci_tools_updates():
+def test_auto_merge_is_limited_to_dependabot_ci_tools_updates():
     workflow = yaml.load(
         (WORKFLOWS / "ci-tools-auto-merge.yml").read_text(), Loader=yaml.BaseLoader
     )
@@ -122,14 +122,10 @@ def test_auto_merge_is_limited_to_non_major_dependabot_ci_tools_updates():
         "github.event.pull_request.user.login == 'dependabot[bot]'",
         "github.event.pull_request.head.repo.full_name == github.repository",
     ]
-    meta, merge, hold = job["steps"]
+    meta, merge = job["steps"]
     action, ref = meta["uses"].split("@")
     assert action == "dependabot/fetch-metadata" and len(ref) == 40
-    ci_tools = "steps.meta.outputs.directory == '/dot-github/ci-tools'"
-    major = "steps.meta.outputs.update-type {} 'version-update:semver-major'"
-    assert merge["if"] == f"{ci_tools} && {major.format('!=')}"
-    assert hold["if"] == f"{ci_tools} && {major.format('==')}"
-    assert hold["run"].startswith("gh pr comment") and "--auto" not in hold["run"]
+    assert merge["if"] == "steps.meta.outputs.directory == '/dot-github/ci-tools'"
     assert merge["run"].startswith("gh pr merge --auto")
     assert '--match-head-commit "$HEAD_SHA"' in merge["run"]
     assert merge["env"]["HEAD_SHA"] == "${{ github.event.pull_request.head.sha }}"
