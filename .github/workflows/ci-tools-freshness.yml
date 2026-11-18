@@ -1,0 +1,62 @@
+name: CI tools freshness
+
+# Alerts on the outcome, not one failure mode: if main still locks an older CLI
+# a day after a release, Dependabot did not open the update, CI failed on it, or
+# auto-merge stalled. Runs 4h after Dependabot's 08:17 UTC check.
+on:
+  schedule:
+    - cron: "17 12 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  freshness:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: ci-tools-alert
+      queue: max
+    steps:
+      - uses: actions/checkout@v4
+      - shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          GRACE_HOURS: "26"
+        run: |
+          now="$(date -u +%s)"
+          stale=0
+          for pkg in $(jq -r '.dependencies | keys[]' ci-tools/package.json); do
+            locked="$(jq -r --arg p "$pkg" '.dependencies[$p]' ci-tools/package.json)"
+            latest="$(npm view "$pkg" dist-tags.latest)"
+            title="CLI update stuck: ${pkg#@}"
+            number="$(gh api --paginate --slurp "repos/$GH_REPO/issues?state=open&per_page=100" \
+              | jq -r --arg t "$title" '[.[][] | select(.title == $t and (has("pull_request") | not))][0].number // empty')"
+            if [[ "$locked" == "$latest" ]]; then
+              if [[ -n "$number" ]]; then
+                gh issue close "$number" --comment "\`main\` locks the latest \`$pkg\` release, \`$latest\`. Run: $RUN_URL"
+              fi
+              continue
+            fi
+            published="$(npm view "$pkg" time --json | jq -r --arg v "$latest" '.[$v]')"
+            age_hours=$(( (now - $(date -u -d "$published" +%s)) / 3600 ))
+            if (( age_hours < GRACE_HOURS )); then
+              continue
+            fi
+            stale=1
+            marker="\`$pkg@$latest\`"
+            if [[ -n "$number" ]] && gh api --paginate "repos/$GH_REPO/issues/$number/comments" \
+                --jq '.[].body' | grep -qF "$marker"; then
+              continue
+            fi
+            body="$marker was released $age_hours hours ago, but \`main\` still locks \`$locked\`. Dependabot did not open the update PR, CI failed on it, or auto-merge stalled. Dependabot runs: https://github.com/$GH_REPO/network/updates. Run: $RUN_URL"
+            if [[ -n "$number" ]]; then
+              gh issue comment "$number" --body "$body"
+            else
+              gh issue create --title "$title" --body "$body"
+            fi
+          done
+          echo "stale=$stale" | tee -a "${GITHUB_OUTPUT:-/dev/null}"

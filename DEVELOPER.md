@@ -82,7 +82,7 @@ make format    # auto-fix formatting
 ### CI tool updates
 
 CI installs Claude Code, Codex, and `plugins` from the
-[npm lockfile](.github/ci-tools/package-lock.json) and records the installed
+[npm lockfile](ci-tools/package-lock.json) and records the installed
 versions in the run summary. Dependabot checks for releases every day, including
 weekends, and opens a separate PR for each update. The schedule skips the
 release-age delay to test new releases within about a day. CI runs those PRs with
@@ -92,7 +92,17 @@ Auto-merge relies on the `main` ruleset requiring `tests-ok`, which covers the
 Python tests and both model-visible skill checks. Major releases follow the same
 auto-merge path as other releases. A failed or timed-out update opens one GitHub
 issue per CLI, and later failing releases of that CLI add their run links to it.
-The next update of that CLI to pass CI closes the issue. GitHub suppresses `push`
+The next update of that CLI to pass CI closes the issue.
+
+The lockfile lives in `ci-tools/`, not `.github/`: GitHub rejects Dependabot npm
+PRs that change files under `.github/` (dependabot/dependabot-core#15237), and that
+failure stays in Dependabot's own run without opening a PR for CI to fail on. So a
+daily freshness check (`ci-tools-freshness.yml`, 4 hours after Dependabot's check)
+compares each locked CLI with its npm `latest` release. When `main` still locks an
+older version 26 hours after a release, it comments once per release on the same
+per-CLI issue the CI alert uses, and closes it once `main` locks the latest
+release. It catches any stalled update: one Dependabot couldn't open, one CI
+failed, or one auto-merge didn't finish. GitHub suppresses `push`
 workflows for merges performed with Actions' built-in token. The required checks
 run before the merge. Release tags still use the release commit with its own
 successful main-push Docker build.

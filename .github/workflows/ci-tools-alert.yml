@@ -17,7 +17,7 @@ jobs:
           && github.event.workflow_run.event == 'pull_request'
           && github.event.workflow_run.actor.login == 'dependabot[bot]'
           && github.event.workflow_run.head_repository.full_name == github.repository
-          && startsWith(github.event.workflow_run.head_branch, 'dependabot/npm_and_yarn/dot-github/ci-tools/') }}
+          && startsWith(github.event.workflow_run.head_branch, 'dependabot/npm_and_yarn/ci-tools/') }}
     runs-on: ubuntu-latest
     # Releases of one CLI arrive on different branches, so serialize all runs.
     concurrency:
@@ -35,7 +35,7 @@ jobs:
         run: |
           update="${BRANCH##*/ci-tools/}"
           cli="${update%-[0-9]*}"
-          title="CI fails on CLI updates: $cli"
+          title="CLI update stuck: $cli"
           number="$(gh api --paginate --slurp "repos/$GH_REPO/issues?state=open&per_page=100" \
             | jq -r --arg t "$title" '[.[][] | select(.title == $t and (has("pull_request") | not))][0].number // empty')"
           if [[ "$CONCLUSION" == success ]]; then

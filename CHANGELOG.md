@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- CI's locked Claude Code, Codex and `plugins` versions move from `.github/ci-tools` to `ci-tools`, because Dependabot's npm updater cannot open PRs that change files under `.github/`. A daily check opens one issue per CLI when `main` still locks an older release a day after it came out, whatever stopped the update.
 - The Claude Code and Codex plugin install checks fail when a skill from `asta-tools`, `asta-assistant`, or `asta-dev` is missing from the model's prompt or its description changes during rendering.
 - Require `asta-documents` 0.4.2 or newer for `asta documents`.
 - The shared site workflow's What changed step waits for its stderr log to finish writing before it reads or deletes it, so the step no longer fails at random with "Directory not empty".
