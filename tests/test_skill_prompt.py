@@ -261,6 +261,10 @@ def test_check_claude_skill_prompt(tmp_path, entry, role, error):
             "\n\nThe following skills are available for use with the Skill tool:\n\n",
             "expected one non-empty Claude Code skills list",
         ),
+        (
+            "\nThe following skills are available for use with the Skill tool:\n\n",
+            "expected one non-empty Claude Code skills list",
+        ),
     ],
 )
 def test_duplicate_claude_skills(tmp_path, separator, error):

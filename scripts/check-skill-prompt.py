@@ -83,14 +83,16 @@ def claude_skill_lines(prompt: object) -> list[str]:
         value = block.get("text")
         if not isinstance(value, str):
             continue
-        lines = iter(value.splitlines())
-        for line in lines:
-            if line == heading:
-                first = next(lines, "")
-                if not first:
-                    first = next(lines, "")
-                entries = [first, *takewhile(lambda row: row.startswith("- "), lines)]
-                listings.append(entries if first.startswith("- ") else [])
+        lines = value.splitlines()
+        for index, line in enumerate(lines):
+            if line != heading:
+                continue
+            start = index + 1
+            if start < len(lines) and not lines[start]:
+                start += 1
+            listings.append(
+                list(takewhile(lambda row: row.startswith("- "), lines[start:]))
+            )
 
     if len(listings) != 1 or not listings[0]:
         raise ValueError("expected one non-empty Claude Code skills list")

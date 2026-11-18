@@ -15,7 +15,7 @@
 set -euo pipefail
 
 TARGET="${1:?usage: verify-plugin-install.sh <claude-code|codex>}"
-REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd -P)"
 # @latest is what `npx plugins add` gives users — green means users can install.
 # Override PLUGINS_CLI to pin if an upstream release regresses.
 PLUGINS_CLI="${PLUGINS_CLI:-plugins@latest}"
