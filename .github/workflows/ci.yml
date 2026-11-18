@@ -20,30 +20,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 2
-
-      - name: Reject automated CLI pin downgrades
-        if: >-
-          ${{ github.event_name == 'pull_request'
-              && github.event.pull_request.head.repo.full_name == github.repository
-              && (github.head_ref == 'automation/claude-code-pin'
-                  || github.head_ref == 'automation/codex-pin') }}
-        env:
-          PIN_FILE: .github/${{ github.head_ref == 'automation/claude-code-pin' && 'claude-code' || 'codex' }}-version
-        run: |
-          # The first parent of the checked-out PR merge commit is the base.
-          current="$(git show "HEAD^1:$PIN_FILE")"
-          proposed="$(<"$PIN_FILE")"
-          if [[ ! "$current" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ || ! "$proposed" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::Expected numeric major.minor.patch versions in $PIN_FILE."
-            exit 1
-          fi
-          newest="$(printf '%s\n%s\n' "$current" "$proposed" | sort -V | tail -n1)"
-          if [[ "$newest" != "$proposed" ]]; then
-            echo "::error::Automated update would downgrade $PIN_FILE from $current to $proposed."
-            exit 1
-          fi
 
       - name: Install uv
         uses: astral-sh/setup-uv@v4
@@ -74,8 +50,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Claude Code CLI
-        run: bash scripts/install-pinned-claude-code.sh
+      - name: Install locked agent CLIs
+        run: bash scripts/install-ci-clis.sh
 
       - name: Install uv
         uses: astral-sh/setup-uv@v4
@@ -89,17 +65,19 @@ jobs:
         run: make test-plugins
 
   tests-ok:
-    # One check for main to require that keeps its name when the Python matrix changes.
-    needs: test
+    # One required check that keeps its name when the Python matrix changes; it
+    # also gates the install and model-visible skill-description checks.
+    needs: [test, plugin-install]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - run: |
-          echo "test: $RESULT"
-          test "$RESULT" = success
+          echo "test: $TEST_RESULT, plugin-install: $INSTALL_RESULT"
+          test "$TEST_RESULT" = success && test "$INSTALL_RESULT" = success
         env:
-          RESULT: ${{ needs.test.result }}
+          TEST_RESULT: ${{ needs.test.result }}
+          INSTALL_RESULT: ${{ needs.plugin-install.result }}
 
   docker:
     runs-on: ${{ inputs.build-runner || 'ubuntu-latest' }}
@@ -130,11 +108,8 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Install Claude Code CLI
-        run: bash scripts/install-pinned-claude-code.sh
-
-      - name: Install Codex CLI
-        run: bash scripts/install-pinned-codex.sh
+      - name: Install locked agent CLIs
+        run: bash scripts/install-ci-clis.sh
 
       - name: Install uv
         uses: astral-sh/setup-uv@v4

@@ -1,5 +1,6 @@
-"""Checks for CI and CLI canary workflows."""
+"""Checks for the CI workflow and its locked agent CLIs."""
 
+import json
 import os
 import subprocess
 from pathlib import Path
@@ -9,25 +10,27 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOWS = ROOT / ".github/workflows"
+CI_TOOLS = ROOT / ".github/ci-tools"
 JOBS = yaml.load((WORKFLOWS / "ci.yml").read_text(), Loader=yaml.BaseLoader)["jobs"]
-PIN_JOBS = yaml.load(
-    (WORKFLOWS / "cli-pin-maintenance.yml").read_text(), Loader=yaml.BaseLoader
-)["jobs"]
 
 
-def test_tests_ok_needs_every_per_python_job():
+def _needs(job):
+    needs = job["needs"]
+    return {needs} if isinstance(needs, str) else set(needs)
+
+
+def test_tests_ok_needs_every_per_python_job_and_plugin_install():
     per_python = {
         name
         for name, job in JOBS.items()
         if "python-version" in job.get("strategy", {}).get("matrix", {})
     }
     gate = JOBS["tests-ok"]
-    needs = gate["needs"]
-    assert per_python and per_python <= set(
-        [needs] if isinstance(needs, str) else needs
-    )
+    assert per_python and per_python | {"plugin-install"} <= _needs(gate)
     assert gate["if"] == "always()"
-    assert gate["steps"][-1]["env"]["RESULT"] == "${{ needs.test.result }}"
+    env = gate["steps"][-1]["env"]
+    assert env["TEST_RESULT"] == "${{ needs.test.result }}"
+    assert env["INSTALL_RESULT"] == "${{ needs.plugin-install.result }}"
 
 
 def test_code_quality_runs_on_x86_for_every_build_runner():
@@ -36,237 +39,53 @@ def test_code_quality_runs_on_x86_for_every_build_runner():
     assert JOBS["code-quality"]["runs-on"] == "ubuntu-latest"
 
 
-@pytest.mark.parametrize("cli", ["claude-code", "codex"])
-@pytest.mark.parametrize(
-    ("proposed", "error"),
-    [
-        ("1.10.0", None),
-        ("1.9.0", None),
-        ("1.8.9", "would downgrade"),
-        ("1.10.0-rc.1", "Expected numeric"),
-    ],
-)
-def test_required_code_quality_rejects_stale_pin_bumps(tmp_path, cli, proposed, error):
-    steps = JOBS["code-quality"]["steps"]
-    checkout = next(
-        step for step in steps if step.get("uses", "").startswith("actions/checkout@")
-    )
-    guard = next(
-        step
-        for step in steps
-        if step.get("name") == "Reject automated CLI pin downgrades"
-    )
-    assert int(checkout["with"]["fetch-depth"]) >= 2
-    assert f"'automation/{cli}-pin'" in guard["if"]
-    pin_file = Path(f".github/{cli}-version")
-    pin = tmp_path / pin_file
-    pin.parent.mkdir()
-    subprocess.run(["git", "init", "--quiet"], cwd=tmp_path, check=True)
-    for version in ("1.9.0", proposed):
-        pin.write_text(f"{version}\n")
-        subprocess.run(["git", "add", pin_file], cwd=tmp_path, check=True)
-        subprocess.run(
-            [
-                "git",
-                "-c",
-                "user.name=Test",
-                "-c",
-                "user.email=test@example.com",
-                "commit",
-                "--allow-empty",
-                "--quiet",
-                "-m",
-                f"Pin {cli} to {version}",
-            ],
-            cwd=tmp_path,
-            check=True,
-        )
-
-    result = subprocess.run(
-        ["bash", "-eo", "pipefail", "-c", guard["run"]],
-        cwd=tmp_path,
-        env={"PATH": os.environ["PATH"], "PIN_FILE": str(pin_file)},
-        capture_output=True,
-        text=True,
-    )
-    if error:
-        assert result.returncode != 0
-        assert error in result.stdout
-    else:
-        assert result.returncode == 0, result.stderr
-
-
 def test_workflows_disable_claude_code_background_updates():
-    canary = yaml.load(
-        (WORKFLOWS / "claude-plugin-canary.yml").read_text(), Loader=yaml.BaseLoader
-    )["jobs"]["canary"]
-    for job in (JOBS["test"], JOBS["plugin-install"], canary):
+    for job in (JOBS["test"], JOBS["plugin-install"]):
         assert job["env"]["DISABLE_AUTOUPDATER"] == "1"
 
 
-@pytest.mark.parametrize("result", ["success", "failure", "cancelled", "skipped"])
-def test_tests_ok_passes_only_on_success(result):
+@pytest.mark.parametrize("test_result", ["success", "failure", "skipped"])
+@pytest.mark.parametrize("install_result", ["success", "failure", "cancelled"])
+def test_tests_ok_passes_only_when_both_succeed(test_result, install_result):
     step = JOBS["tests-ok"]["steps"][-1]
     run = subprocess.run(
         ["bash", "-c", step["run"]],
-        env=dict(os.environ, RESULT=result),
+        env=dict(os.environ, TEST_RESULT=test_result, INSTALL_RESULT=install_result),
         capture_output=True,
     )
-    assert (run.returncode == 0) == (result == "success")
+    assert (run.returncode == 0) == (test_result == install_result == "success")
 
 
-@pytest.mark.parametrize(
-    ("cli", "format_version"),
-    [("claude-code", "{} (Claude Code)"), ("codex", "codex-cli {}")],
-)
-@pytest.mark.parametrize(
-    ("version", "stable"),
-    [("1.2.3", True), ("1.2.3-rc.1", False), ("1.2.3+build.1", False)],
-)
-def test_cli_version_parser_requires_a_stable_release(
-    cli, format_version, version, stable
-):
-    result = subprocess.run(
-        [
-            "bash",
-            ROOT / "scripts/parse-cli-version.sh",
-            cli,
-            format_version.format(version),
-        ],
-        capture_output=True,
-        text=True,
-    )
-    if stable:
-        assert result.returncode == 0, result.stderr
-        assert result.stdout == f"{version}\n"
-    else:
-        assert result.returncode != 0
-        assert result.stdout == ""
-        assert version in result.stderr
+def test_ci_installs_agent_clis_from_the_lockfile():
+    for job in ("test", "plugin-install"):
+        runs = [step.get("run", "") for step in JOBS[job]["steps"]]
+        assert "bash scripts/install-ci-clis.sh" in runs
+    script = (ROOT / "scripts/install-ci-clis.sh").read_text()
+    assert "npm ci" in script and "npm install" not in script
 
 
-@pytest.mark.parametrize("remote_sha", ["a" * 40, "b" * 40, ""])
-def test_pin_maintenance_checks_remote_main_immediately_before_publishing(
-    tmp_path, remote_sha
-):
-    steps = PIN_JOBS["bump-pin"]["steps"]
-    freshness = next(step for step in steps if step.get("id") == "freshness")
-    publish = next(step for step in steps if step.get("id") == "publish")
-    assert steps.index(publish) == steps.index(freshness) + 1
-    assert publish["if"] == "steps.freshness.outputs.current == 'true'"
-    output = tmp_path / "output"
-    summary = tmp_path / "summary"
-    output.touch()
-    tested_sha = "a" * 40
-    gh_stub = r"""gh() {
-      [[ "$1" == api && "$*" == *repos/owner/repo/git/ref/heads/main* && -n "$REMOTE_SHA" ]] || return 1
-      printf '%s\n' "$REMOTE_SHA"
-    }
-    """
-    result = subprocess.run(
-        ["bash", "-eo", "pipefail", "-c", gh_stub + freshness["run"]],
-        env={
-            "PATH": os.environ["PATH"],
-            "GITHUB_REPOSITORY": "owner/repo",
-            "TESTED_SHA": tested_sha,
-            "REMOTE_SHA": remote_sha,
-            "GITHUB_OUTPUT": str(output),
-            "GITHUB_STEP_SUMMARY": str(summary),
-        },
-        capture_output=True,
-    )
-    if remote_sha == tested_sha:
-        assert result.returncode == 0, result.stderr
-        assert output.read_text() == "current=true\n"
-    elif remote_sha:
-        assert result.returncode == 0, result.stderr
-        assert output.read_text() == ""
-        assert "Skipping publication" in summary.read_text()
-    else:
-        assert result.returncode != 0
-        assert output.read_text() == ""
+def test_agent_clis_are_locked_to_exact_versions():
+    manifest = json.loads((CI_TOOLS / "package.json").read_text())
+    lock = json.loads((CI_TOOLS / "package-lock.json").read_text())
+    deps = manifest["dependencies"]
+    assert set(deps) == {"@anthropic-ai/claude-code", "@openai/codex"}
+    for name, version in deps.items():
+        assert version[0].isdigit(), f"{name} must be an exact version"
+        assert lock["packages"][f"node_modules/{name}"]["version"] == version
 
 
-@pytest.mark.parametrize(
-    ("cli_name", "bump_result", "setup_failure", "failed_checks", "failure"),
-    [
-        ("Claude Code", "failure", "", "", "pin bump"),
-        ("Codex", "failure", "", "", "pin bump"),
-        ("Claude Code", "skipped", "uv setup", "", "uv setup"),
-        (
-            "Claude Code",
-            "skipped",
-            "",
-            "selective install, skill descriptions, ",
-            "selective install, skill descriptions",
-        ),
-        (
-            "Codex",
-            "skipped",
-            "",
-            "plugin install and skill descriptions",
-            "plugin install and skill descriptions",
-        ),
-        ("Codex", "skipped", "", "", "unexpected canary failure"),
-    ],
-)
-def test_pin_maintenance_alert_reports_the_failed_job(
-    cli_name, bump_result, setup_failure, failed_checks, failure
-):
-    alert = PIN_JOBS["alert"]
-    assert alert["needs"] == "bump-pin"
-    assert "needs.bump-pin.result == 'failure'" in alert["if"]
-    assert "inputs.canary-result == 'failure'" in alert["if"]
-    run = run_alert(cli_name, bump_result, setup_failure, failed_checks)
-    assert run.returncode == 0, run.stderr
-    assert f"Created: {cli_name} 1.2.3 canary failed: {failure}" in run.stdout
-    assert f"- Failure: {failure}" in run.stdout
-    assert "- Run: https://github.com/owner/repo/actions/runs/123" in run.stdout
-    assert ("compatibility checks passed" in run.stdout) == (bump_result == "failure")
+def test_dependabot_updates_agent_clis_daily():
+    config = yaml.safe_load((ROOT / ".github/dependabot.yml").read_text())
+    (entry,) = [u for u in config["updates"] if u["directory"] == "/.github/ci-tools"]
+    assert entry["package-ecosystem"] == "npm"
+    assert entry["schedule"]["interval"] == "daily"
 
 
-def test_pin_maintenance_deduplicates_pin_bump_alerts():
-    title = "Codex 1.2.3 canary failed: pin bump"
-    run = run_alert("Codex", "failure", "", "", prior_issue_title=title)
-    assert run.returncode == 0, run.stderr
-    assert run.stdout == f"Already reported: {title}\n"
-
-
-def run_alert(
-    cli_name, bump_result, setup_failure, failed_checks, prior_issue_title=""
-):
-    gh_stub = r"""gh() {
-      if [ "$1" = api ]; then
-        [[ "$*" == *'issues?state=all&per_page=100'* ]] || return 1
-        printf '%s\n' "$PRIOR_ISSUE_TITLE"
-      elif [ "$1 $2" = 'issue create' ]; then
-        [[ "$3 $4 $5 $7 $8" == '--repo owner/repo --title --body-file -' ]] || return 1
-        printf 'Created: %s\n' "$6"
-        cat
-      else
-        return 1
-      fi
-    }
-    """
-    return subprocess.run(
-        [
-            "bash",
-            "-eo",
-            "pipefail",
-            "-c",
-            gh_stub + PIN_JOBS["alert"]["steps"][0]["run"],
-        ],
-        env={
-            "PATH": os.environ["PATH"],
-            "GITHUB_REPOSITORY": "owner/repo",
-            "CLI_NAME": cli_name,
-            "VERSION": "1.2.3",
-            "SETUP_FAILURE": setup_failure,
-            "FAILED_CHECKS": failed_checks,
-            "BUMP_RESULT": bump_result,
-            "RUN_URL": "https://github.com/owner/repo/actions/runs/123",
-            "PRIOR_ISSUE_TITLE": prior_issue_title,
-        },
-        capture_output=True,
-        text=True,
-    )
+def test_auto_merge_is_limited_to_dependabot_ci_tools_updates():
+    job = yaml.load(
+        (WORKFLOWS / "ci-tools-auto-merge.yml").read_text(), Loader=yaml.BaseLoader
+    )["jobs"]["enable-auto-merge"]
+    assert job["if"] == "github.event.pull_request.user.login == 'dependabot[bot]'"
+    merge = job["steps"][-1]
+    assert merge["if"] == "steps.meta.outputs.directory == '/.github/ci-tools'"
+    assert merge["run"].startswith("gh pr merge --auto")
