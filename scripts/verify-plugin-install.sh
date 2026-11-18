@@ -6,6 +6,9 @@
 # and checks that the expected skill files and hooks landed in the agent's
 # plugin cache.
 #
+# For codex it also renders the model-visible prompt and checks every skill is
+# listed with its full description (needs uvx).
+#
 # Usage: scripts/verify-plugin-install.sh <claude-code|codex>
 #
 # The target's CLI binary (`claude` or `codex`) must be on PATH so the plugins
@@ -88,6 +91,19 @@ if [ -f "$REGISTRATION" ] && grep -q "asta" "$REGISTRATION"; then
 else
   echo "  ✗ no asta entry in $REGISTRATION" >&2
   fail=1
+fi
+
+# Codex silently drops or shortens skills that overflow its skills prompt
+# budget, so check what the model would actually be shown.
+if [ "$TARGET" = codex ]; then
+  echo "==> Verifying the skills Codex shows to the model"
+  PROMPT_JSON="$TMPHOME/prompt-input.json"
+  if HOME="$TMPHOME" codex debug prompt-input >"$PROMPT_JSON"; then
+    uvx --with pyyaml python "$REPO_ROOT/scripts/check-codex-skill-prompt.py" "$PROMPT_JSON" || fail=1
+  else
+    echo "  ✗ codex debug prompt-input failed" >&2
+    fail=1
+  fi
 fi
 
 if [ "$fail" -ne 0 ]; then
