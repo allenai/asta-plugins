@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Workspace repo setup makes a repo internal when the request came from a chat channel anyone in the organization can join, and private for a private channel, a direct message or a request from elsewhere, unless the request says which; it never makes one public by default.
 - The shared site workflow resolves annotated release tags to commits before installing the CLI or downloading workspace assets. The build stops with a resolver error if GitHub cannot supply the exact workflow revision after retries. For workspaces pinned to `v0.129.0`, update the workflow pin in `.github/workflows/docs.yml` to `v0.130.0`.
 - Dependabot's weekly updates to the `skills` CLI in the dev container auto-merge after required CI passes, including the dev container smoke tests.
 - Workspace setup under another account tries once to make the requester admin and never stops on a refused grant; it then runs the normal setup, adding one access line to the setup PR message. Without admin, that line asks the requester to reply "make me its admin".

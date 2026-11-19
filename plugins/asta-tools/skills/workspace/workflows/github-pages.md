@@ -1,7 +1,7 @@
 # Workflow: GitHub Pages setup
 
-Run this before pushing or enabling the docs deployment workflow. A private
-repository does not make its Pages site private, so make the site private and
+Run this before pushing or enabling the docs deployment workflow. A private or
+internal repository does not make its Pages site private, so make the site private and
 read it back before any content reaches it. If GitHub refuses, or reports
 anything unexpected, stop and tell the owner what GitHub said; never fall back
 to a public site.

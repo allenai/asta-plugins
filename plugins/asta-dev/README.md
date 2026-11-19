@@ -15,8 +15,10 @@ to your project in GitHub.
 ### Start a workspace from Slack
 
 Ask gas2own in one thread, in a channel it's in: `@gas2own start an Asta workspace for my question: …`.
-It creates a private repo in `allenai`, makes you its admin, sets the workspace up and sends you its
-preview, so that no repo or channel has to be made first.
+It creates a repo in `allenai`, makes you its admin, sets the workspace up and sends you its
+preview, so that no repo or channel has to be made first. The repo is internal when you ask in a
+channel anyone at Ai2 can join, and private in a private channel or a direct message, unless you
+say which you want.
 
 ### Give gas2own an existing repo
 

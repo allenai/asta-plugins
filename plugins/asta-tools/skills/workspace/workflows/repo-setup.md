@@ -13,7 +13,7 @@ Apply every setting in this table that the owner hasn't turned off:
 
 | Setting | Without it |
 |---|---|
-| A private repo | Anyone could read the unpublished work. |
+| A repo that isn't public: private, or internal as below | Anyone could read the unpublished work. |
 | Its site on GitHub Pages, private, with a preview and What changed for every PR | Collaborators see the files on GitHub rather than the rendered pages, and no change can be previewed before it merges. |
 | Changes reach the default branch only through PRs whose checks pass, with no force-push (`docs-checks.json`, `default-branch.json`) | A change can skip its preview and land unbuilt, and a later Overleaf sync can't merge its own PRs safely. |
 | Branches deleted after their PR merges | Merged branches, including each Overleaf sync branch, pile up in the repo. |
@@ -27,6 +27,17 @@ answer with the same text.
 
 If the owner wants the repo or site public, stop and ask how to proceed; never
 publish publicly by default.
+
+Pick the repo's visibility, taking the first that applies:
+
+1. Any word in the request about it ("private", "internal", "a private
+   repo"), wherever it was asked.
+2. For a request made in a chat channel, who could read it there, so that
+   whoever saw the ask can see the work: internal (only the organization's
+   members can read it) for a channel anyone in the organization can join,
+   private for a private channel or a direct message.
+3. Otherwise, when you can't tell, or for an owner without internal repos,
+   private.
 
 Record settings the owner turned off in the workspace's `.asta/repo-setup.json`,
 committed with the scaffold, for example `{"declined":["private_pages"]}`, using
@@ -44,9 +55,9 @@ who asked for the workspace). If it isn't, or you can't tell, follow
 [repo setup for someone else](repo-setup-delegated.md) before creating the repo
 or pushing anything.
 
-1. Create the repo private with a README, so the default branch exists
-   (`gh repo create <owner>/<name> --private --add-readme`), or make an
-   existing empty repo private. If it has no branches, push an empty-tree root
+1. Create the repo with the visibility above and a README, so the default
+   branch exists (`gh repo create <owner>/<name> --private --add-readme`, or
+   `--internal`), or give an existing empty repo that visibility. If it has no branches, push an empty-tree root
    commit to `main` first, before any Pages branch. Merge the established default
    branch into the local workspace without losing local work or force-pushing.
 2. Scaffold the Quarto build with its `docs.yml` stub manual-only, and run
