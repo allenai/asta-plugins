@@ -11,6 +11,7 @@ quarto-render.*
 _extensions/evidence
 _extensions/asta-theme/
 _extensions/asta-slides/
+_extensions/asta-pages/
 
 # Shared workspace rules fetched by `asta workspace sync`.
 .asta/cache/
