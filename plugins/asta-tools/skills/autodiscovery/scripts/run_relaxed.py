@@ -11,8 +11,12 @@ on unreported secondary diagnostics even when its central result is sound. This 
 `get_agents` and swaps the reviewer's system message for one that fails only on problems
 that undermine the finding itself.
 
-Tested with asta-autodiscovery 1.0.1. It patches AutoDiscovery's internals, so it checks that
-the reviewer it expects exists and stops if not.
+Tested with asta-autodiscovery 1.0.1 and 2.0.0. It patches AutoDiscovery's internals, so it checks
+that the reviewer it expects exists and stops if not.
+
+It also takes two options `auto-discovery` lacks, and passes them to the run:
+`--warmstart_experiments <file>` (experiments to run first) and `--continue_from_dir <dir>`
+(resume a run that stopped).
 
 TODO: move this into AutoDiscovery itself (a reviewer option on the CLI) and delete this script.
 """
@@ -54,8 +58,48 @@ def get_agents(*args, **kwargs):
 agents.get_agents = get_agents
 run.get_agents = get_agents
 
+EXTRA = ("--warmstart_experiments", "--continue_from_dir")
+
+
+def split_extra(argv):
+    """Take EXTRA's options out of argv: {name: value} and the arguments left for auto-discovery."""
+    extra, rest, i = {}, [], 0
+    while i < len(argv):
+        name = next(
+            (e for e in EXTRA if argv[i] == e or argv[i].startswith(e + "=")), None
+        )
+        if name is None:
+            rest.append(argv[i])
+            i += 1
+        elif "=" in argv[i]:
+            extra[name[2:]] = argv[i].split("=", 1)[1]
+            i += 1
+        else:
+            if i + 1 >= len(argv):
+                sys.exit(f"run_relaxed: {name} needs a value")
+            extra[name[2:]] = argv[i + 1]
+            i += 2
+    return extra, rest
+
+
+_run_and_report = run.run_and_report
+
+
+def with_extra(extra):
+    # auto-discovery builds the run's arguments, then calls autodiscovery.run.run_and_report.
+    def run_and_report(args):
+        for name, value in extra.items():
+            setattr(args, name, value)
+        return _run_and_report(args)
+
+    return run_and_report
+
+
 if __name__ == "__main__":
     from autodiscovery.easy import cli_main
 
     print("experiment_reviewer: relaxed system message active", file=sys.stderr)
-    cli_main(sys.argv[1:])
+    extra, rest = split_extra(sys.argv[1:])
+    if extra:
+        run.run_and_report = with_extra(extra)
+    cli_main(rest)
