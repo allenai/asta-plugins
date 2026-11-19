@@ -9,7 +9,7 @@ turned off later, with the consequence stated below.
 ## 1. Check the repo's settings, then send one message
 
 **Check the repo's settings; don't ask for them.** A workspace repo set up as
-[repo setup](repo-setup.md) describes already has them: a private repo, a
+[repo setup](repo-setup.md) describes already has them: a private or internal repo, a
 private Pages site with PR previews, both rulesets (`default-branch.json`,
 `docs-checks.json`), branches deleted after merge, and squash merges allowed.
 Check them with

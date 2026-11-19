@@ -33,11 +33,13 @@ and report an unknown owner, failed lookup or unexpected type.
 
 ## 3. Create the repo without pushing
 
-Create the repo private with a README, so the default branch exists
-(`gh repo create <owner>/<name> --private --add-readme`), or make an existing
-empty repo private. Push nothing yet. Read
-`gh api repos/<owner>/<name> -q '{full_name, private}'` and verify the exact
-target and `private: true`; stop on a mismatch or failed read.
+Create the repo with the visibility [repo setup](repo-setup.md) picks (the one
+the request states; if it states none, internal for a request made in a
+channel anyone in the organization can join, otherwise private) and a README, so the default branch exists
+(`gh repo create <owner>/<name> --private --add-readme`, or `--internal`), or
+give an existing empty repo that visibility. Push nothing yet. Read
+`gh api repos/<owner>/<name> -q '{full_name, visibility}'` and verify the exact
+target and that visibility; stop on a mismatch or failed read.
 
 ## 4. Try once to make the requester admin
 
