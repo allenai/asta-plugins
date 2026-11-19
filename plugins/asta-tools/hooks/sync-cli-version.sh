@@ -1,7 +1,7 @@
 #!/bin/bash
 # Check if asta CLI version matches the plugin version and auto-install/update if needed
 
-PLUGIN_VERSION=0.129.0
+PLUGIN_VERSION=0.130.0
 REPO_URL="https://github.com/allenai/asta-plugins.git"
 INSTALL_URL="git+$REPO_URL@v$PLUGIN_VERSION"
 

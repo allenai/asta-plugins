@@ -66,7 +66,7 @@ def _run_paper_step(
         item for item in workflow["jobs"]["build"]["steps"] if item.get("id") == "paper"
     )
     script = step["run"].replace("${{ job.workflow_repository }}", "owner/repo")
-    script = script.replace("${{ job.workflow_sha }}", "source-commit")
+    script = script.replace("${{ steps.workflow-commit.outputs.sha }}", "source-commit")
     source = WORKSPACE_ASSETS / "paper-discovery.py"
     checkout = tmp_path / "project"
     project = checkout / site_subdir
@@ -227,7 +227,7 @@ def test_what_changed_uses_managed_generator_without_project_copy(
         capture_output=True,
     )
     script = step["run"].replace("${{ job.workflow_repository }}", "owner/repo")
-    script = script.replace("${{ job.workflow_sha }}", "source-commit")
+    script = script.replace("${{ steps.workflow-commit.outputs.sha }}", "source-commit")
     result = subprocess.run(
         ["bash", "-e", "-o", "pipefail", "-c", script],
         cwd=project,
@@ -296,7 +296,7 @@ def test_what_changed_skips_diff_when_baseline_read_fails(
     )
     git.chmod(0o755)
     script = step["run"].replace("${{ job.workflow_repository }}", "owner/repo")
-    script = script.replace("${{ job.workflow_sha }}", "source-commit")
+    script = script.replace("${{ steps.workflow-commit.outputs.sha }}", "source-commit")
     result = subprocess.run(
         ["bash", "-e", "-o", "pipefail", "-c", script],
         cwd=project,
@@ -384,10 +384,119 @@ def test_workspace_baseline_archive_excludes_pr_previews(tmp_path: Path) -> None
 
 def test_workspace_assets_use_called_workflow_identity() -> None:
     workflow = WORKFLOW.read_text()
+    steps = yaml.load(workflow, Loader=yaml.BaseLoader)["jobs"]["build"]["steps"]
+    resolver_index = next(
+        index for index, step in enumerate(steps) if step.get("id") == "workflow-commit"
+    )
+    resolved_sha = "${{ steps.workflow-commit.outputs.sha }}"
 
-    assert workflow.count("${{ job.workflow_repository }}") == 7
-    assert workflow.count("${{ job.workflow_sha }}") == 7
+    assert workflow.count("${{ job.workflow_repository }}") == 8
+    # An annotated tag makes job.workflow_sha a tag object.
+    assert workflow.count("${{ job.workflow_sha }}") == 1
+    assert workflow.count(resolved_sha) == 7
+    assert json.dumps(steps[resolver_index + 1 :]).count(resolved_sha) == 7
     assert "github.job_workflow" not in workflow
+
+
+@pytest.mark.parametrize(
+    "revision",
+    [
+        "annotated",
+        "lightweight",
+        "untagged",
+        "moved-tag-still-served",
+        "retry",
+        "missing",
+        "blob",
+    ],
+)
+def test_workflow_revision_resolves_exact_object(tmp_path: Path, revision: str) -> None:
+    workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+    step = next(
+        item
+        for item in workflow["jobs"]["build"]["steps"]
+        if item.get("id") == "workflow-commit"
+    )
+    assert step["env"]["WORKFLOW_REPOSITORY"] == "${{ job.workflow_repository }}"
+    assert step["env"]["WORKFLOW_SHA"] == "${{ job.workflow_sha }}"
+
+    remote = tmp_path / "remote"
+    subprocess.run(["git", "init", "-q", str(remote)], check=True)
+
+    def git(*args: str) -> str:
+        return subprocess.check_output(["git", *args], cwd=remote, text=True).strip()
+
+    git("config", "user.name", "Test")
+    git("config", "user.email", "test@example.com")
+    git("config", "commit.gpgsign", "false")
+    git("config", "tag.gpgsign", "false")
+    git("config", "uploadpack.allowFilter", "true")
+    git("commit", "-qm", "Release", "--allow-empty")
+    git("tag", "-am", "Annotated release", "annotated")
+    git("tag", "lightweight")
+    annotated = git("rev-parse", "refs/tags/annotated")
+    release = git("rev-parse", "refs/tags/lightweight")
+    git("commit", "-qm", "Advance branch", "--allow-empty")
+    untagged = git("rev-parse", "HEAD")
+    file = tmp_path / "object"
+    file.write_text("Not a commit")
+    blob = git("hash-object", "-w", str(file))
+    git("tag", "blob", blob)
+    if revision == "moved-tag-still-served":
+        git("tag", "-f", "annotated", untagged)
+        git("config", "uploadpack.allowAnySHA1InWant", "true")
+    workflow_sha, expected, error, retries = {
+        "annotated": (annotated, release, "", 0),
+        "lightweight": (release, release, "", 0),
+        "untagged": (untagged, untagged, "", 0),
+        "moved-tag-still-served": (annotated, release, "", 0),
+        "retry": (annotated, release, "", 1),
+        "missing": ("f" * 40, None, "after 3 attempts", 2),
+        "blob": (blob, None, "does not resolve to a commit", 0),
+    }[revision]
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    sleep = bin_dir / "sleep"
+    sleep.write_text("#!/bin/sh\nexit 0\n")
+    sleep.chmod(0o755)
+    if revision == "retry":
+        wrapper = bin_dir / "git"
+        wrapper.write_text(
+            "#!/bin/sh\n"
+            'if [ "$3" = fetch ] && [ ! -e "$RETRY_MARKER" ]; then\n'
+            '  touch "$RETRY_MARKER"\n'
+            "  exit 1\n"
+            "fi\n"
+            'exec "$REAL_GIT" "$@"\n'
+        )
+        wrapper.chmod(0o755)
+    output = tmp_path / "output"
+    result = subprocess.run(
+        ["bash", "-eo", "pipefail", "-c", step["run"]],
+        env={
+            "PATH": f"{bin_dir}:{os.environ['PATH']}",
+            "WORKFLOW_REPOSITORY": "owner/repo",
+            "WORKFLOW_SHA": workflow_sha,
+            "GITHUB_OUTPUT": str(output),
+            "GIT_CONFIG_COUNT": "1",
+            "GIT_CONFIG_KEY_0": f"url.{remote.as_uri()}.insteadOf",
+            "GIT_CONFIG_VALUE_0": "https://github.com/owner/repo.git",
+            "REAL_GIT": shutil.which("git") or "git",
+            "RETRY_MARKER": str(tmp_path / "retried"),
+        },
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.stdout.count("::warning::") == retries
+    if error:
+        assert result.returncode != 0, result.stdout + result.stderr
+        assert not output.exists()
+        assert error in result.stdout
+    else:
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert output.read_text() == f"sha={expected}\n"
 
 
 def test_workspace_deploy_commit_identifies_its_workflow_run() -> None:
@@ -1208,7 +1317,7 @@ def test_paper_script_override_selection_and_copy_failures(tmp_path, asset, copy
         item for item in workflow["jobs"]["build"]["steps"] if item.get("id") == "paper"
     )
     script = step["run"].replace("${{ job.workflow_repository }}", "owner/repo")
-    script = script.replace("${{ job.workflow_sha }}", "source-commit")
+    script = script.replace("${{ steps.workflow-commit.outputs.sha }}", "source-commit")
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     scripts = tmp_path / "scripts"
     scripts.mkdir()
@@ -1805,7 +1914,7 @@ def test_what_changed_reads_full_baseline_for_site_in_subfolder(
     )
 
     script = step["run"].replace("${{ job.workflow_repository }}", "owner/repo")
-    script = script.replace("${{ job.workflow_sha }}", "source-commit")
+    script = script.replace("${{ steps.workflow-commit.outputs.sha }}", "source-commit")
     result = subprocess.run(
         ["bash", "-e", "-o", "pipefail", "-c", script],
         cwd=site,
