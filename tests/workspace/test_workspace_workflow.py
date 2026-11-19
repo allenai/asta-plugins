@@ -393,39 +393,70 @@ def test_workspace_assets_use_called_workflow_identity() -> None:
 
 
 @pytest.mark.parametrize(
-    ("workflow_sha", "ls_remote_fails", "expected"),
-    [
-        ("tag-object", False, "release-commit"),  # annotated tag
-        ("release-commit", False, "release-commit"),  # lightweight tag or SHA pin
-        ("branch-commit", False, "branch-commit"),  # untagged ref
-        ("tag-object", True, "tag-object"),  # cannot list tags: keep the SHA
-    ],
+    "revision",
+    ["annotated", "lightweight", "untagged", "moved-tag", "retry", "missing", "blob"],
 )
-def test_workflow_revision_peels_an_annotated_tag(
-    tmp_path: Path, workflow_sha: str, ls_remote_fails: bool, expected: str
-) -> None:
+def test_workflow_revision_resolves_exact_object(tmp_path: Path, revision: str) -> None:
     workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
     step = next(
         item
         for item in workflow["jobs"]["build"]["steps"]
         if item.get("id") == "workflow-commit"
     )
-    assert step["env"] == {
-        "WORKFLOW_REPOSITORY": "${{ job.workflow_repository }}",
-        "WORKFLOW_SHA": "${{ job.workflow_sha }}",
-    }
+    assert step["env"]["WORKFLOW_REPOSITORY"] == "${{ job.workflow_repository }}"
+    assert step["env"]["WORKFLOW_SHA"] == "${{ job.workflow_sha }}"
+
+    remote = tmp_path / "remote"
+    subprocess.run(["git", "init", "-q", str(remote)], check=True)
+
+    def git(*args: str) -> str:
+        return subprocess.check_output(["git", *args], cwd=remote, text=True).strip()
+
+    git("config", "user.name", "Test")
+    git("config", "user.email", "test@example.com")
+    git("config", "commit.gpgsign", "false")
+    git("config", "tag.gpgsign", "false")
+    git("config", "uploadpack.allowFilter", "true")
+    git("config", "uploadpack.allowAnySHA1InWant", "true")
+    git("commit", "-qm", "Release", "--allow-empty")
+    git("tag", "-am", "Annotated release", "annotated")
+    git("tag", "lightweight")
+    annotated = git("rev-parse", "refs/tags/annotated")
+    release = git("rev-parse", "refs/tags/lightweight")
+    git("commit", "-qm", "Advance branch", "--allow-empty")
+    untagged = git("rev-parse", "HEAD")
+    file = tmp_path / "object"
+    file.write_text("Not a commit")
+    blob = git("hash-object", "-w", str(file))
+    git("tag", "blob", blob)
+    if revision == "moved-tag":
+        git("tag", "-f", "annotated", untagged)
+    workflow_sha, expected, error, retries = {
+        "annotated": (annotated, release, "", 0),
+        "lightweight": (release, release, "", 0),
+        "untagged": (untagged, untagged, "", 0),
+        "moved-tag": (annotated, release, "", 0),
+        "retry": (annotated, release, "", 1),
+        "missing": ("f" * 40, None, "after 3 attempts", 2),
+        "blob": (blob, None, "does not resolve to a commit", 0),
+    }[revision]
+
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    git = bin_dir / "git"
-    git.write_text(
-        "#!/bin/sh\n"
-        '[ "$*" = "ls-remote --tags https://github.com/owner/repo.git" ] || exit 2\n'
-        + ("exit 128\n" if ls_remote_fails else "")
-        + "printf '%s\\t%s\\n' old-commit refs/tags/v0.128.0"
-        " tag-object refs/tags/v0.129.0"
-        " release-commit 'refs/tags/v0.129.0^{}'\n"
-    )
-    git.chmod(0o755)
+    sleep = bin_dir / "sleep"
+    sleep.write_text("#!/bin/sh\nexit 0\n")
+    sleep.chmod(0o755)
+    if revision == "retry":
+        wrapper = bin_dir / "git"
+        wrapper.write_text(
+            "#!/bin/sh\n"
+            'if [ "$3" = fetch ] && [ ! -e "$RETRY_MARKER" ]; then\n'
+            '  touch "$RETRY_MARKER"\n'
+            "  exit 1\n"
+            "fi\n"
+            'exec "$REAL_GIT" "$@"\n'
+        )
+        wrapper.chmod(0o755)
     output = tmp_path / "output"
     result = subprocess.run(
         ["bash", "-eo", "pipefail", "-c", step["run"]],
@@ -434,14 +465,24 @@ def test_workflow_revision_peels_an_annotated_tag(
             "WORKFLOW_REPOSITORY": "owner/repo",
             "WORKFLOW_SHA": workflow_sha,
             "GITHUB_OUTPUT": str(output),
+            "GIT_CONFIG_COUNT": "1",
+            "GIT_CONFIG_KEY_0": f"url.{remote.as_uri()}.insteadOf",
+            "GIT_CONFIG_VALUE_0": "https://github.com/owner/repo.git",
+            "REAL_GIT": shutil.which("git") or "git",
+            "RETRY_MARKER": str(tmp_path / "retried"),
         },
         capture_output=True,
         text=True,
     )
 
-    assert result.returncode == 0, result.stderr
-    assert output.read_text() == f"sha={expected}\n"
-    assert ("::warning::" in result.stdout) == ls_remote_fails
+    assert result.stdout.count("::warning::") == retries
+    if error:
+        assert result.returncode != 0, result.stdout + result.stderr
+        assert not output.exists()
+        assert error in result.stdout
+    else:
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert output.read_text() == f"sha={expected}\n"
 
 
 def test_workspace_deploy_commit_identifies_its_workflow_run() -> None:

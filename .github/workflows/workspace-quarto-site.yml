@@ -168,23 +168,40 @@ jobs:
       - name: Fetch PR refs
         run: git fetch --no-tags origin '+refs/pull/*/head:refs/remotes/origin/pr/*'
 
-      # An annotated release tag makes job.workflow_sha the tag object, which
-      # raw.githubusercontent.com and `uv tool install` cannot resolve; peel it.
+      # Fetch the recorded object so a moved tag or branch cannot change the asset revision.
       - name: Resolve the workflow revision to a commit
         id: workflow-commit
+        shell: bash
+        timeout-minutes: 2
         env:
           WORKFLOW_REPOSITORY: ${{ job.workflow_repository }}
           WORKFLOW_SHA: ${{ job.workflow_sha }}
+          GIT_TERMINAL_PROMPT: "0"
         run: |
-          if refs=$(git ls-remote --tags "https://github.com/$WORKFLOW_REPOSITORY.git"); then
-            commit=$(awk -v sha="$WORKFLOW_SHA" '
-              { seen[$2] = $1 }
-              $1 == sha && $2 !~ /\^\{\}$/ { want = $2 "^{}" }
-              END { if (want in seen) print seen[want] }' <<<"$refs")
-          else
-            echo "::warning::Could not list $WORKFLOW_REPOSITORY tags; using $WORKFLOW_SHA unpeeled"
+          if ! [[ "$WORKFLOW_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::The reusable workflow did not supply a valid Git object SHA."
+            exit 1
           fi
-          echo "sha=${commit:-$WORKFLOW_SHA}" >> "$GITHUB_OUTPUT"
+          workflow_git=$(mktemp -d "${TMPDIR:-/tmp}/asta-workflow.XXXXXX")
+          trap 'rm -rf -- "$workflow_git"' EXIT
+          git -C "$workflow_git" init --bare --quiet
+          for attempt in 1 2 3; do
+            if git -C "$workflow_git" fetch --quiet --depth=1 --no-tags --filter=tree:0 -- \
+                "https://github.com/$WORKFLOW_REPOSITORY.git" "$WORKFLOW_SHA"; then
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "::error::Could not fetch reusable workflow object $WORKFLOW_SHA from $WORKFLOW_REPOSITORY after $attempt attempts."
+              exit 1
+            fi
+            echo "::warning::Could not fetch reusable workflow object $WORKFLOW_SHA; retrying."
+            sleep "$attempt"
+          done
+          if ! commit=$(git -C "$workflow_git" rev-parse --verify 'FETCH_HEAD^{commit}'); then
+            echo "::error::Reusable workflow object $WORKFLOW_SHA in $WORKFLOW_REPOSITORY does not resolve to a commit."
+            exit 1
+          fi
+          echo "sha=$commit" >> "$GITHUB_OUTPUT"
 
       - uses: quarto-dev/quarto-actions/setup@v2
         with:

@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- The shared site workflow peels an annotated release tag to its commit before fetching workspace assets, so workspaces pinned to `v0.129.0` (the first annotated release tag) build their preview again instead of failing the paper viewer step with a 404.
+- The shared site workflow resolves annotated release tags to their commits before fetching workspace assets. If your workspace preview fails at the paper viewer download while pinned to `v0.129.0`, update the workflow pin in `.github/workflows/docs.yml` to `v0.130.0`.
 - Dependabot's weekly updates to the `skills` CLI in the dev container auto-merge after required CI passes, including the dev container smoke tests.
 - Workspace setup under another account tries once to make the requester admin and never stops on a refused grant; it then runs the normal setup, adding one access line to the setup PR message. Without admin, that line asks the requester to reply "make me its admin".
 - CI's locked Claude Code, Codex and `plugins` versions move to `ci-tools`, where Dependabot's npm updater can open PRs. A daily check is the only alert for stalled updates: it opens, updates and closes one GitHub issue per CLI, including when Dependabot fails before opening a PR. The separate CI-failure alert workflow is removed.
