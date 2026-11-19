@@ -460,7 +460,7 @@ def test_workflow_generates_before_render_without_changing_tracked_sources(tmp_p
         check=True,
     )
     script = step["run"].replace("${{ job.workflow_repository }}", "unused")
-    script = script.replace("${{ job.workflow_sha }}", "unused")
+    script = script.replace("${{ steps.workflow-commit.outputs.sha }}", "unused")
     status_command = ["git", "status", "--porcelain", "--untracked-files=all"]
     before = subprocess.check_output(status_command, cwd=tmp_path)
     result = subprocess.run(

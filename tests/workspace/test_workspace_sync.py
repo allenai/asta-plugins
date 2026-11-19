@@ -1024,14 +1024,14 @@ def test_shared_workflow_installs_cli_from_its_own_commit_for_all_projects() -> 
     ]
     assert lines[0] == (
         'if uv tool install "git+https://github.com/${{ job.workflow_repository }}'
-        '.git@${{ job.workflow_sha }}"; then'
+        '.git@${{ steps.workflow-commit.outputs.sha }}"; then'
     )
     assert lines[1] == 'uv tool dir --bin >> "$GITHUB_PATH"'
     assert lines[2] == "else"
     assert lines[3].startswith('echo "::warning::')
     assert lines[4:] == ["fi"]
     assert "job.workflow_sha" in workflow
-    assert "ASTA_WORKSPACE_RESOLVED_SHA: ${{ job.workflow_sha }}" in workflow
+    assert "ASTA_WORKSPACE_RESOLVED_SHA: ${{ steps.workflow-commit.outputs.sha }}" in workflow
     assert (
         "ASTA_WORKSPACE_RESOLVED_REPOSITORY: ${{ job.workflow_repository }}" in workflow
     )
