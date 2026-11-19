@@ -1,55 +1,52 @@
 ---
 name: run-workflow
-description: Runs an Asta research workflow for the person, from plan to report, using Paper Finder, Data Search, AutoDS and Theorizer. Use when someone brings a research question, papers, data or an AutoDS run and wants theories, hypotheses, experiments or a reproduction.
-allowed-tools: Bash(theorize *) Bash(auto-discovery *) Bash(uv tool *) Bash(command -v *)
+description: Runs a research workflow with Theorizer, AutoDS, Semantic Scholar and Data Search. Use when someone brings a research question, papers, data or an AutoDS run and wants theories, hypotheses, experiments or a reproduction.
+allowed-tools: Bash(theorize *) Bash(auto-discovery *) Bash(asta auth *) Bash(asta generate-theories *) Bash(asta autodiscovery *) Bash(s2 *) Bash(asta-papers *) Bash(jq *) Bash(uv tool *) Bash(uv venv *) Bash(uv pip *) Bash(command -v *) Bash(grep *) Bash(echo *) Bash(cat *) Bash(curl *) Bash(python3 *) Bash(git *) Bash(quarto *) Bash(make *) Bash(mkdir *) Bash(ls *) Bash(cp *) Bash(ln *) Bash(touch *) Write Edit
 ---
 
-# Research workflows
+# Asta Flows
 
 ## Workflows
 
-- [Theory generation](workflows/theory-generation.md): Theorizer plans a search query and schema, Paper Finder finds the papers, then Theorizer passes over the literature, one per extraction schema.
-- [Data Driven Theory Generation](workflows/data-driven-theory-generation.md): Paper Finder, Data Search, AutoDS, then Theorizer to explain experimental findings.
-- [Secondary reproduction](workflows/secondary-reproduction.md): re-test an AutoDS run's hypotheses on independent data, then build theories from the verdicts with Theorizer.
-- [AutoDiscovery exploration](workflows/autodiscovery-exploration/README.md): break a researcher's question about their data into AutoDS runs, log them, and write up what came back with every number linked to its experiment.
+| Workflow | What it does |
+|---|---|
+| [Theory generation](workflows/theory-generation/README.md) | Theories from the literature on a question, then a pass for each variable the first schema missed |
+| [Data Driven Theory Generation](workflows/data-driven-theory-generation/README.md) | AutoDS experiments on real data, then theories that have to explain them |
+| [Secondary reproduction](workflows/secondary-reproduction/README.md) | Re-tests an AutoDS run's hypotheses on independent data, then theories that explain the verdicts |
+| [Gap-Driven Theory Testing](workflows/gap-driven-theory-testing/README.md) | Maps what the literature knows and leaves open, aims theories at the gaps, and tests them with AutoDS on independent data |
+| [AutoDiscovery exploration](workflows/autodiscovery-exploration/README.md) | Three ways to explore a dataset with AutoDS: on its own in rounds, theories first, or experiments first |
 
-Pick one with the person and read its file.
+Pick one with the person and read its README. The default is Gap-Driven Theory Testing, with AutoDS running the tests; without data, its data step finds some. For a dataset to explore with no question, it's AutoDiscovery exploration.
 
-## Setup
+Track every run in a workspace, with the `workspace` skill. Before starting a workflow, set up the workspace scaffold, start the local Quarto preview, and give the person its URL once it serves this project. The project's report, `index.qmd`, opens with the person's mission in their words and a short abstract, then follows the template of the workflow it reports on: `index.md` in the workflow's folder, or the workspace's cover if there is none. A workflow's `templates/page.qmd`, when it has one, is the run's page.
 
-Check the environment before you propose a workflow: install what is missing and run `theorize doctor`. If a tool will not install or a key is missing, tell the person what is missing and what the run cannot do without it, before going further.
+After each workflow, update the report with what the run found. Cite each paper with its quote, name each theory, test, gap and AutoDS experiment ("Experiment N") a claim rests on, so the site links it to that item, and show the figures the findings rest on. Don't link files. Then run the `check-claims` skill on it, fix what it finds, and render the site. When the workflow is done, give the person the site's URL and say what changed on it. Then ask the person how the run went, and submit their feedback to the Asta team with the `feedback` skill.
 
-```bash
-command -v theorize auto-discovery
-uv tool install --upgrade --python 3.13 asta-theorizer --with "pymupdf4llm<2"
-uv tool install --upgrade --python 3.13 asta-autodiscovery
-theorize doctor
-```
+## Running Workflows
 
-Both tools need `--python`: on the newest Python, a dependency they share has no prebuilt package and the install fails while compiling it. Each workflow's own setup section says what else its pins are for.
+There are three ways to run workflows. Settle which one before anything else, once per project.
 
-Keys come from the environment. `theorize doctor` names every key the installed Theorizer reads, whether it is set, what a run loses without it, and how to set it, so follow it rather than a list here. AutoDS has no such check: it reads the key of its model's provider, such as `ANTHROPIC_API_KEY` for `anthropic/` models.
+- **Library.** Use this if you want to do it in a coding agent: the agent does the reading and the analysis itself, using the Theorizer and AutoDS libraries' types. Subagents welcome, two at a time unless the person says otherwise, each in its own folder.
+- **CLI.** Use this if you have an API key and want to just use the command line, which bakes in our preferences.
+- **Hosted.** We pay for it. Your data flows through our servers.
+
+The library and the CLI run on this computer, and nothing goes to Asta.
+
+Ask which one they want, as part of the first conversation: "Which of these would you like? Hosted is free, but your data leaves this computer. With the CLI I use your API key, and with the library I do it all here in this session." Don't look for keys or logins to decide for them. The person tells you how to reach their credentials: for the CLI, ask where their key is (a key file, a variable in their shell, a password manager) and use only that; for hosted, they log in with `asta auth login`. In a hosted Asta sandbox, don't ask: use the CLI that's installed there.
+
+Write the answer to `.asta/mode.json` (`{"mode": "library" | "cli" | "hosted"}`), and don't switch without asking. Each tool's skill has a file per mode: `generate-theories` for Theorizer and `autodiscovery` for AutoDS. Set up what the mode needs before you propose a workflow, and say what's missing if something won't install.
 
 ## Plan and run
 
-Your first reply is the plan, so the person can start the run with one answer. Ask nothing before it, unless their message has no question to run a workflow on. Propose it in this order, and nothing more:
+Start from the person's mission, in their words. Once the mode is settled, if their message stated one, your next reply is the plan. If not, ask two or three targeted questions first (what they want to know, about what, and what for), then the plan.
+
+The plan, and nothing more:
 
 1. "Here's an example workflow:"
-2. **Plan,** as the workflow's table, with the values for their question. Mention the workspace only when the person gave files.
-3. **What they can change,** when the workflow's file lists it, word for word as the file gives it.
+2. **Plan,** as the workflow's table, with the values for their question and the models from the tool's file for the mode. Add a flow chart if you can draw one.
+3. **What they can change,** when the README lists it, word for word.
 4. **One question,** on its own line: "Would you like to run the workflow, or provide an updated query?"
 
-Do not guess at datasets, papers or hypotheses in the plan, and do not fill in what the person left open, unless they ask you to choose. The run finds them.
+If they already asked for it to run on its own, write the plan to the run's `workflow.yaml` and go on. Don't fill in datasets, papers or hypotheses they left open; the run finds them. Run long commands in the background, and check each command's output before the next. In a hosted sandbox a background job ends soon after your turn does, so wait for long steps inside the turn and tell the person what's running.
 
-Assume the person wants the workflow carried out autonomously unless they say otherwise. Keep the run's files in one directory. Run long commands in the background and check on them. Check each command's output before the next. Whether to hand a step to a subagent, and when, is your call.
-
-## Agents
-
-**Paper Finder** finds and fetches papers: `theorize papers search` searches with the plan's query, and `theorize papers fetch --top` fetches them in its order. `theorize papers import` adds the person's own documents: a folder (read recursively), a glob or files, of markdown, text or PDF. When the person says their papers are the corpus, add none.
-
-**Data Search** finds the data a question can be tested on. There is no command for it; it is your own work with the web and a shell.
-
-**AutoDS** runs a search over experiments on a dataset with `auto-discovery`: each experiment is a hypothesis, code, and how far its result moved belief.
-
-**Theorizer** builds theories from the papers: `theorize plan`, `theorize extract` and `theorize theories generate`, then `theorize discover` and `theorize schemas from-discovery` for more schemas. [Theory generation](workflows/theory-generation.md) has the full sequence.
-
+Data Search has no command: it's your own work with the web and a shell. Describe what you find as the `autodiscovery` skill's "Describing the data" says.
