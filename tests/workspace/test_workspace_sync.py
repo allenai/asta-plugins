@@ -1030,7 +1030,6 @@ def test_shared_workflow_installs_cli_from_its_own_commit_for_all_projects() -> 
     assert lines[2] == "else"
     assert lines[3].startswith('echo "::warning::')
     assert lines[4:] == ["fi"]
-    assert "job.workflow_sha" in workflow
     assert (
         "ASTA_WORKSPACE_RESOLVED_SHA: ${{ steps.workflow-commit.outputs.sha }}"
         in workflow

@@ -384,17 +384,31 @@ def test_workspace_baseline_archive_excludes_pr_previews(tmp_path: Path) -> None
 
 def test_workspace_assets_use_called_workflow_identity() -> None:
     workflow = WORKFLOW.read_text()
+    steps = yaml.load(workflow, Loader=yaml.BaseLoader)["jobs"]["build"]["steps"]
+    resolver_index = next(
+        index for index, step in enumerate(steps) if step.get("id") == "workflow-commit"
+    )
+    resolved_sha = "${{ steps.workflow-commit.outputs.sha }}"
 
     assert workflow.count("${{ job.workflow_repository }}") == 8
-    # Only the peel step reads job.workflow_sha; an annotated tag makes it a tag object.
+    # An annotated tag makes job.workflow_sha a tag object.
     assert workflow.count("${{ job.workflow_sha }}") == 1
-    assert workflow.count("${{ steps.workflow-commit.outputs.sha }}") == 7
+    assert workflow.count(resolved_sha) == 7
+    assert json.dumps(steps[resolver_index + 1 :]).count(resolved_sha) == 7
     assert "github.job_workflow" not in workflow
 
 
 @pytest.mark.parametrize(
     "revision",
-    ["annotated", "lightweight", "untagged", "moved-tag", "retry", "missing", "blob"],
+    [
+        "annotated",
+        "lightweight",
+        "untagged",
+        "moved-tag-still-served",
+        "retry",
+        "missing",
+        "blob",
+    ],
 )
 def test_workflow_revision_resolves_exact_object(tmp_path: Path, revision: str) -> None:
     workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
@@ -417,7 +431,6 @@ def test_workflow_revision_resolves_exact_object(tmp_path: Path, revision: str) 
     git("config", "commit.gpgsign", "false")
     git("config", "tag.gpgsign", "false")
     git("config", "uploadpack.allowFilter", "true")
-    git("config", "uploadpack.allowAnySHA1InWant", "true")
     git("commit", "-qm", "Release", "--allow-empty")
     git("tag", "-am", "Annotated release", "annotated")
     git("tag", "lightweight")
@@ -429,13 +442,14 @@ def test_workflow_revision_resolves_exact_object(tmp_path: Path, revision: str) 
     file.write_text("Not a commit")
     blob = git("hash-object", "-w", str(file))
     git("tag", "blob", blob)
-    if revision == "moved-tag":
+    if revision == "moved-tag-still-served":
         git("tag", "-f", "annotated", untagged)
+        git("config", "uploadpack.allowAnySHA1InWant", "true")
     workflow_sha, expected, error, retries = {
         "annotated": (annotated, release, "", 0),
         "lightweight": (release, release, "", 0),
         "untagged": (untagged, untagged, "", 0),
-        "moved-tag": (annotated, release, "", 0),
+        "moved-tag-still-served": (annotated, release, "", 0),
         "retry": (annotated, release, "", 1),
         "missing": ("f" * 40, None, "after 3 attempts", 2),
         "blob": (blob, None, "does not resolve to a commit", 0),

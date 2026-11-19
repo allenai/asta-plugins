@@ -168,7 +168,8 @@ jobs:
       - name: Fetch PR refs
         run: git fetch --no-tags origin '+refs/pull/*/head:refs/remotes/origin/pr/*'
 
-      # Fetch the recorded object so a moved tag or branch cannot change the asset revision.
+      # Fetch by object ID to preserve the revision if a ref moves.
+      # Resolution requires GitHub to still serve that object.
       - name: Resolve the workflow revision to a commit
         id: workflow-commit
         shell: bash
@@ -178,6 +179,7 @@ jobs:
           WORKFLOW_SHA: ${{ job.workflow_sha }}
           GIT_TERMINAL_PROMPT: "0"
         run: |
+          # GitHub supplies a SHA-1 object ID for the reusable workflow.
           if ! [[ "$WORKFLOW_SHA" =~ ^[0-9a-f]{40}$ ]]; then
             echo "::error::The reusable workflow did not supply a valid Git object SHA."
             exit 1
