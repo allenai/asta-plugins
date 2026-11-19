@@ -14,10 +14,11 @@ Manage the writing/docs side of a research project: scaffold infrastructure as n
 
 ## Show the user the rendered work
 
-Give the user a web URL for the rendered work. Two URL sources, pick based on your context:
+Give the user a web URL for the rendered work, or render where their app reads it. Pick based on your context:
 
 - **Local agent** (host, local dev container, or Codespace — the user can reach your port): run `make preview` in the background. Pass the URL Quarto prints (localhost on host/dev container; Codespaces-forwarded URL in a Codespace).
 - **Headless agent** (no user-reachable port): push the branch (see **Save**), then `make deployed-url` to fetch the deployed URL from GitHub Pages CI.
+- **Agent in a hosted sandbox** (the person's app shows the workspace's `_site/` in the workspace's first tab): after every meaningful update, run `quarto render` from the project root. The rendered `_site/` is the project notebook the person reads; nothing else publishes it, and there is no URL to pass. Git commits are optional housekeeping there. See [In a hosted sandbox](#in-a-hosted-sandbox) for setting up without `asta` or `make`.
 
 
 Run `asta workspace what-changed [ref]` and share the page.
@@ -88,6 +89,19 @@ Before writing any file in the steps below, check whether the target path alread
 9. Run `asta workspace sync --require-scripts`, then `make check`. Keep customized copies. Before removing old unmodified helpers, require a successful refresh and validate the project from an empty cache.
 10. Show the user the new site as **Show the user the rendered work** says (a local agent runs `make preview` in the background and gives its URL), so that they see their workspace as it starts rather than being told how to open it.
 11. To keep the paper in step with an Overleaf project, follow [`workflows/overleaf-sync.md`](workflows/overleaf-sync.md).
+
+### In a hosted sandbox
+
+Where the agent runs in a sandbox whose app shows `_site/` in the workspace's first tab, and `asta` and `make` are not installed, set up the Quarto build tool without them: copy `assets/_quarto.yml` (fill `{{TITLE}}`; drop the sidebar's GitHub `tools` entry when there is no repository), create `index.qmd`, an empty `references.bib` and `assets/evidence.yml`, append `assets/gitignore` to `.gitignore`, and copy `assets/_extensions/asta-theme`, `assets/_extensions/evidence` (and `assets/_extensions/asta-pages` when a page uses its shortcodes) into `_extensions/`. Quarto finds no pages when the project's path has a directory whose name starts with `.` (some sandboxes keep the workspace under one), so the pages are listed in `_quarto.yml` under `project:` (the scaffold's `render: [index.qmd, "pages/*.qmd"]`): add any page outside those there. Then render with `quarto render`. Skip the Makefile, `docs.yml`, `asta workspace sync` and the publish steps. Nothing keeps those extension copies current, so at the start of each conversation copy the three from `assets/_extensions/` again (replacing what is there), so the pages render with the skill's current version.
+
+The site is where you maintain the notes for the human collaborator.
+
+- **Front page** (`index.qmd`, started from `assets/cover.qmd`): a cover page shaped like a paper. Mission, then Abstract, together about one page; then Findings, Null results and Next steps. No list of runs. After each workflow, update it as the `run-workflow` skill says. When the project has a computational review, the review is the front page: its sidebar entry reads "Computational review" and it has no separate workflow page.
+- **Workflow pages** (`pages/<NNNN>-<workflow>.qmd`, one per run, NNNN the run's number in `.asta/flows/<NNNN>-<workflow>/`; its front matter only `title:`, normally the workflow's name; the sidebar lists them flat in run order, each with its `##` sections under it, and the front page scrolls on into them and each into the next): the `asta-pages` widgets and nothing else, started from the workflow's template. No ledger, no prose, no hand-written tables or status notes: what was run is in the files the widgets link to, and your reading of it goes on the front page. Besides the theory, paper and AutoDiscovery panels, `asta-files` lists a step's folder, `asta-doc` shows a step's own markdown output inline and `asta-tests` tables a run's tests with their verdicts, each linking the files on disk (paths from the project root; see `assets/_extensions/asta-pages/README.md`). `{{< asta-datasets >}}` tables the datasets in `.asta/datasets.json`. With `asta-pages` listed under `filters:` in `_quarto.yml`, every page's links open a card of what they point at, and mentions of tests, theories, gaps and experiments become such links (the asta-pages README, "Links and their cards").
+
+A workflow may say more about its pages.
+
+The person finds the site in the workspace's first tab, which carries the workspace's name and opens on the site's front page, so point there by that name: "it is in the Soil microbes tab: Theories, under Drought". Name a page by its title and where it sits, not by its file path, which they cannot open.
 
 ### Separate LaTeX paper (optional)
 
