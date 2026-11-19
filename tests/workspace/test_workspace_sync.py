@@ -1915,6 +1915,7 @@ def test_adopt_asta_theme_upgrades_only_the_scaffold_default(tmp_path: Path) -> 
     text = config.read_text()
     assert "_extensions/asta-theme/light.scss" in text
     assert "respect-user-color-scheme: false" in text
+    # Listed first: dark by default.
     assert text.index("      dark:") < text.index("      light:")
     assert "    toc: true\n" in text
     assert not workspace_module.adopt_asta_theme(tmp_path)
@@ -2022,7 +2023,7 @@ def test_theme_adoption_scopes_css_to_html_and_keeps_preferences(
     assert after["website"] == before["website"]
     html = after["format"]["html"]
     assert html["respect-user-color-scheme"] is respect_system
-    assert "start dark" not in text
+    assert "dark by default" not in text
     own = before["format"]["html"]["css"] or []
     if isinstance(own, str):
         own = [own]
