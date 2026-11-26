@@ -114,6 +114,31 @@ def test_e2e_collects_every_artifact_and_honors_append(tmp_path):
     ]
 
 
+def test_e2e_a_reply_in_text_alone_has_no_artifacts(tmp_path):
+    out = tmp_path / "result.json"
+    events = [
+        initial_task_event(),
+        terminal_event("TASK_STATE_COMPLETED", "Which years do you mean?"),
+    ]
+    with FakeA2AServer(events=events):
+        run_a2a_session(
+            SPEC,
+            output=str(out),
+            thread_dir=None,
+            timeout=30,
+            server=None,
+            api_key=None,
+            message_data={"q": "only recent ones"},
+            artifacts_to_result=_identity_artifacts_to_result,
+        )
+
+    assert json.loads(out.read_text()) == {
+        "thread_id": DEFAULT_THREAD_ID,
+        "narrative": "Which years do you mean?",
+        "artifacts": [],
+    }
+
+
 def test_e2e_multi_turn_thread_dir_resumes_via_context_id(tmp_path):
     """Two invocations against the same --thread-dir: artifacts get .NNN
     suffixes, the index records both turns, and the second turn auto-resumes

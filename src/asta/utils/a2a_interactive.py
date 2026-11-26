@@ -256,8 +256,8 @@ async def _run_streaming_turn(
     api_key: str | None,
     timeout: int,
 ) -> TurnResult:
-    """Drives a single turn; prints step-progress to stderr; enforces the
-    ``COMPLETED`` + artifact-present terminal policy (else raises)."""
+    """Drives a single turn; prints step-progress to stderr; raises unless the
+    turn ends ``COMPLETED``. A turn the agent answers in text alone has no artifact."""
     resolved_thread_id: str | None = thread_id
     artifact_parts: dict[str, list[dict[str, Any]]] = {}
     narrative: str | None = None
@@ -306,8 +306,6 @@ async def _run_streaming_turn(
         raise click.ClickException(
             f"Search ended in state '{terminal_state}': {narrative or ''}"
         )
-    if not artifact_parts:
-        raise click.ClickException("Search completed but no artifact was returned.")
 
     return TurnResult(
         artifacts=[part for parts in artifact_parts.values() for part in parts],

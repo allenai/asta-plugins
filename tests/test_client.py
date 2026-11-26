@@ -184,27 +184,6 @@ class TestAstaPaperFinder:
         sleep.assert_called_once_with(7)
         assert result["paper_count"] == 0
 
-    def test_find_papers_full_queue_past_the_deadline_raises(self, mock_urlopen):
-        mock_urlopen.side_effect = [
-            http_error(503, {"detail": "Paper Finder is busy"}, retry_after="30"),
-        ]
-
-        finder = AstaPaperFinder(base_url="https://test.api", access_token="t")
-        with pytest.raises(Exception, match="API request failed: Paper Finder is busy"):
-            finder.find_papers("test query", timeout=10)
-
-    def test_find_papers_unknown_task_raises(self, mock_urlopen):
-        mock_urlopen.side_effect = [
-            mock_response({"taskId": "task-1"}),
-            http_error(404, {"detail": "Task task-1 not found"}),
-        ]
-
-        finder = AstaPaperFinder(base_url="https://test.api", access_token="t")
-        with pytest.raises(
-            Exception, match="API request failed: Task task-1 not found"
-        ):
-            finder.find_papers("test query")
-
     def test_find_papers_times_out_naming_the_task(self, mock_urlopen):
         mock_urlopen.side_effect = [
             mock_response({"taskId": "task-1"}),

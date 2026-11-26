@@ -13,7 +13,8 @@
 - `asta literature interactive` talks to Paper Finder's A2A endpoint v4
   (`/api/4/a2a`) and returns every paper of every artifact the search produces.
   Papers now carry citation contexts, publication date, journal and
-  `legalToShow`, like `find`.
+  `legalToShow`, like `find`. A turn Paper Finder answers in text alone (a
+  question back, a refusal) returns its `narrative` with no results.
 
 - Workspace repo setup makes a repo internal when the request came from a chat channel anyone in the organization can join, and private for a private channel, a direct message or a request from elsewhere, unless the request says which; it never makes one public by default.
 - The shared site workflow resolves annotated release tags to commits before installing the CLI or downloading workspace assets. The build stops with a resolver error if GitHub cannot supply the exact workflow revision after retries. For workspaces pinned to `v0.129.0`, update the workflow pin in `.github/workflows/docs.yml` to `v0.130.0`.

@@ -67,6 +67,8 @@ session, always pass `--thread-dir`.
 
 Output deltas vs `find`: the `interactive` JSON adds `thread_id` and `narrative`
 (the agent's terminal response text). Each paper has the same fields in both.
+A turn the agent answers in text alone (a question back, a refusal) has empty
+`results`; read its `narrative`.
 
 ## Tools Available
 
