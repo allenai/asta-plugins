@@ -23,15 +23,13 @@ from asta.utils.a2a_stream import (
     [(None, False), ("thrd:xyz", True)],
 )
 def test_build_rpc_body_contextid_placement(context_id, expect_context_id):
-    """``contextId`` rides on the message envelope only — never on the data part."""
+    """``contextId`` rides on the message envelope only — never on the data part,
+    which is the bare skill input (v4 rejects it wrapped in another ``data``)."""
     body = _build_rpc_body({"query": "hi", "operation_mode": "fast"}, context_id)
     message = body["params"]["message"]
     assert body["method"] == "SendStreamingMessage"
     assert message["role"] == "ROLE_USER"
-    assert message["parts"][0]["data"]["data"] == {
-        "query": "hi",
-        "operation_mode": "fast",
-    }
+    assert message["parts"] == [{"data": {"query": "hi", "operation_mode": "fast"}}]
     if expect_context_id:
         assert message["contextId"] == context_id
     else:
@@ -84,7 +82,7 @@ def test_extractors_match_only_their_event_kind():
         context_id="thrd:abc",
         raw={
             "artifact": {
-                "parts": [{"data": {"schemaVersion": "1", "entities": {}}}],
+                "parts": [{"data": {"kind": "search-result", "papers": []}}],
             }
         },
     )
@@ -105,6 +103,6 @@ def test_extractors_match_only_their_event_kind():
     assert terminal_status_of(artifact) is None
 
     # artifact_data_of: only matches artifact_update events.
-    assert artifact_data_of(artifact) == {"schemaVersion": "1", "entities": {}}
+    assert artifact_data_of(artifact) == {"kind": "search-result", "papers": []}
     assert artifact_data_of(task) is None
     assert artifact_data_of(working) is None
